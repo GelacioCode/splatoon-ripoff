@@ -1,7 +1,7 @@
 import { createEndpoint, createRouter, defineRoom, defineServer } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { DEFAULT_SERVER_PORT, PROTOCOL_VERSION, ROOM_SANDBOX } from '@paint-rush/shared';
-import { initPhysics } from '@paint-rush/shared/physics';
+import { initPhysics } from '@paint-rush/shared/sim';
 import { SandboxRoom } from './rooms/SandboxRoom';
 
 const rapierVersion = await initPhysics();

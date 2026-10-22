@@ -2,7 +2,7 @@
 
 A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming through your own paint, and Capture the Flag. Players join from their phones by scanning a QR code.
 
-> **Status: Phase 0, the monorepo scaffold.** The client shows a placeholder scene and connects to a test room on the server. The full spec and roadmap live in [CLAUDE.md](CLAUDE.md).
+> **Status: Phase 1 (offline sandbox) in progress.** You can run and jump around the arena. Painting, swimming and phone controls come next.
 
 ## Requirements
 
@@ -18,6 +18,19 @@ pnpm dev       # start the client (Vite) and the game server (Colyseus) together
 ```
 
 Open http://localhost:5173. The game server listens on http://localhost:2567 and has a health check at http://localhost:2567/health.
+
+## Controls (desktop)
+
+| Action | Key |
+| --- | --- |
+| Start playing (captures the mouse) | Click the screen |
+| Move | WASD or arrow keys |
+| Look and aim | Mouse |
+| Jump | Space |
+| Pause (frees the mouse) | Esc |
+| Live tuning panel (for development) | `` ` `` (backtick, left of 1) |
+
+The tuning panel has sliders for movement and camera feel. **Copy tuning** copies the current values so they can be saved into `shared/src/config.ts`.
 
 ## Scripts (run from the repo root)
 
@@ -67,8 +80,8 @@ With nothing configured, the client connects to port 2567 on the same host that 
 
 ## Roadmap
 
-0. Monorepo scaffold (current phase)
-1. Offline sandbox: movement, camera, shooting, paint, swimming, wall climbing, desktop and mobile controls
+0. Monorepo scaffold (done)
+1. Offline sandbox: movement, camera, shooting, paint, swimming, wall climbing, desktop and mobile controls (current phase)
 2. Networking: client prediction, server reconciliation, interpolation
 3. Lobby: QR join, names and customization, host controls, auto-balanced teams
 4. Capture the Flag: rules, HUD, match flow, end screen

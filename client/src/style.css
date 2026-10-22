@@ -48,4 +48,58 @@ body {
     Consolas,
     monospace;
   pointer-events: none;
+  z-index: 20;
+}
+
+.crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgb(29 17 53 / 70%);
+  pointer-events: none;
+}
+
+.start-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgb(29 17 53 / 35%);
+  cursor: pointer;
+}
+
+.start-screen[hidden] {
+  display: none;
+}
+
+.start-card {
+  padding: 24px 32px;
+  border-radius: 16px;
+  background: rgb(29 17 53 / 88%);
+  color: #fff;
+  text-align: center;
+}
+
+.start-card h1 {
+  margin: 0 0 8px;
+  font-size: 32px;
+}
+
+.start-cta {
+  margin: 0 0 12px;
+  color: #fd3fb4;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.start-keys {
+  margin: 0;
+  font-size: 13px;
+  opacity: 0.8;
 }

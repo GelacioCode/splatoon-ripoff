@@ -1,33 +1,20 @@
 import './style.css';
-import { REVISION } from 'three';
 import { DEFAULT_SERVER_PORT } from '@paint-rush/shared';
 import { connectToSandbox } from './net/connection';
 import { resolveServerUrl } from './net/serverUrl';
-import { startPlaceholderScene } from './scene/placeholderScene';
 import { createDevOverlay } from './ui/devOverlay';
-
-/** Placeholder paint color. Change it and save: the page reloads with the new color. */
-const BLOB_COLOR = 0xfd3fb4;
 
 const overlay = createDevOverlay(requireElement('dev-overlay'));
 
-try {
-  startPlaceholderScene(requireElement('app'), BLOB_COLOR);
-  overlay.update({ renderer: `three r${REVISION} · WebGL2` });
-} catch (error) {
-  console.error(error);
-  overlay.update({ renderer: 'WebGL2 unavailable on this device' });
-}
-
-// Rapier (~2 MB) loads on demand so it never delays the first frame.
-import('@paint-rush/shared/physics')
-  .then(({ initPhysics }) => initPhysics())
-  .then((version) => overlay.update({ physics: `Rapier ${version}` }))
+// The game (and Rapier, ~2 MB) loads as a separate chunk, so the page shows up right away.
+import('./game/SandboxGame')
+  .then(({ startSandbox }) => startSandbox(requireElement('app'), overlay))
   .catch((error: unknown) => {
     console.error(error);
-    overlay.update({ physics: 'failed to load' });
+    overlay.update({ renderer: 'failed to start (see the browser console)' });
   });
 
+// The Phase 0 server connection stays on as a live smoke test until networking (Phase 2).
 const serverUrl = resolveServerUrl({
   search: window.location.search,
   envUrl: import.meta.env.VITE_SERVER_URL,

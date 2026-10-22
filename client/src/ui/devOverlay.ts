@@ -5,6 +5,8 @@ export interface DevOverlayState {
   server: string;
   players?: number;
   rttMs?: number;
+  fps?: number;
+  tickRate?: number;
 }
 
 /** Small always-on-top status panel for development. */
@@ -21,6 +23,7 @@ export function createDevOverlay(element: HTMLElement) {
       'Paint Rush · dev',
       `Renderer  ${state.renderer}`,
       `Physics   ${state.physics}`,
+      `Frame     ${state.fps ?? '–'} fps · tick ${state.tickRate ?? '–'} Hz`,
       `Server    ${state.server} · ${state.serverUrl}`,
       `Players   ${state.players ?? '–'}`,
       `RTT       ${state.rttMs === undefined ? '–' : `${state.rttMs} ms`}`,
@@ -29,9 +32,11 @@ export function createDevOverlay(element: HTMLElement) {
 
   render();
   return {
-    update(patch: Partial<DevOverlayState>) {
+    update(patch: Partial<DevOverlayState>): void {
       Object.assign(state, patch);
       render();
     },
   };
 }
+
+export type DevOverlay = ReturnType<typeof createDevOverlay>;
