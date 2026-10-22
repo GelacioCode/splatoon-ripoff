@@ -166,19 +166,13 @@ export class PaintAtlas {
    * direction a shot was flying), they're drawn as thin streaks along it instead of blobs.
    */
   add(splats: readonly SurfaceSplat[], team: number, streak?: Vec3): void {
-    const { padding, pixelsPerMeter } = this.layout;
+    const { pixelsPerMeter } = this.layout;
     for (const splat of splats) {
-      const rect = this.layout.rects[splat.surfaceId];
-      if (!rect) continue;
-      if (this.queued === MAX_SPLATS) this.flush();
-      const s = this.surfaces[splat.surfaceId];
-      const i = this.queued++;
-      this.centers[i * 2] = rect.x + (splat.u / s.width) * rect.width;
-      this.centers[i * 2 + 1] = rect.y + (splat.v / s.height) * rect.height;
-      this.teams[i] = team;
-      this.seeds[i] = Math.random();
+      const i = this.queue(splat, team);
+      if (i < 0) continue;
       if (streak) {
         // The shot's direction as seen on this surface (its u/v axes).
+        const s = this.surfaces[splat.surfaceId];
         const du = streak.x * s.uAxis.x + streak.y * s.uAxis.y + streak.z * s.uAxis.z;
         const dv = streak.x * s.vAxis.x + streak.y * s.vAxis.y + streak.z * s.vAxis.z;
         const along = Math.hypot(du, dv);
@@ -188,17 +182,40 @@ export class PaintAtlas {
         this.radii[i] = splat.radius * pixelsPerMeter;
         this.styles.set([1, 0, 1], i * 3);
       }
-      // Paint may spill into the padding (so edges look right) but never past it.
-      this.clips.set(
-        [
-          rect.x - padding,
-          rect.y - padding,
-          rect.x + rect.width + padding,
-          rect.y + rect.height + padding,
-        ],
-        i * 4,
-      );
     }
+  }
+
+  /** Queues a soft round blob with no droplets, e.g. to redraw one cell of a paint snapshot. */
+  addBlob(splat: SurfaceSplat, team: number): void {
+    const i = this.queue(splat, team);
+    if (i < 0) return;
+    this.radii[i] = splat.radius * this.layout.pixelsPerMeter;
+    this.styles.set([1, 0, 0], i * 3);
+  }
+
+  /** Reserves the next splat slot and fills in where it goes; returns −1 if it can't be painted. */
+  private queue(splat: SurfaceSplat, team: number): number {
+    const rect = this.layout.rects[splat.surfaceId];
+    if (!rect) return -1;
+    if (this.queued === MAX_SPLATS) this.flush();
+    const { padding } = this.layout;
+    const s = this.surfaces[splat.surfaceId];
+    const i = this.queued++;
+    this.centers[i * 2] = rect.x + (splat.u / s.width) * rect.width;
+    this.centers[i * 2 + 1] = rect.y + (splat.v / s.height) * rect.height;
+    this.teams[i] = team;
+    this.seeds[i] = Math.random();
+    // Paint may spill into the padding (so edges look right) but never past it.
+    this.clips.set(
+      [
+        rect.x - padding,
+        rect.y - padding,
+        rect.x + rect.width + padding,
+        rect.y + rect.height + padding,
+      ],
+      i * 4,
+    );
+    return i;
   }
 
   /** Draws all queued splats into the texture. Call once per frame. */

@@ -107,8 +107,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 1E feel polish: camera 4.6 m back, paint drips drawn as thin streaks, landing puffs, shot streaks, and aim mode (right mouse / AIM toggle: zoom, 0.6° spread, longer straight flight, 65% walk speed). User confirmed and pushed. Open item: the user suspected a small FPS drop after 1E; never measured.
 - [ ] Phase 2: networking (plan approved 2026-10-23; milestones 2A move together, 2B shoot and paint together, 2C reconnection, bandwidth and real-network testing)
   - [x] 2A move together: user confirmed two tabs see each other (after fixing quantized fields → float32). Open item: RTT shows ~150 ms on localhost (expected a few ms), probably inputs queueing on the server; investigate in 2C.
-  - [ ] Roles (user request, plan approved 2026-10-23, inserted before 2B): Sniper / Assault / Machine gun, picked on the start/pause menu. Written, awaiting the user's test.
-  - [ ] 2B shoot and paint together
+  - [x] Roles (user request, inserted before 2B): Sniper / Assault / Machine gun, picked on the start/pause menu. User confirmed working and pushed, 2026-10-23.
+  - [ ] 2B shoot and paint together: written 2026-10-23, awaiting the user's test.
 - [ ] Phase 3: lobby, QR join, customization, auto-balance
 - [ ] Phase 4: Capture the Flag
 - [ ] Phase 5: 30-bot load test
@@ -154,4 +154,11 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
     - One `input.send()` per `predict.tick()` step, with yaw wrapped to −π…π.
     - `?offline` = sandbox, `?debug` = Colyseus netcode panel.
   - Shared scene code is in `client/src/game/World.ts`.
+- Netcode (2B, shots and paint):
+  - The server runs `stepWeapon` (seeded with `seedFromString(sessionId)`) and `stepProjectiles` for everyone. Its shots are the real ones.
+  - Each tick, the paint that landed is packed (`encodePaintEvents`, 11 bytes each, cm positions) and broadcast as bytes (`MSG_PAINT`). The server paints its own grid from the *decoded* values, so client grids match it exactly.
+  - New shots go to everyone except the shooter (`MSG_SHOTS`, 11 bytes each). Clients fly them for show only.
+  - Own shots: the reconciler step runs `stepPlayer` + `stepWeapon`. `NewShotFilter` uses `shotCount` so replays don't show shots twice. The server keeps `shotCount` across respawns for this.
+  - All on-screen shots are cosmetic: hits make splashes and sounds, never paint. Paint only comes from `MSG_PAINT`, so your own paint shows about one round trip after your shot lands (user accepted; an instant local-paint option was offered).
+  - Late join and reconnect: the client sends `MSG_REQUEST_PAINT` once its handlers are set up. The server replies with `MSG_PAINT_SNAPSHOT` (run-length cells, `encodePaintSnapshot`), and the client redraws every painted cell as a soft blob (`PaintAtlas.addBlob`).
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

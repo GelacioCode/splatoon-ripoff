@@ -12,3 +12,15 @@ export function createRng(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/**
+ * A stable 32-bit seed from text (FNV-1a), e.g. a player's session id, so the client and
+ * server pick the same seed for the same player.
+ */
+export function seedFromString(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+  }
+  return hash >>> 0;
+}

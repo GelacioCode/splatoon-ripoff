@@ -4,8 +4,16 @@ import {
   ARENA,
   ArenaState,
   CONFIG,
+  decodePaintEvents,
+  decodePaintSnapshot,
+  decodeShotEvents,
   MSG_CHOOSE_WEAPON,
+  MSG_PAINT,
+  MSG_PAINT_SNAPSHOT,
+  MSG_REQUEST_PAINT,
+  MSG_SHOTS,
   ROOM_ARENA,
+  seedFromString,
   wrapAngle,
   NetInput,
   type ArenaJoinOptions,
@@ -13,14 +21,20 @@ import {
 } from '@paint-rush/shared';
 import {
   createPlayerState,
+  createProjectile,
   initPhysics,
   stepPlayer,
+  stepProjectiles,
+  stepWeapon,
   type Collider,
   type PlayerInput,
   type PlayerState,
+  type Projectile,
 } from '@paint-rush/shared/sim';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
 import type { DevOverlay } from '../ui/devOverlay';
+import { FixedStep } from './fixedStep';
+import { NewShotFilter } from './newShotFilter';
 import { snapshotOf, World, type PlayerSnapshot } from './World';
 
 /** Wait this long before retrying a failed join, or reloading after losing the room (ms). */
@@ -29,6 +43,15 @@ const RETRY_MS = 2000;
 const STATUS_INTERVAL = 0.5;
 /** Fields smoothed for drawing other players (yaw is smoothed separately, as an angle). */
 const SMOOTHED_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'swimBlend'] as const;
+/** Other players' shots sound this much quieter than your own. */
+const REMOTE_SHOT_VOLUME = 0.5;
+
+/** Byte messages arrive as Uint8Array; anything else means a server/client version mismatch. */
+function asBytes(payload: unknown): Uint8Array | null {
+  if (payload instanceof Uint8Array) return payload;
+  if (payload instanceof ArrayBuffer) return new Uint8Array(payload);
+  return null;
+}
 
 function joinArena(serverUrl: string, options: ArenaJoinOptions = {}) {
   return new Client(serverUrl).joinOrCreate(ROOM_ARENA, options, ArenaState);
@@ -128,7 +151,11 @@ interface RemotePlayer {
   character: BlobCharacter;
 }
 
-/** One joined arena room: our predicted player plus smoothed remote players. */
+/**
+ * One joined arena room: our predicted player plus smoothed remote players. Shots on screen
+ * are for show (our own appear instantly, others' as the server reports them); the paint
+ * they leave comes from the server, so every screen has the same paint.
+ */
 class NetSession {
   private readonly world: World;
   private readonly overlay: DevOverlay;
@@ -142,19 +169,39 @@ class NetSession {
   private character: BlobCharacter | null = null;
   private lastSnapshot: PlayerSnapshot | null = null;
   private statusTimer = 0;
+  /** Shots drawn on screen: ours (predicted) and everyone else's (from the server). */
+  private readonly shots: Projectile[] = [];
+  private readonly shotLoop = new FixedStep(1 / CONFIG.net.tickRate);
+  /** Scratch list for the shots one predicted tick fires. */
+  private readonly fired: Projectile[] = [];
+  /** Same seed as the server uses for us, so predicted spread matches the real shots. */
+  private readonly seed: number;
+  private wasReloading = false;
+  private firing = false;
 
   constructor(world: World, overlay: DevOverlay, room: ArenaRoom) {
     this.world = world;
     this.overlay = overlay;
     this.room = room;
+    this.seed = seedFromString(room.sessionId);
     // Others are drawn slightly in the past, between two snapshots, so they move smoothly.
     this.predict = Predict.get(room, { mode: 'lerp', delay: CONFIG.net.interpolationDelayMs });
     this.netInput = room.input({ type: NetInput });
     this.predict.attachAll('players', { mode: 'lerp', fields: SMOOTHED_FIELDS });
     this.predict.attachAll('players', { mode: 'lerp', fields: ['yaw'], angle: true });
 
+    room.onMessage(MSG_PAINT, (payload: unknown) => this.receivePaint(payload));
+    room.onMessage(MSG_SHOTS, (payload: unknown) => this.receiveShots(payload));
+    room.onMessage(MSG_PAINT_SNAPSHOT, (payload: unknown) => this.receiveSnapshot(payload));
+    // Handlers are in place, so the snapshot can't arrive before we listen for it.
+    room.send(MSG_REQUEST_PAINT);
+
     room.onDrop(() => this.overlay.update({ server: 'reconnecting…' }));
-    room.onReconnect(() => this.overlay.update({ server: 'connected' }));
+    room.onReconnect(() => {
+      this.overlay.update({ server: 'connected' });
+      // Paint may have changed while we were away.
+      room.send(MSG_REQUEST_PAINT);
+    });
     room.onLeave((code) => {
       console.info(`[net] left the arena (code ${code}); reloading`);
       this.overlay.update({ server: 'offline' });
@@ -202,14 +249,78 @@ class NetSession {
         climbing: s.climbing,
       });
       this.character.setWeapon(s.weapon);
+      world.weaponSounds(this.wasReloading, s, this.firing, dt);
+      this.wasReloading = s.reloadTimer > 0;
     }
     for (const remote of this.remotes.values()) {
       remote.character.update(dt, this.remotePose(remote.player));
       remote.character.setWeapon(remote.player.weapon);
     }
 
-    world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, [], 0);
+    // Shots fly at the game's tick rate (like on the server) and are drawn in between.
+    const shotSteps = this.shotLoop.advance(dt);
+    for (let i = 0; i < shotSteps; i++) {
+      stepProjectiles(world.physics, this.shots, this.shotLoop.stepSeconds, (hit) =>
+        world.splash(hit, this.feet),
+      );
+    }
+    world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, this.shots, this.shotLoop.alpha);
     this.updateStatus(dt);
+  }
+
+  /**
+   * One predicted tick of our own player: movement, then the weapon. Shots it fires appear
+   * on screen right away, unless it's a replay of a tick whose shots are already flying.
+   */
+  private predictTick(
+    state: PlayerState,
+    command: PlayerInput,
+    dt: number,
+    body: Collider,
+    newShots: NewShotFilter,
+  ): void {
+    const world = this.world;
+    stepPlayer(world.physics, body, state, command, dt, world.paint);
+    this.fired.length = 0;
+    const fired = stepWeapon(state, command, dt, this.seed, this.fired);
+    const fresh = newShots.take(state.shotCount, fired);
+    for (let i = fired - fresh; i < fired; i++) this.shots.push(this.fired[i]);
+    if (fresh > 0) world.sfx.shoot();
+  }
+
+  /** Paint the server put down this tick. */
+  private receivePaint(payload: unknown): void {
+    const bytes = asBytes(payload);
+    if (!bytes) {
+      this.warnOnce('paint message is not bytes', payload);
+      return;
+    }
+    for (const paint of decodePaintEvents(bytes)) this.world.paintAt(paint);
+  }
+
+  /** Other players' new shots: fly them here too, with a quieter shot sound. */
+  private receiveShots(payload: unknown): void {
+    const bytes = asBytes(payload);
+    if (!bytes) {
+      this.warnOnce('shots message is not bytes', payload);
+      return;
+    }
+    for (const shot of decodeShotEvents(bytes)) {
+      this.shots.push(
+        createProjectile(shot.origin, shot.yaw, shot.pitch, shot.team, shot.aimed, shot.weapon),
+      );
+      const loudness = this.world.loudnessAt(shot.origin, this.feet);
+      this.world.sfx.shoot(loudness * REMOTE_SHOT_VOLUME);
+    }
+  }
+
+  /** All the paint on the map, sent when we join or reconnect. */
+  private receiveSnapshot(payload: unknown): void {
+    const bytes = asBytes(payload);
+    const cells = bytes ? decodePaintSnapshot(bytes) : null;
+    if (!cells || !this.world.loadPaintSnapshot(cells)) {
+      this.warnOnce('paint snapshot does not fit this map', { bytes: bytes?.byteLength });
+    }
   }
 
   /** Asks the server for another role (it checks the choice and refills the tank). */
@@ -232,6 +343,7 @@ class NetSession {
     data.reload = sample.reload;
     data.aim = sample.aim;
     this.netInput.send();
+    this.firing = sample.fire;
   }
 
   private readonly warned = new Set<string>();
@@ -271,8 +383,10 @@ class NetSession {
     this.body = body;
     world.view.yaw = player.yaw;
     this.feet.set(player.x, player.y, player.z);
+    const newShots = new NewShotFilter(player.shotCount);
+    this.wasReloading = player.reloadTimer > 0;
     this.me = createReconciler(this.predict, player, this.netInput, (state, command, dt) =>
-      stepPlayer(world.physics, body, state, command, dt, world.paint),
+      this.predictTick(state, command, dt, body, newShots),
     );
   }
 

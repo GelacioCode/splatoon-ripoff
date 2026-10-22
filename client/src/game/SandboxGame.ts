@@ -52,7 +52,6 @@ class SandboxGame {
   private readonly previousFeet = new Vector3();
   private readonly currentFeet = new Vector3();
   private readonly renderFeet = new Vector3();
-  private emptyClickCooldown = 0;
 
   constructor(container: HTMLElement, overlay: DevOverlay) {
     this.world = new World(
@@ -132,13 +131,7 @@ class SandboxGame {
     const wasReloading = s.reloadTimer > 0;
     const fired = stepWeapon(s, input, dt, PLAYER_SEED, this.projectiles);
     if (fired > 0) world.sfx.shoot();
-    if (wasReloading && s.reloadTimer === 0) world.sfx.reloaded();
-    // A dry click while you pull the trigger during a reload, so it's clear why nothing fires.
-    this.emptyClickCooldown -= dt;
-    if (input.fire && s.reloadTimer > 0 && this.emptyClickCooldown <= 0) {
-      world.sfx.empty();
-      this.emptyClickCooldown = 0.25;
-    }
+    world.weaponSounds(wasReloading, s, input.fire, dt);
     stepProjectiles(world.physics, this.projectiles, dt, (hit) => world.applyPaint(hit, s));
 
     world.physics.step();

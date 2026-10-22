@@ -26,13 +26,13 @@ export class Sfx {
     window.addEventListener('keydown', unlock);
   }
 
-  /** Paint blaster: a short wet "pew". */
-  shoot(): void {
+  /** Paint blaster: a short wet "pew". `volume` 0–1 (quieter for other players far away). */
+  shoot(volume = 1): void {
     const ctx = this.ready();
-    if (!ctx) return;
+    if (!ctx || volume <= 0.02) return;
     const t = ctx.currentTime;
-    this.noiseBurst(ctx, t, 0.07, 'bandpass', 2200, 700, 0.35);
-    this.tone(ctx, t, 'triangle', 900, 260, 0.06, 0.12);
+    this.noiseBurst(ctx, t, 0.07, 'bandpass', 2200, 700, 0.35 * volume);
+    this.tone(ctx, t, 'triangle', 900, 260, 0.06, 0.12 * volume);
   }
 
   /** Paint hitting a surface. `volume` 0–1 (quieter when far away). */

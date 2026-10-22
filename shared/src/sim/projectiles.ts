@@ -28,6 +28,9 @@ export interface Projectile {
   dripEvery: number;
   dripRadius: number;
   team: number;
+  /** The role that fired it (index in WEAPON_KINDS) and whether it was aimed. */
+  weapon: number;
+  aimed: boolean;
 }
 
 /** Paint landing somewhere: a shot hitting the map, or a drip falling from a shot. */
@@ -87,6 +90,8 @@ export function createProjectile(
     dripEvery: role.dripEvery,
     dripRadius: role.dripRadius,
     team,
+    weapon,
+    aimed,
   };
   return projectile;
 }

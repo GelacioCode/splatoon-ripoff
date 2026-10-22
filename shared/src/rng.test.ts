@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createRng } from './rng';
+import { createRng, seedFromString } from './rng';
 
 describe('createRng', () => {
   it('repeats the same sequence for the same seed', () => {
@@ -22,5 +22,14 @@ describe('createRng', () => {
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThan(1);
     }
+  });
+});
+
+describe('seedFromString', () => {
+  it('gives the same seed for the same text and different seeds for different text', () => {
+    expect(seedFromString('aB3dE')).toBe(seedFromString('aB3dE'));
+    expect(seedFromString('aB3dE')).not.toBe(seedFromString('aB3dF'));
+    expect(Number.isInteger(seedFromString('x'))).toBe(true);
+    expect(seedFromString('x')).toBeGreaterThanOrEqual(0);
   });
 });

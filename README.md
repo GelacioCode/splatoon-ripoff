@@ -8,7 +8,7 @@ A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming throu
 
 | Address | What you get |
 | --- | --- |
-| `http://localhost:5173` | **Online arena** on the game server (needs `pnpm dev` running). Open it in several tabs or on phones to play together; teams alternate pink and cyan. |
+| `http://localhost:5173` | **Online arena** on the game server (needs `pnpm dev` running). Open it in several tabs or on phones to play together; teams alternate pink and cyan. Everyone sees everyone's shots and paint, and a tab opened later gets the paint already on the map. |
 | `…/?offline` | **Offline sandbox**: play solo without the server (handy for tuning the feel). |
 | `…/?debug` | Online, plus Colyseus' netcode panel: prediction drift and a **latency simulator** to test lag. |
 

@@ -5,20 +5,34 @@ import {
   ArenaState,
   buildSurfaces,
   CONFIG,
+  decodePaintEvents,
   DEFAULT_WEAPON,
+  encodePaintEvents,
+  encodePaintSnapshot,
+  encodeShotEvents,
   MSG_CHOOSE_WEAPON,
+  MSG_PAINT,
+  MSG_PAINT_SNAPSHOT,
+  MSG_REQUEST_PAINT,
+  MSG_SHOTS,
   NetInput,
   NetPlayer,
   PaintGrid,
   parseWeaponChoice,
+  seedFromString,
+  shotEventOf,
   type ArenaJoinOptions,
+  type PaintEvent,
 } from '@paint-rush/shared';
 import {
   createPlayerState,
   PhysicsWorld,
   setWeapon,
   stepPlayer,
+  stepProjectiles,
+  stepWeapon,
   type Collider,
+  type Projectile,
 } from '@paint-rush/shared/sim';
 
 /** Falling below this height puts a player back on their team's spawn pad. */
@@ -44,6 +58,8 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
   private readonly physics = new PhysicsWorld(ARENA.blocks);
   private readonly paint = new PaintGrid(buildSurfaces(ARENA.blocks));
   private readonly bodies = new Map<string, Collider>();
+  /** Every shot in flight. These are the real ones: they decide where paint lands. */
+  private readonly projectiles: Projectile[] = [];
 
   onCreate() {
     this.setFixedTimestep((ctx) => this.step(ctx), CONFIG.net.tickRate);
@@ -57,6 +73,10 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
       const player = this.state.players.get(client.sessionId);
       if (weapon === null || !player || player.weapon === weapon) return;
       setWeapon(player, weapon);
+    },
+    // A player who just joined or reconnected needs all the paint so far.
+    [MSG_REQUEST_PAINT]: (client: Client) => {
+      client.sendBytes(MSG_PAINT_SNAPSHOT, encodePaintSnapshot(this.paint.exportCells()));
     },
   };
 
@@ -93,14 +113,25 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
     this.physics.dispose();
   }
 
-  /** One authoritative tick: one input per player, then the shared rules. */
+  /**
+   * One authoritative tick: one input per player, then the shared rules for movement,
+   * weapons and shots. New shots go to everyone else; the paint that landed goes to everyone.
+   */
   private step(ctx: StepContext): void {
     for (const [sessionId, player] of this.state.players) {
       const body = this.bodies.get(sessionId);
       const input = this.inputs.get(sessionId).next();
       if (!body || !input) continue;
       stepPlayer(this.physics, body, player, input, ctx.dt, this.paint);
+
+      const firstNew = this.projectiles.length;
+      // Seeded by session id: the shooter's screen predicts exactly the same spread.
+      const fired = stepWeapon(player, input, ctx.dt, seedFromString(sessionId), this.projectiles);
+      if (fired > 0) this.sendShots(sessionId, this.projectiles.slice(firstNew));
+
       if (player.y < RESPAWN_BELOW_Y) {
+        // Shot numbers keep counting, so the player's screen never mistakes new shots for old.
+        const { shotCount } = player;
         Object.assign(
           player,
           createPlayerState(
@@ -110,9 +141,41 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
             player.weapon,
           ),
         );
+        player.shotCount = shotCount;
       }
     }
+
+    const landed: PaintEvent[] = [];
+    stepProjectiles(this.physics, this.projectiles, ctx.dt, (hit) =>
+      landed.push({
+        point: hit.point,
+        radius: hit.radius,
+        team: hit.team,
+        drip: hit.drip,
+        direction: hit.direction,
+      }),
+    );
     this.physics.step();
+    if (landed.length > 0) this.applyPaint(landed);
+  }
+
+  /** Tells everyone but the shooter about new shots, so their screens can fly them too. */
+  private sendShots(shooterId: string, shots: Projectile[]): void {
+    const bytes = encodeShotEvents(shots.map(shotEventOf));
+    const shooter = this.clients.getById(shooterId);
+    this.broadcastBytes(MSG_SHOTS, bytes, shooter ? { except: shooter } : {});
+  }
+
+  /**
+   * Paints the server's grid and sends the same paint to everyone. The grid is painted from
+   * the packed values, so every screen's grid ends up exactly like the server's.
+   */
+  private applyPaint(landed: PaintEvent[]): void {
+    const bytes = encodePaintEvents(landed);
+    for (const event of decodePaintEvents(bytes)) {
+      this.paint.splat(event.point, event.radius, event.team);
+    }
+    this.broadcastBytes(MSG_PAINT, bytes, {});
   }
 
   /** Alternates teams by head count (Phase 3 replaces this with lobby auto-balance). */

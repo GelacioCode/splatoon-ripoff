@@ -19,6 +19,7 @@ import {
   lerp,
   PaintGrid,
   weaponStats,
+  type PaintEvent,
   type Vec3,
 } from '@paint-rush/shared';
 import {
@@ -117,6 +118,7 @@ export class World {
   private pixelRatio = 1;
   private aimBlend = 0;
   private swimTrailTimer = 0;
+  private emptyClickCooldown = 0;
   private lastFrameMs = 0;
   private framesCounted = 0;
   private statsSeconds = 0;
@@ -256,19 +258,54 @@ export class World {
     return Math.atan2(target.y - muzzle.y, horizontal);
   }
 
-  /** Paint landing on the map: the gameplay grid, the paint texture, splashes and sound. */
+  /** Paint landing on the map (offline): the grid, the paint texture, splashes and sound. */
   applyPaint(hit: ProjectileHit, listener: Vec3): void {
-    const splats = this.paint.splat(hit.point, hit.radius, hit.team);
+    this.paintAt(hit);
+    this.splash(hit, listener);
+  }
+
+  /** Paint landing on the map: the gameplay grid and the paint texture. */
+  paintAt(paint: PaintEvent): void {
+    const splats = this.paint.splat(paint.point, paint.radius, paint.team);
     // Drips are drawn as thin streaks along the shot's path; real hits as full splats.
-    this.atlas.add(splats, hit.team, hit.drip ? hit.direction : undefined);
+    this.atlas.add(splats, paint.team, paint.drip ? paint.direction : undefined);
+  }
+
+  /** A shot hitting the map: droplets and a splat sound, quieter further away. Drips make neither. */
+  splash(hit: ProjectileHit, listener: Vec3): void {
     if (hit.drip) return;
     this.particles.burst(hit.point, hit.normal, TEAM_COLORS[hit.team], 6);
-    const distance = Math.hypot(
-      hit.point.x - listener.x,
-      hit.point.y - listener.y,
-      hit.point.z - listener.z,
+    this.sfx.splat(this.loudnessAt(hit.point, listener));
+  }
+
+  /** 1 close by, fading to 0.1 at 30 m. */
+  loudnessAt(point: Vec3, listener: Vec3): number {
+    const distance = Math.hypot(point.x - listener.x, point.y - listener.y, point.z - listener.z);
+    return clamp(1 - distance / 30, 0.1, 1);
+  }
+
+  /**
+   * Replaces all paint with a snapshot's cells (joining mid-match). Each painted cell is redrawn
+   * as a soft blob. Returns false if the snapshot doesn't fit this map.
+   */
+  loadPaintSnapshot(cells: Uint8Array): boolean {
+    if (!this.paint.importCells(cells)) return false;
+    this.atlas.clear();
+    const radius = this.paint.cellSize * 0.9;
+    this.paint.forEachPaintedCell((surfaceId, u, v, team) =>
+      this.atlas.addBlob({ surfaceId, u, v, radius }, team),
     );
-    this.sfx.splat(clamp(1 - distance / 30, 0.1, 1));
+    return true;
+  }
+
+  /** The reload chime, and a dry click when pulling the trigger during a reload. */
+  weaponSounds(wasReloading: boolean, s: PlayerState, fire: boolean, dt: number): void {
+    if (wasReloading && s.reloadTimer === 0) this.sfx.reloaded();
+    this.emptyClickCooldown -= dt;
+    if (fire && s.reloadTimer > 0 && this.emptyClickCooldown <= 0) {
+      this.sfx.empty();
+      this.emptyClickCooldown = 0.25;
+    }
   }
 
   /** Splashes and sounds when the local player dives in or out of paint, lands, or swims. */

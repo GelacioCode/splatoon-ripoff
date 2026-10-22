@@ -96,6 +96,52 @@ export class PaintGrid {
     this.painted[1] = 0;
   }
 
+  /** Every cell of every paintable surface in one array (surface order), for snapshots. */
+  exportCells(): Uint8Array {
+    const all = new Uint8Array(this.totalCells);
+    let offset = 0;
+    for (const grid of this.cells) {
+      if (!grid) continue;
+      all.set(grid, offset);
+      offset += grid.length;
+    }
+    return all;
+  }
+
+  /** Replaces all paint with exported cells; returns false (changing nothing) on a size mismatch. */
+  importCells(all: Uint8Array): boolean {
+    if (all.length !== this.totalCells) return false;
+    let offset = 0;
+    this.painted[0] = 0;
+    this.painted[1] = 0;
+    for (const grid of this.cells) {
+      if (!grid) continue;
+      for (let i = 0; i < grid.length; i++) {
+        // Anything that isn't a known team counts as clean.
+        const value = all[offset + i] <= 2 ? all[offset + i] : 0;
+        grid[i] = value;
+        if (value !== 0) this.painted[value - 1]++;
+      }
+      offset += grid.length;
+    }
+    return true;
+  }
+
+  /** Calls `visit` with the center (u, v) of every painted cell and its team. */
+  forEachPaintedCell(visit: (surfaceId: number, u: number, v: number, team: number) => void): void {
+    const size = this.cellSize;
+    this.cells.forEach((grid, surfaceId) => {
+      if (!grid) return;
+      const columns = this.columns[surfaceId];
+      for (let i = 0; i < grid.length; i++) {
+        if (grid[i] === 0) continue;
+        const column = i % columns;
+        const row = (i - column) / columns;
+        visit(surfaceId, (column + 0.5) * size, (row + 0.5) * size, grid[i] - 1);
+      }
+    });
+  }
+
   private paintCircle({ surfaceId, u, v, radius }: SurfaceSplat, team: number): void {
     const grid = this.cells[surfaceId];
     if (!grid) return;
