@@ -28,6 +28,7 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 | Look and aim | Mouse |
 | Jump | Space |
 | Shoot paint (hold to keep firing) | Left mouse button |
+| Reload (2.5 s, no shooting meanwhile) | R |
 | Pause (frees the mouse) | Esc |
 | Live tuning panel (for development) | `` ` `` (backtick, left of 1) |
 

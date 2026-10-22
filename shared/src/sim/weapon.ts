@@ -21,9 +21,11 @@ export function muzzlePosition(s: { x: number; y: number; z: number; yaw: number
 }
 
 /**
- * Fires while the trigger is held and there's ink, and refills ink after a pause. New shots
- * are appended to `out`; returns how many were fired. `seed` identifies the player, so each
- * shot's spread is the same wherever this runs.
+ * Fires while the trigger is held and there's ink. Ink never trickles back: the tank reloads
+ * completely, and nothing fires during a reload. A reload starts when the tank runs dry,
+ * when the player asks for one, or after a long pause without shooting.
+ * New shots are appended to `out`; returns how many were fired. `seed` identifies the
+ * player, so each shot's spread is the same wherever this runs.
  */
 export function stepWeapon(
   s: PlayerState,
@@ -35,7 +37,11 @@ export function stepWeapon(
   const w = CONFIG.weapon;
   s.fireCooldown -= dt;
   let fired = 0;
-  if (input.fire) {
+
+  if (s.reloadTimer > 0) {
+    s.reloadTimer = Math.max(0, s.reloadTimer - dt);
+    if (s.reloadTimer === 0) s.ink = w.inkCapacity;
+  } else if (input.fire) {
     while (s.fireCooldown <= 0 && s.ink >= w.inkPerShot) {
       // A fresh generator per shot, seeded by player and shot number.
       const random = createRng((seed ^ Math.imul(s.shotCount + 1, 0x9e3779b1)) >>> 0);
@@ -52,10 +58,17 @@ export function stepWeapon(
   // Holding the trigger keeps the rhythm; letting go means the next press fires at once.
   if (s.fireCooldown < 0) s.fireCooldown = 0;
 
-  // Holding the trigger (even on an empty tank) counts as shooting: ink only refills once you let go.
   s.sinceShot = input.fire ? 0 : s.sinceShot + dt;
-  if (s.sinceShot >= w.inkRefillDelay) {
-    s.ink = Math.min(w.inkCapacity, s.ink + w.inkRefillRate * dt);
+  if (s.reloadTimer === 0 && s.ink < w.inkCapacity) {
+    const empty = s.ink < w.inkPerShot;
+    const idle = s.sinceShot >= w.autoReloadAfterSeconds;
+    if (empty || idle || input.reload) s.reloadTimer = w.reloadSeconds;
   }
   return fired;
+}
+
+/** Reload progress from 0 (just started) to 1 (done), or null when not reloading. */
+export function reloadProgress(s: PlayerState): number | null {
+  if (s.reloadTimer <= 0) return null;
+  return 1 - s.reloadTimer / CONFIG.weapon.reloadSeconds;
 }

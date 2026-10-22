@@ -107,11 +107,12 @@ export const CONFIG = {
     splatRadius: 0.85,
     /** Ink used per shot, out of a full tank. */
     inkPerShot: 1,
-    inkCapacity: 100,
-    /** Ink refilled per second while not shooting. */
-    inkRefillRate: 12,
-    /** Refilling starts this long after the last shot (s). */
-    inkRefillDelay: 0.5,
+    /** Tank size: 15 shots at 1 ink each (about 2 seconds of fire). */
+    inkCapacity: 15,
+    /** A reload refills the whole tank and takes this long; no shooting meanwhile (s). */
+    reloadSeconds: 2.5,
+    /** A partly empty tank reloads by itself after this long without shooting (s). */
+    autoReloadAfterSeconds: 10,
     /** Where the nozzle sits relative to the feet: up, to the right and forward (m). */
     muzzleHeight: 0.5,
     muzzleRight: 0.44,

@@ -31,8 +31,10 @@ export interface PlayerState {
   ink: number;
   /** Seconds until the next shot may fire. */
   fireCooldown: number;
-  /** Seconds since the last shot (ink refills after a pause). */
+  /** Seconds since the trigger was last held (a long pause triggers a reload). */
   sinceShot: number;
+  /** Seconds of reload left; 0 when not reloading. */
+  reloadTimer: number;
   /** Shots fired so far; seeds each shot's spread so client and server agree. */
   shotCount: number;
 }
@@ -55,6 +57,7 @@ export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
     ink: CONFIG.weapon.inkCapacity,
     fireCooldown: 0,
     sinceShot: 0,
+    reloadTimer: 0,
     shotCount: 0,
   };
 }

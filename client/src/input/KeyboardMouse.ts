@@ -22,6 +22,7 @@ export class KeyboardMouse {
   private jumpPressed = false;
   private fireDown = false;
   private firePressed = false;
+  private reloadPressed = false;
 
   constructor(canvas: HTMLCanvasElement, onLockChange: (locked: boolean) => void) {
     this.canvas = canvas;
@@ -62,6 +63,13 @@ export class KeyboardMouse {
     return pressed;
   }
 
+  /** True once per R press (reload). */
+  consumeReloadPress(): boolean {
+    const pressed = this.reloadPressed;
+    this.reloadPressed = false;
+    return pressed;
+  }
+
   /** True once per Space press, even if it was released before the next tick. */
   consumeJumpPress(): boolean {
     const pressed = this.jumpPressed;
@@ -95,6 +103,7 @@ export class KeyboardMouse {
       event.preventDefault();
       if (!event.repeat) this.jumpPressed = true;
     }
+    if (event.code === 'KeyR' && !event.repeat) this.reloadPressed = true;
     this.keys.add(event.code);
   };
 

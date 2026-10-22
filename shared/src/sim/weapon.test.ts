@@ -1,23 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../config';
-import { createInput } from './input';
-import { createPlayerState } from './playerState';
+import { createInput, type PlayerInput } from './input';
+import { createPlayerState, type PlayerState } from './playerState';
 import type { Projectile } from './projectiles';
 import { stepWeapon } from './weapon';
 
 const DT = 1 / 30;
 
-/** Holds (or doesn't hold) the trigger for `seconds`; returns the shots fired. */
-function hold(state = createPlayerState({ x: 0, y: 0, z: 0 }), fire = true, seconds = 1) {
+function newPlayer(ink: number = CONFIG.weapon.inkCapacity): PlayerState {
+  const state = createPlayerState({ x: 0, y: 0, z: 0 });
+  state.ink = ink;
+  return state;
+}
+
+/** Runs the weapon for `seconds` with the given buttons; returns the shots fired. */
+function run(state: PlayerState, seconds: number, buttons: Partial<PlayerInput> = {}) {
   const shots: Projectile[] = [];
-  const input = { ...createInput(), fire };
+  const input = { ...createInput(), ...buttons };
   for (let t = 0; t < Math.round(seconds / DT); t++) stepWeapon(state, input, DT, 1, shots);
-  return { state, shots };
+  return shots;
 }
 
 describe('stepWeapon', () => {
-  it('fires at the configured rate and uses ink per shot', () => {
-    const { state, shots } = hold();
+  it('fires at the configured rate and never refills while shooting', () => {
+    const state = newPlayer();
+    const shots = run(state, 1, { fire: true });
     const expected = 1 / CONFIG.weapon.fireInterval;
     expect(shots.length).toBeGreaterThanOrEqual(Math.floor(expected));
     expect(shots.length).toBeLessThanOrEqual(Math.ceil(expected) + 1);
@@ -27,22 +34,38 @@ describe('stepWeapon', () => {
     );
   });
 
-  it('stops firing when the tank is empty', () => {
-    const state = createPlayerState({ x: 0, y: 0, z: 0 });
-    state.ink = CONFIG.weapon.inkPerShot * 2;
-    expect(hold(state).shots).toHaveLength(2);
+  it('reloads when the tank runs dry, and blocks shooting until the reload is done', () => {
+    const state = newPlayer(CONFIG.weapon.inkPerShot * 2);
+    // Two shots empty the tank; holding the trigger for the rest of the second fires nothing.
+    expect(run(state, 1, { fire: true })).toHaveLength(2);
+    expect(state.reloadTimer).toBeGreaterThan(0);
+    run(state, CONFIG.weapon.reloadSeconds);
+    expect(state.reloadTimer).toBe(0);
+    expect(state.ink).toBe(CONFIG.weapon.inkCapacity);
   });
 
-  it('refills ink after a short pause', () => {
-    const state = createPlayerState({ x: 0, y: 0, z: 0 });
-    state.ink = 50;
-    hold(state, false, CONFIG.weapon.inkRefillDelay + 1);
-    expect(state.ink).toBeGreaterThan(50 + CONFIG.weapon.inkRefillRate * 0.8);
+  it('reloads by itself after a long pause without shooting', () => {
+    const half = CONFIG.weapon.inkCapacity / 2;
+    const state = newPlayer(half);
+    run(state, CONFIG.weapon.autoReloadAfterSeconds - 1);
+    expect(state.reloadTimer).toBe(0);
+    expect(state.ink).toBe(half);
+    run(state, 1.5);
+    expect(state.reloadTimer).toBeGreaterThan(0);
+    run(state, CONFIG.weapon.reloadSeconds + 0.1);
+    expect(state.ink).toBe(CONFIG.weapon.inkCapacity);
+  });
+
+  it('reloads on request and cannot shoot meanwhile', () => {
+    const state = newPlayer(CONFIG.weapon.inkCapacity / 2);
+    run(state, DT, { reload: true });
+    expect(state.reloadTimer).toBeGreaterThan(0);
+    expect(run(state, 1, { fire: true })).toHaveLength(0);
   });
 
   it('gives the same shot the same spread every time (deterministic)', () => {
-    const a = hold(undefined, true, 0.5).shots;
-    const b = hold(undefined, true, 0.5).shots;
+    const a = run(newPlayer(), 0.5, { fire: true });
+    const b = run(newPlayer(), 0.5, { fire: true });
     expect(a.map((p) => p.vx)).toEqual(b.map((p) => p.vx));
     expect(a.map((p) => p.vy)).toEqual(b.map((p) => p.vy));
   });

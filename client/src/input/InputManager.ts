@@ -21,6 +21,7 @@ export class InputManager {
     const active = km.locked;
     const jumpPressed = km.consumeJumpPress();
     const firePressed = km.consumeFirePress();
+    const reloadPressed = km.consumeReloadPress();
     const input = this.input;
     input.moveX = active ? km.moveX : 0;
     input.moveY = active ? km.moveY : 0;
@@ -28,6 +29,7 @@ export class InputManager {
     input.aimYaw = aimYaw;
     input.aimPitch = aimPitch;
     input.fire = active && (km.fireHeld || firePressed);
+    input.reload = active && reloadPressed;
     input.swim = false;
     return input;
   }

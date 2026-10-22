@@ -44,6 +44,15 @@ export class Sfx {
     this.tone(ctx, ctx.currentTime, 'square', 1300, 1100, 0.03, 0.06);
   }
 
+  /** Rising two-note chime when a reload finishes. */
+  reloaded(): void {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(ctx, t, 'triangle', 520, 700, 0.07, 0.15);
+    this.tone(ctx, t + 0.08, 'triangle', 780, 1050, 0.09, 0.15);
+  }
+
   /** Creates (or wakes up) the audio context; null if the browser has no WebAudio. */
   private ready(): AudioContext | null {
     if (!this.context) {

@@ -134,6 +134,31 @@ body {
   transition: stroke-dashoffset 80ms linear;
 }
 
+.reload-label {
+  position: absolute;
+  left: 50%;
+  top: 72px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgb(29 17 53 / 70%);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  visibility: hidden;
+}
+
+.hud.reloading .reload-label {
+  visibility: visible;
+}
+
+.hud.reloading .ink-fill {
+  opacity: 0.55;
+  transition: none;
+}
+
 .hud.ink-low .ink-fill {
   animation: ink-low 0.5s steps(2) infinite;
 }

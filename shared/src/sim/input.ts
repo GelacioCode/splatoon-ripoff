@@ -10,8 +10,19 @@ export interface PlayerInput {
   fire: boolean;
   swim: boolean;
   jump: boolean;
+  /** Asks for a reload now (ignored while already reloading or when the tank is full). */
+  reload: boolean;
 }
 
 export function createInput(): PlayerInput {
-  return { moveX: 0, moveY: 0, aimYaw: 0, aimPitch: 0, fire: false, swim: false, jump: false };
+  return {
+    moveX: 0,
+    moveY: 0,
+    aimYaw: 0,
+    aimPitch: 0,
+    fire: false,
+    swim: false,
+    jump: false,
+    reload: false,
+  };
 }

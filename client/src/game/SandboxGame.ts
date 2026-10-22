@@ -17,6 +17,7 @@ import {
   initPhysics,
   muzzlePosition,
   PhysicsWorld,
+  reloadProgress,
   stepPlayer,
   stepProjectiles,
   stepWeapon,
@@ -176,6 +177,7 @@ class SandboxGame {
         },
         refillInk: () => {
           this.player.ink = CONFIG.weapon.inkCapacity;
+          this.player.reloadTimer = 0;
         },
       });
     });
@@ -217,7 +219,7 @@ class SandboxGame {
     this.particles.update(dt);
     this.atlas.flush();
     const ink = s.ink / CONFIG.weapon.inkCapacity;
-    this.hud.update(ink, cssColor(TEAM_COLORS[s.team]), ink < 0.2);
+    this.hud.update(ink, reloadProgress(s), cssColor(TEAM_COLORS[s.team]), ink < 0.2);
     this.view.update(this.renderFeet, dt, this.raycastDistance);
     this.renderer.render(this.scene, this.view.camera);
     this.updateStats(dt);
@@ -230,10 +232,13 @@ class SandboxGame {
     const input = this.input.sampleTick(this.view.yaw, this.aimPitch());
     stepPlayer(this.physics, this.body, s, input, dt);
 
+    const wasReloading = s.reloadTimer > 0;
     const fired = stepWeapon(s, input, dt, PLAYER_SEED, this.projectiles);
     if (fired > 0) this.sfx.shoot();
+    if (wasReloading && s.reloadTimer === 0) this.sfx.reloaded();
+    // A dry click while you pull the trigger during a reload, so it's clear why nothing fires.
     this.emptyClickCooldown -= dt;
-    if (input.fire && s.ink < CONFIG.weapon.inkPerShot && this.emptyClickCooldown <= 0) {
+    if (input.fire && s.reloadTimer > 0 && this.emptyClickCooldown <= 0) {
       this.sfx.empty();
       this.emptyClickCooldown = 0.25;
     }
