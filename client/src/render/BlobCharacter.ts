@@ -8,8 +8,9 @@ import {
   MeshToonMaterial,
   SphereGeometry,
   type DataTexture,
+  type Object3D,
 } from 'three';
-import { clamp, CONFIG, dampAngle } from '@paint-rush/shared';
+import { clamp, CONFIG, damp, dampAngle, lerp } from '@paint-rush/shared';
 import { OUTLINE_COLOR } from './palette';
 
 /** The parts of a player's state the animation needs, already interpolated for this frame. */
@@ -22,14 +23,24 @@ export interface CharacterPose {
   vy: number;
   vz: number;
   grounded: boolean;
+  /** 0 = standing, 1 = melted into a puddle. */
+  swimBlend: number;
+  /** Hidden in own paint: the puddle sinks almost flat. */
+  submerged: boolean;
+  /** Swimming up a painted wall: the puddle stands up against it. */
+  climbing: boolean;
 }
 
 const BODY_RADIUS = 0.45;
 const BODY_CENTER_Y = 0.56;
+/** Puddle shape: height and width relative to the standing body. */
+const PUDDLE_HEIGHT = 0.28;
+const SUBMERGED_HEIGHT = 0.1;
+const PUDDLE_WIDTH = 1.45;
 
 /**
  * The paint-blob creature: a round gummy body with stubby hands and feet, googly eyes and a
- * little blaster, all built from simple meshes. It faces −Z.
+ * little blaster, all built from simple meshes. It faces −Z, and melts into a puddle to swim.
  */
 export class BlobCharacter {
   readonly root = new Group();
@@ -38,12 +49,16 @@ export class BlobCharacter {
   private readonly leftFoot: Mesh;
   private readonly rightFoot: Mesh;
   private readonly skin: MeshToonMaterial;
+  /** Eyes, hands, blaster and feet: hidden while melted. */
+  private readonly details: Object3D[] = [];
   private walkPhase = 0;
   private squash = 0;
   private squashVelocity = 0;
   private wasGrounded = true;
   private lastVy = 0;
   private yaw = 0;
+  private puddleHeight = PUDDLE_HEIGHT;
+  private climbTilt = 0;
 
   constructor(color: number, toonRamp: DataTexture) {
     const skin = new MeshToonMaterial({ color, gradientMap: toonRamp });
@@ -71,6 +86,7 @@ export class BlobCharacter {
       pupil.position.z = -0.07;
       eye.add(pupil);
       this.body.add(eye);
+      this.details.push(eye);
     }
 
     const handGeometry = new SphereGeometry(0.1, 12, 8);
@@ -78,16 +94,19 @@ export class BlobCharacter {
       const hand = new Mesh(handGeometry, skin);
       hand.position.set(0.44 * side, BODY_CENTER_Y - 0.1, -0.12);
       this.body.add(hand);
+      this.details.push(hand);
     }
     const blaster = new Mesh(new CylinderGeometry(0.06, 0.08, 0.44, 12), ink);
     blaster.rotation.x = Math.PI / 2;
     blaster.position.set(0.44, BODY_CENTER_Y - 0.06, -0.34);
     this.body.add(blaster);
+    this.details.push(blaster);
 
     const footGeometry = new SphereGeometry(0.12, 12, 8);
     this.leftFoot = new Mesh(footGeometry, skin);
     this.rightFoot = new Mesh(footGeometry, skin);
     for (const foot of [this.leftFoot, this.rightFoot]) foot.scale.set(1, 0.6, 1.3);
+    this.details.push(this.leftFoot, this.rightFoot);
 
     this.root.add(this.body, this.leftFoot, this.rightFoot);
   }
@@ -114,11 +133,22 @@ export class BlobCharacter {
     this.squashVelocity += (-180 * this.squash - 12 * this.squashVelocity) * t;
     this.squash += this.squashVelocity * t;
 
-    // Stretch tall while rising, squash wide on landing; keep the volume roughly constant.
+    // Standing shape: stretch tall while rising, squash wide on landing (volume stays similar).
     const stretch = pose.grounded ? 0 : clamp(pose.vy * 0.02, -0.12, 0.18);
-    const scaleY = clamp(1 + stretch - this.squash, 0.6, 1.4);
-    const scaleXZ = 1 / Math.sqrt(scaleY);
+    const standY = clamp(1 + stretch - this.squash, 0.6, 1.4);
+    const standXZ = 1 / Math.sqrt(standY);
+    // Puddle shape: flat and wide; nearly flat when hidden in own paint.
+    this.puddleHeight = damp(
+      this.puddleHeight,
+      pose.submerged ? SUBMERGED_HEIGHT : PUDDLE_HEIGHT,
+      14,
+      t,
+    );
+    const melt = pose.swimBlend;
+    const scaleY = lerp(standY, this.puddleHeight, melt);
+    const scaleXZ = lerp(standXZ, PUDDLE_WIDTH, melt);
     this.body.scale.set(scaleXZ, scaleY, scaleXZ);
+    for (const part of this.details) part.visible = melt < 0.5;
 
     // Velocity in the character's own frame (−Z is forward) drives the walk cycle and lean.
     const sin = Math.sin(this.yaw);
@@ -136,10 +166,19 @@ export class BlobCharacter {
     const rightLift = pose.grounded ? Math.max(0, -step) : 0.05;
     this.leftFoot.position.set(-0.2, 0.07 + leftLift, swing);
     this.rightFoot.position.set(0.2, 0.07 + rightLift, -swing);
-    this.body.position.y = pose.grounded ? Math.abs(Math.sin(this.walkPhase)) * 0.05 * stride : 0;
+    const bob = pose.grounded ? Math.abs(Math.sin(this.walkPhase)) * 0.05 * stride : 0;
 
-    // Lean into the direction of travel.
-    this.body.rotation.x = clamp(localZ * 0.03, -0.2, 0.2);
-    this.body.rotation.z = clamp(-localX * 0.03, -0.2, 0.2);
+    // Climbing: the puddle stands up flat against the wall in front.
+    this.climbTilt = damp(this.climbTilt, pose.climbing ? 1 : 0, 18, t);
+    this.body.position.set(0, lerp(bob * (1 - melt), 0.45, this.climbTilt), -0.3 * this.climbTilt);
+
+    // Lean into the direction of travel (not while melted).
+    const lean = 1 - melt;
+    this.body.rotation.x = lerp(
+      clamp(localZ * 0.03, -0.2, 0.2) * lean,
+      Math.PI / 2,
+      this.climbTilt,
+    );
+    this.body.rotation.z = clamp(-localX * 0.03, -0.2, 0.2) * lean;
   }
 }

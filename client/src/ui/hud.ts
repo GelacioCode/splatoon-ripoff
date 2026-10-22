@@ -19,7 +19,18 @@ export function createHud() {
   document.body.appendChild(hud);
   const fill = hud.querySelector<SVGCircleElement>('.ink-fill');
 
+  // Screen edges tint toward the enemy's color as health drops.
+  const vignette = document.createElement('div');
+  vignette.className = 'damage-vignette';
+  document.body.appendChild(vignette);
+
   return {
+    /** `health` from 0 to 1; `enemyColor` tints the edges while hurt. */
+    updateHealth(health: number, enemyColor: string): void {
+      vignette.style.opacity = String(Math.min(1, (1 - health) * 1.6));
+      vignette.style.setProperty('--damage-color', enemyColor);
+    },
+
     /**
      * `ink` from 0 (empty) to 1 (full). `reload` is the reload progress (0–1), or null when
      * not reloading. `low` makes the ring flash.

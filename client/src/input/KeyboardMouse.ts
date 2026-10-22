@@ -51,6 +51,11 @@ export class KeyboardMouse {
     return this.keys.has('Space');
   }
 
+  /** Shift held: swim (melt into a puddle). */
+  get swimHeld(): boolean {
+    return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+  }
+
   /** Left mouse button held. */
   get fireHeld(): boolean {
     return this.fireDown;

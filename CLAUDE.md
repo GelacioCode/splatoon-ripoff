@@ -101,8 +101,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - [x] Phase 0: monorepo scaffold. Verified 2026-10-23: `pnpm install`, typecheck, lint, Prettier, 14 unit tests, the browser scene (WebGL2, Rapier 0.21.0, server connected, RTT shown) and `/health`. Not yet reported: the two-tab player count and the automatic rejoin after a server restart.
 - [ ] Phase 1: offline sandbox, split into milestones with a test stop after each:
   - [x] 1A walk the arena (user confirmed working and pushed, 2026-10-23)
-  - [ ] 1B paint + shooting (code written 2026-10-23, waiting for the user's test results)
-  - [ ] 1C swim, climb, enemy paint
+  - [x] 1B paint + shooting, plus the reload system and 15-shot tank (user confirmed and pushed)
+  - [ ] 1C swim, climb, enemy paint (code written 2026-10-23, waiting for the user's test results)
   - [ ] 1D phones + performance
   - [ ] 1E feel polish
 - [ ] Phase 2: networking
@@ -128,4 +128,10 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - Paint: `PaintGrid` (shared, 0.5 m cells, team per cell) is the gameplay truth. The client's `PaintAtlas` is one 2048² render target with a region per paintable surface (`atlasPacker`). Its texels store coverage in red and team in green, and the map shader turns that into glossy paint. Splats are spheres projected onto every nearby surface (`projectSplat`).
 - Shots: `stepWeapon` + `stepProjectiles` in `shared/src/sim`. The spread is seeded by player seed and shot number, so it's deterministic. The client corrects aim pitch so shots go from the nozzle to the crosshair target.
 - Ink/reload (user decision, 2026-10-23): ink never trickles back while shooting. A full reload takes 2.5 s and nothing fires during it. It starts when the tank is empty, after 10 s without shooting, or on R. Swimming in own paint will still refill ink fast (1C).
+- Swim/climb (1C):
+  - `stepPlayer` takes an optional `PaintGrid` and reads the paint under the feet (short ray down) and on a wall ahead (short ray along the move direction).
+  - `swimBlend` 0→1 over `transformTime`.
+  - `submerged` = puddle form on own paint, or climbing own-painted wall: fast, hidden, ink refills, and a full tank ends a reload.
+  - No shooting unless `swimBlend` is 0.
+  - Enemy paint: slow, lower jump, damage down to the 40 HP floor; regen after `regenDelay`.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

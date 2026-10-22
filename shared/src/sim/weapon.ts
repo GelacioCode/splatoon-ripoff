@@ -41,7 +41,8 @@ export function stepWeapon(
   if (s.reloadTimer > 0) {
     s.reloadTimer = Math.max(0, s.reloadTimer - dt);
     if (s.reloadTimer === 0) s.ink = w.inkCapacity;
-  } else if (input.fire) {
+  } else if (input.fire && s.swimBlend === 0) {
+    // Only while fully standing: no shooting as a puddle or mid-transform.
     while (s.fireCooldown <= 0 && s.ink >= w.inkPerShot) {
       // A fresh generator per shot, seeded by player and shot number.
       const random = createRng((seed ^ Math.imul(s.shotCount + 1, 0x9e3779b1)) >>> 0);
@@ -57,6 +58,12 @@ export function stepWeapon(
   }
   // Holding the trigger keeps the rhythm; letting go means the next press fires at once.
   if (s.fireCooldown < 0) s.fireCooldown = 0;
+
+  // Hiding in your own paint refills the tank quickly; a full tank also ends any reload.
+  if (s.submerged) {
+    s.ink = Math.min(w.inkCapacity, s.ink + CONFIG.swim.inkRefillRate * dt);
+    if (s.ink >= w.inkCapacity) s.reloadTimer = 0;
+  }
 
   s.sinceShot = input.fire ? 0 : s.sinceShot + dt;
   if (s.reloadTimer === 0 && s.ink < w.inkCapacity) {

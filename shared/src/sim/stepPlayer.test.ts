@@ -1,7 +1,10 @@
 import type { Collider } from '@dimforge/rapier3d-compat';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CONFIG } from '../config';
+import { buildSurfaces } from '../maps/surfaces';
 import type { BlockDef } from '../maps/types';
+import type { Vec3 } from '../math3d';
+import { PaintGrid } from '../paint/paintGrid';
 import { initPhysics } from './index';
 import { createInput, type PlayerInput } from './input';
 import { PhysicsWorld } from './physicsWorld';
@@ -20,8 +23,15 @@ function box([cx, cy, cz]: number[], [sx, sy, sz]: number[]): BlockDef {
   };
 }
 
-/** A big floor (top at y = 0) and a 1 m tall platform covering −3…3 on X and Z. */
-const BLOCKS = [box([0, -0.5, 0], [40, 1, 40]), box([0, 0.5, 0], [6, 1, 6])];
+/**
+ * A big floor (top at y = 0), a 1 m tall platform covering −3…3 on X and Z, and a 4 m tall
+ * wall whose climbable face is at x = 14.5.
+ */
+const BLOCKS = [
+  box([0, -0.5, 0], [40, 1, 40]),
+  box([0, 0.5, 0], [6, 1, 6]),
+  box([15, 2, 0], [1, 4, 6]),
+];
 
 let physics: PhysicsWorld;
 
@@ -44,8 +54,19 @@ function spawn(x: number, y: number, z: number): TestPlayer {
   return { state, body: physics.createCharacter(state) };
 }
 
-function step(player: TestPlayer, input: Partial<PlayerInput> = {}): void {
-  stepPlayer(physics, player.body, player.state, { ...createInput(), ...input }, DT);
+function step(player: TestPlayer, input: Partial<PlayerInput> = {}, paint?: PaintGrid): void {
+  stepPlayer(physics, player.body, player.state, { ...createInput(), ...input }, DT, paint);
+}
+
+/** A paint grid for the test map with some splats on it: [center, radius, team]. */
+function paintedGrid(...splats: [Vec3, number, number][]): PaintGrid {
+  const grid = new PaintGrid(buildSurfaces(BLOCKS));
+  for (const [center, radius, team] of splats) grid.splat(center, radius, team);
+  return grid;
+}
+
+function speed(player: TestPlayer): number {
+  return Math.hypot(player.state.vx, player.state.vz);
 }
 
 /** Puts a player on the platform and walks it off the +X edge; returns it on its first tick in the air. */
@@ -122,5 +143,62 @@ describe('stepPlayer', () => {
       if (player.state.vy > 0) jumped = true;
     }
     expect(jumped).toBe(false);
+  });
+});
+
+describe('stepPlayer with paint', () => {
+  const h = CONFIG.health;
+
+  it('swims through its own paint faster than it can walk', () => {
+    const paint = paintedGrid([{ x: -10, y: 0, z: 14 }, 6, 0]);
+    const player = spawn(-10, 0.05, 16);
+    for (let i = 0; i < 6; i++) step(player, { swim: true }, paint);
+    for (let i = 0; i < 12; i++) step(player, { swim: true, moveY: 1 }, paint);
+    expect(player.state.submerged).toBe(true);
+    expect(speed(player)).toBeGreaterThan(CONFIG.movement.walkSpeed);
+  });
+
+  it('is a slow puddle outside its own paint', () => {
+    const paint = paintedGrid();
+    const player = spawn(12, 0.05, -12);
+    for (let i = 0; i < 6; i++) step(player, { swim: true }, paint);
+    for (let i = 0; i < 15; i++) step(player, { swim: true, moveY: 1 }, paint);
+    expect(player.state.submerged).toBe(false);
+    expect(speed(player)).toBeLessThanOrEqual(CONFIG.swim.puddleSpeed + 1e-6);
+  });
+
+  it('is slowed and hurt by enemy paint, but never pushed below the HP floor', () => {
+    const paint = paintedGrid([{ x: 8, y: 0, z: 14 }, 5, 1]);
+    const player = spawn(8, 0.05, 14);
+    for (let i = 0; i < 300; i++) step(player, {}, paint);
+    expect(player.state.hp).toBe(h.enemyPaintMinHp);
+    for (let i = 0; i < 15; i++) step(player, { moveY: 1 }, paint);
+    const slowed = CONFIG.movement.walkSpeed * h.enemyPaintSpeedMultiplier;
+    expect(speed(player)).toBeLessThanOrEqual(slowed + 1e-6);
+  });
+
+  it('regenerates health after a pause', () => {
+    const paint = paintedGrid();
+    const player = spawn(-12, 0.05, 4);
+    player.state.hp = 50;
+    for (let i = 0; i < Math.floor((h.regenDelay - 0.2) / DT); i++) step(player, {}, paint);
+    expect(player.state.hp).toBe(50);
+    for (let i = 0; i < Math.round(1.2 / DT); i++) step(player, {}, paint);
+    expect(player.state.hp).toBeGreaterThan(50 + h.regenPerSecond * 0.8);
+  });
+
+  it('climbs a wall painted in its color, but not a bare one', () => {
+    const climbHeight = (paint: PaintGrid) => {
+      const player = spawn(13.4, 0.05, 0);
+      for (let i = 0; i < 6; i++) step(player, { swim: true }, paint);
+      let highest = player.state.y;
+      for (let i = 0; i < 20; i++) {
+        step(player, { swim: true, moveX: 1 }, paint);
+        highest = Math.max(highest, player.state.y);
+      }
+      return highest;
+    };
+    expect(climbHeight(paintedGrid([{ x: 14.5, y: 1.5, z: 0 }, 3, 0]))).toBeGreaterThan(1.5);
+    expect(climbHeight(paintedGrid())).toBeLessThan(0.3);
   });
 });

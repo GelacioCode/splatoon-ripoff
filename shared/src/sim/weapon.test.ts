@@ -63,6 +63,20 @@ describe('stepWeapon', () => {
     expect(run(state, 1, { fire: true })).toHaveLength(0);
   });
 
+  it('refills quickly while hidden in own paint, which also ends a reload', () => {
+    const state = newPlayer(0);
+    state.submerged = true;
+    run(state, CONFIG.weapon.inkCapacity / CONFIG.swim.inkRefillRate + 0.1);
+    expect(state.ink).toBe(CONFIG.weapon.inkCapacity);
+    expect(state.reloadTimer).toBe(0);
+  });
+
+  it('cannot shoot as a puddle', () => {
+    const state = newPlayer();
+    state.swimBlend = 1;
+    expect(run(state, 1, { fire: true })).toHaveLength(0);
+  });
+
   it('gives the same shot the same spread every time (deterministic)', () => {
     const a = run(newPlayer(), 0.5, { fire: true });
     const b = run(newPlayer(), 0.5, { fire: true });

@@ -30,7 +30,7 @@ export class InputManager {
     input.aimPitch = aimPitch;
     input.fire = active && (km.fireHeld || firePressed);
     input.reload = active && reloadPressed;
-    input.swim = false;
+    input.swim = active && km.swimHeld;
     return input;
   }
 }

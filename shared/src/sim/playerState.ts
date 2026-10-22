@@ -37,6 +37,17 @@ export interface PlayerState {
   reloadTimer: number;
   /** Shots fired so far; seeds each shot's spread so client and server agree. */
   shotCount: number;
+  hp: number;
+  /** Seconds since the player last took damage (health regenerates after a pause). */
+  sinceDamage: number;
+  /** 0 = standing, 1 = fully melted into a puddle (swim form). */
+  swimBlend: number;
+  /** Hidden in own paint (swimming on it, or climbing it): fast, and ink refills. */
+  submerged: boolean;
+  /** Swimming up a wall painted in the player's color. */
+  climbing: boolean;
+  /** Team whose paint is under the player's feet, or −1. */
+  groundTeam: number;
 }
 
 export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
@@ -59,5 +70,11 @@ export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
     sinceShot: 0,
     reloadTimer: 0,
     shotCount: 0,
+    hp: CONFIG.player.maxHp,
+    sinceDamage: 0,
+    swimBlend: 0,
+    submerged: false,
+    climbing: false,
+    groundTeam: -1,
   };
 }

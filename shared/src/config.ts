@@ -89,6 +89,40 @@ export const CONFIG = {
     followSharpness: 18,
     /** How far the camera stays off walls when they push it closer (m). */
     collisionPadding: 0.25,
+    /** Extra field of view while swimming fast, for a sense of speed (degrees). */
+    swimFovBoost: 8,
+  },
+  swim: {
+    /** Time to melt into a puddle or pop back out (s). */
+    transformTime: 0.15,
+    /** Top speed swimming through your own paint (m/s). */
+    swimSpeed: 11,
+    /** How quickly you reach swimming speed (m/s²). */
+    swimAccel: 80,
+    /** Top speed as a puddle outside your own paint (m/s). */
+    puddleSpeed: 3,
+    /** Upward speed when jumping out of your own paint (m/s). */
+    swimJumpSpeed: 11,
+    /** Climbing speed up a wall painted in your color (m/s). */
+    climbSpeed: 7,
+    /** Upward pop when you reach the top of a painted wall (m/s). */
+    climbTopPop: 6,
+    /** Ink refilled per second while hidden in your own paint. */
+    inkRefillRate: 10,
+  },
+  health: {
+    /** Enemy paint multiplies your speed by this. */
+    enemyPaintSpeedMultiplier: 0.45,
+    /** Enemy paint multiplies your jump by this. */
+    enemyPaintJumpMultiplier: 0.7,
+    /** Damage per second from standing in enemy paint. */
+    enemyPaintDamagePerSecond: 18,
+    /** Enemy paint alone can't take you below this HP. */
+    enemyPaintMinHp: 40,
+    /** Health starts coming back this long after the last damage (s). */
+    regenDelay: 1.5,
+    /** Health regained per second. */
+    regenPerSecond: 30,
   },
   weapon: {
     /** Seconds between shots while the trigger is held (0.125 = 8 shots per second). */

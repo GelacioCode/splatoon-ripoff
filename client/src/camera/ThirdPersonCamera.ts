@@ -1,7 +1,9 @@
 import { PerspectiveCamera, Vector3 } from 'three';
-import { clamp, CONFIG, damp, type Vec3 } from '@paint-rush/shared';
+import { clamp, CONFIG, damp, lerp, type Vec3 } from '@paint-rush/shared';
 
 const DEG_TO_RAD = Math.PI / 180;
+/** Orbit point height above the feet when melted into a puddle (m). */
+const PUDDLE_PIVOT_HEIGHT = 0.8;
 
 /** Casts a ray against the map and returns the hit distance, or null when nothing is hit. */
 export type RaycastDistance = (origin: Vec3, direction: Vec3, maxDistance: number) => number | null;
@@ -44,12 +46,15 @@ export class ThirdPersonCamera {
     this.camera.updateProjectionMatrix();
   }
 
-  /** Places the camera behind the player's (interpolated) feet position. */
-  update(feet: Vector3, dt: number, raycast: RaycastDistance): void {
+  /**
+   * Places the camera behind the player's (interpolated) feet position. `swimBlend` (0–1)
+   * lowers the view for the puddle form; `fovBoost` widens the view (degrees), e.g. at speed.
+   */
+  update(feet: Vector3, dt: number, raycast: RaycastDistance, swimBlend = 0, fovBoost = 0): void {
     const c = CONFIG.camera;
 
     // Orbit a point above the feet, smoothed a little so landings don't jolt the view.
-    const pivotY = feet.y + c.pivotHeight;
+    const pivotY = feet.y + lerp(c.pivotHeight, PUDDLE_PIVOT_HEIGHT, swimBlend);
     if (this.hasPivot) {
       this.pivot.set(
         damp(this.pivot.x, feet.x, c.followSharpness, dt),
@@ -85,8 +90,9 @@ export class ThirdPersonCamera {
 
     this.camera.position.copy(this.pivot).addScaledVector(this.toCamera, this.boom);
     this.camera.rotation.set(this.pitch, this.yaw, 0);
-    if (this.camera.fov !== c.fov) {
-      this.camera.fov = c.fov;
+    const fov = damp(this.camera.fov, c.fov + fovBoost, 8, dt);
+    if (Math.abs(fov - this.camera.fov) > 1e-3) {
+      this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
     }
   }

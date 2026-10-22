@@ -159,6 +159,19 @@ body {
   transition: none;
 }
 
+.damage-vignette {
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    color-mix(in srgb, var(--damage-color, #22d3ee) 70%, transparent) 100%
+  );
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
+
 .hud.ink-low .ink-fill {
   animation: ink-low 0.5s steps(2) infinite;
 }

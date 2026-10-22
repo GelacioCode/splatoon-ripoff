@@ -44,6 +44,24 @@ export class Sfx {
     this.tone(ctx, ctx.currentTime, 'square', 1300, 1100, 0.03, 0.06);
   }
 
+  /** Diving into your own paint: a falling bubbly "bloop". */
+  swimIn(): void {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(ctx, t, 'sine', 520, 160, 0.14, 0.25);
+    this.noiseBurst(ctx, t, 0.12, 'lowpass', 1800, 400, 0.25);
+  }
+
+  /** Popping back out of the paint: a rising "plip". */
+  swimOut(): void {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(ctx, t, 'sine', 220, 640, 0.1, 0.22);
+    this.noiseBurst(ctx, t, 0.08, 'bandpass', 900, 2400, 0.18);
+  }
+
   /** Rising two-note chime when a reload finishes. */
   reloaded(): void {
     const ctx = this.ready();

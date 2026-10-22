@@ -107,6 +107,7 @@ class SandboxGame {
   private readonly renderFeet = new Vector3();
   private readonly shadowNormal = new Vector3();
   private emptyClickCooldown = 0;
+  private swimTrailTimer = 0;
   private lastFrameMs = 0;
   private framesCounted = 0;
   private statsSeconds = 0;
@@ -213,6 +214,9 @@ class SandboxGame {
       vy: s.vy,
       vz: s.vz,
       grounded: s.grounded,
+      swimBlend: s.swimBlend,
+      submerged: s.submerged,
+      climbing: s.climbing,
     });
     this.updateShadow();
     this.projectileView.update(this.projectiles, alpha);
@@ -220,7 +224,11 @@ class SandboxGame {
     this.atlas.flush();
     const ink = s.ink / CONFIG.weapon.inkCapacity;
     this.hud.update(ink, reloadProgress(s), cssColor(TEAM_COLORS[s.team]), ink < 0.2);
-    this.view.update(this.renderFeet, dt, this.raycastDistance);
+    this.hud.updateHealth(s.hp / CONFIG.player.maxHp, cssColor(TEAM_COLORS[1 - s.team]));
+    // Widen the view while swimming fast, for a sense of speed.
+    const swimSpeedRatio = clamp(Math.hypot(s.vx, s.vz) / CONFIG.swim.swimSpeed, 0, 1);
+    const fovBoost = s.submerged ? CONFIG.camera.swimFovBoost * swimSpeedRatio : 0;
+    this.view.update(this.renderFeet, dt, this.raycastDistance, s.swimBlend, fovBoost);
     this.renderer.render(this.scene, this.view.camera);
     this.updateStats(dt);
   };
@@ -230,7 +238,9 @@ class SandboxGame {
     const dt = this.loop.stepSeconds;
     this.previousFeet.set(s.x, s.y, s.z);
     const input = this.input.sampleTick(this.view.yaw, this.aimPitch());
-    stepPlayer(this.physics, this.body, s, input, dt);
+    const wasSubmerged = s.submerged;
+    stepPlayer(this.physics, this.body, s, input, dt, this.paint);
+    this.swimEffects(wasSubmerged, dt);
 
     const wasReloading = s.reloadTimer > 0;
     const fired = stepWeapon(s, input, dt, PLAYER_SEED, this.projectiles);
@@ -247,6 +257,24 @@ class SandboxGame {
     this.physics.step();
     if (s.y < RESPAWN_BELOW_Y) this.respawn();
     this.currentFeet.set(s.x, s.y, s.z);
+  }
+
+  /** Splashes and sounds for diving into and out of your own paint, plus a ripple trail. */
+  private swimEffects(wasSubmerged: boolean, dt: number): void {
+    const s = this.player;
+    const feet = { x: s.x, y: s.y + 0.05, z: s.z };
+    const up = { x: 0, y: 1, z: 0 };
+    const color = TEAM_COLORS[s.team];
+    if (s.submerged !== wasSubmerged) {
+      this.particles.burst(feet, up, color, 10, 3.5);
+      if (s.submerged) this.sfx.swimIn();
+      else this.sfx.swimOut();
+    }
+    this.swimTrailTimer -= dt;
+    if (s.submerged && Math.hypot(s.vx, s.vz) > 2 && this.swimTrailTimer <= 0) {
+      this.particles.burst(feet, up, color, 2, 1.8);
+      this.swimTrailTimer = 0.06;
+    }
   }
 
   /**
@@ -294,7 +322,8 @@ class SandboxGame {
   private updateShadow(): void {
     const feet = this.renderFeet;
     const hit = this.physics.raycast({ x: feet.x, y: feet.y + 0.3, z: feet.z }, DOWN, 30);
-    this.shadow.visible = hit !== null;
+    // A puddle lies on the floor already, so it needs no shadow.
+    this.shadow.visible = hit !== null && this.player.swimBlend < 0.5;
     if (!hit) return;
     this.shadowNormal.set(hit.normal.x, hit.normal.y, hit.normal.z);
     this.shadow.quaternion.setFromUnitVectors(UP, this.shadowNormal);

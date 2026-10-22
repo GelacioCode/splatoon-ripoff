@@ -67,6 +67,28 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   weapon.add(w, 'reloadSeconds', 0.2, 6, 0.1).name('reload time (s)');
   weapon.add(w, 'autoReloadAfterSeconds', 1, 30, 0.5).name('auto-reload after idle (s)');
 
+  const sw = CONFIG.swim;
+  const swim = gui.addFolder('Swim');
+  swim.add(sw, 'transformTime', 0, 0.6, 0.01).name('melt time (s)');
+  swim.add(sw, 'swimSpeed', 3, 20, 0.1).name('swim speed (m/s)');
+  swim.add(sw, 'swimAccel', 10, 200, 1).name('swim acceleration');
+  swim.add(sw, 'puddleSpeed', 0.5, 8, 0.1).name('puddle speed off paint');
+  swim.add(sw, 'swimJumpSpeed', 3, 20, 0.1).name('jump out of paint');
+  swim.add(sw, 'climbSpeed', 1, 15, 0.1).name('wall climb speed');
+  swim.add(sw, 'climbTopPop', 0, 12, 0.1).name('pop at wall top');
+  swim.add(sw, 'inkRefillRate', 1, 40, 0.5).name('ink refill / s in paint');
+
+  const h = CONFIG.health;
+  const health = gui.addFolder('Enemy paint & health');
+  health.add(h, 'enemyPaintSpeedMultiplier', 0.1, 1, 0.05).name('speed in enemy paint');
+  health.add(h, 'enemyPaintJumpMultiplier', 0.1, 1, 0.05).name('jump in enemy paint');
+  health.add(h, 'enemyPaintDamagePerSecond', 0, 60, 1).name('damage / s');
+  health.add(h, 'enemyPaintMinHp', 0, 100, 1).name('HP floor');
+  health.add(h, 'regenDelay', 0, 5, 0.1).name('regen delay (s)');
+  health.add(h, 'regenPerSecond', 0, 100, 1).name('regen / s');
+  swim.close();
+  health.close();
+
   const simulation = gui.addFolder('Simulation');
   simulation.add(CONFIG.net, 'tickRate', 10, 120, 1).name('tick rate (Hz)');
 
@@ -86,6 +108,8 @@ function copyTuning(button: Controller): void {
       movement: CONFIG.movement,
       camera: CONFIG.camera,
       weapon: CONFIG.weapon,
+      swim: CONFIG.swim,
+      health: CONFIG.health,
       net: { tickRate: CONFIG.net.tickRate },
     },
     null,
