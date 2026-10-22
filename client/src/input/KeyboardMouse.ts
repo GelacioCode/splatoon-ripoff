@@ -20,6 +20,8 @@ export class KeyboardMouse {
   private lookX = 0;
   private lookY = 0;
   private jumpPressed = false;
+  private fireDown = false;
+  private firePressed = false;
 
   constructor(canvas: HTMLCanvasElement, onLockChange: (locked: boolean) => void) {
     this.canvas = canvas;
@@ -28,6 +30,8 @@ export class KeyboardMouse {
     window.addEventListener('keyup', this.handleKeyUp);
     window.addEventListener('blur', this.releaseAll);
     document.addEventListener('mousemove', this.handleMouseMove);
+    document.addEventListener('mousedown', this.handleMouseDown);
+    document.addEventListener('mouseup', this.handleMouseUp);
     document.addEventListener('pointerlockchange', this.handleLockChange);
     canvas.addEventListener('click', () => {
       if (!this.locked) this.requestLock();
@@ -44,6 +48,18 @@ export class KeyboardMouse {
 
   get jumpHeld(): boolean {
     return this.keys.has('Space');
+  }
+
+  /** Left mouse button held. */
+  get fireHeld(): boolean {
+    return this.fireDown;
+  }
+
+  /** True once per click, even if it was released before the next tick. */
+  consumeFirePress(): boolean {
+    const pressed = this.firePressed;
+    this.firePressed = false;
+    return pressed;
   }
 
   /** True once per Space press, even if it was released before the next tick. */
@@ -99,9 +115,22 @@ export class KeyboardMouse {
     this.lookY += event.movementY;
   };
 
+  private readonly handleMouseDown = (event: MouseEvent): void => {
+    if (!this.locked || event.button !== 0) return;
+    this.fireDown = true;
+    this.firePressed = true;
+  };
+
+  private readonly handleMouseUp = (event: MouseEvent): void => {
+    if (event.button === 0) this.fireDown = false;
+  };
+
   private readonly handleLockChange = (): void => {
     this.locked = document.pointerLockElement === this.canvas;
-    if (!this.locked) this.keys.clear();
+    if (!this.locked) {
+      this.keys.clear();
+      this.fireDown = false;
+    }
     this.onLockChange(this.locked);
   };
 }

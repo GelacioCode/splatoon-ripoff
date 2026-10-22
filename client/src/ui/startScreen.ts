@@ -6,7 +6,7 @@ export function createStartScreen(onStart: () => void) {
     <div class="start-card">
       <h1>Paint Rush</h1>
       <p class="start-cta">Click to play</p>
-      <p class="start-keys">WASD move · Mouse look · Space jump · Esc pause · \` tuning panel</p>
+      <p class="start-keys">WASD move · Mouse look · Click shoot · Space jump · Esc pause · \` tuning panel</p>
     </div>`;
   screen.addEventListener('click', onStart);
   document.body.appendChild(screen);

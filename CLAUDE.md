@@ -100,8 +100,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 ## Status
 - [x] Phase 0: monorepo scaffold. Verified 2026-10-23: `pnpm install`, typecheck, lint, Prettier, 14 unit tests, the browser scene (WebGL2, Rapier 0.21.0, server connected, RTT shown) and `/health`. Not yet reported: the two-tab player count and the automatic rejoin after a server restart.
 - [ ] Phase 1: offline sandbox, split into milestones with a test stop after each:
-  - [ ] 1A walk the arena (code written 2026-10-23, waiting for the user's test results)
-  - [ ] 1B paint + shooting
+  - [x] 1A walk the arena (user confirmed working and pushed, 2026-10-23)
+  - [ ] 1B paint + shooting (code written 2026-10-23, waiting for the user's test results)
   - [ ] 1C swim, climb, enemy paint
   - [ ] 1D phones + performance
   - [ ] 1E feel polish
@@ -125,4 +125,6 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - Phase 1 plan approved 2026-10-23: lil-gui for the dev tuning panel (lazy-loaded, backtick key); enemy paint damage stops at a 40 HP floor; milestones 1A–1E.
 - Simulation conventions: game rules live in `shared/src/sim` (`@paint-rush/shared/sim`, everything that needs Rapier) as step functions on flat `PlayerState` objects. The state stores the feet position; yaw 0 looks toward −Z. The capsule (radius 0.4, half-height 0.2) is only a probe for Rapier's character controller. Players don't collide with each other. `PhysicsWorld` steps Rapier once after building the map, because colliders aren't visible to queries before a step.
 - Arena "Drip Yard" (`shared/src/maps/arena.ts`): 36 × 64 m, built from boxes. It's defined for team 0's half and turned 180° for team 1, so both sides play alike.
+- Paint: `PaintGrid` (shared, 0.5 m cells, team per cell) is the gameplay truth. The client's `PaintAtlas` is one 2048² render target with a region per paintable surface (`atlasPacker`). Its texels store coverage in red and team in green, and the map shader turns that into glossy paint. Splats are spheres projected onto every nearby surface (`projectSplat`).
+- Shots: `stepWeapon` + `stepProjectiles` in `shared/src/sim`. The spread is seeded by player seed and shot number, so it's deterministic. The client corrects aim pitch so shots go from the nozzle to the crosshair target.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

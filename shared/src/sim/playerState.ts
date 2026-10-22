@@ -1,3 +1,4 @@
+import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
 
 /**
@@ -15,6 +16,8 @@ export interface PlayerState {
   vz: number;
   /** Facing angle around Y (radians), same convention as PlayerInput.aimYaw. */
   yaw: number;
+  /** Team index: 0 or 1. */
+  team: number;
   grounded: boolean;
   /** Seconds since the player last stood on the ground. */
   airTime: number;
@@ -24,9 +27,17 @@ export interface PlayerState {
   jumpBuffer: number;
   /** Jump button state on the previous tick, to detect new presses. */
   jumpHeld: boolean;
+  /** Ink left in the tank. */
+  ink: number;
+  /** Seconds until the next shot may fire. */
+  fireCooldown: number;
+  /** Seconds since the last shot (ink refills after a pause). */
+  sinceShot: number;
+  /** Shots fired so far; seeds each shot's spread so client and server agree. */
+  shotCount: number;
 }
 
-export function createPlayerState(feet: Vec3, yaw = 0): PlayerState {
+export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
   return {
     x: feet.x,
     y: feet.y,
@@ -35,10 +46,15 @@ export function createPlayerState(feet: Vec3, yaw = 0): PlayerState {
     vy: 0,
     vz: 0,
     yaw,
+    team,
     grounded: false,
     airTime: 0,
     jumped: false,
     jumpBuffer: 0,
     jumpHeld: false,
+    ink: CONFIG.weapon.inkCapacity,
+    fireCooldown: 0,
+    sinceShot: 0,
+    shotCount: 0,
   };
 }

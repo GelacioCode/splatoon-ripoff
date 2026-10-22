@@ -13,4 +13,6 @@ export type { Collider } from '@dimforge/rapier3d-compat';
 export * from './input';
 export * from './physicsWorld';
 export * from './playerState';
+export * from './projectiles';
 export * from './stepPlayer';
+export * from './weapon';

@@ -4,6 +4,8 @@ export * from './maps/surfaces';
 export * from './maps/types';
 export * from './math';
 export * from './math3d';
+export * from './paint/paintGrid';
+export * from './paint/projectSplat';
 export * from './protocol';
 export * from './rng';
 export * from './schema';

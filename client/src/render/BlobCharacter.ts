@@ -37,6 +37,7 @@ export class BlobCharacter {
   private readonly body = new Group();
   private readonly leftFoot: Mesh;
   private readonly rightFoot: Mesh;
+  private readonly skin: MeshToonMaterial;
   private walkPhase = 0;
   private squash = 0;
   private squashVelocity = 0;
@@ -46,6 +47,7 @@ export class BlobCharacter {
 
   constructor(color: number, toonRamp: DataTexture) {
     const skin = new MeshToonMaterial({ color, gradientMap: toonRamp });
+    this.skin = skin;
     const ink = new MeshBasicMaterial({ color: OUTLINE_COLOR });
     const white = new MeshBasicMaterial({ color: 0xffffff });
 
@@ -88,6 +90,11 @@ export class BlobCharacter {
     for (const foot of [this.leftFoot, this.rightFoot]) foot.scale.set(1, 0.6, 1.3);
 
     this.root.add(this.body, this.leftFoot, this.rightFoot);
+  }
+
+  /** Repaints the body, hands and feet (e.g. after switching team). */
+  setColor(color: number): void {
+    this.skin.color.setHex(color);
   }
 
   /** Call every rendered frame with the interpolated pose. */

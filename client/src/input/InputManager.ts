@@ -20,13 +20,14 @@ export class InputManager {
     const km = this.keyboardMouse;
     const active = km.locked;
     const jumpPressed = km.consumeJumpPress();
+    const firePressed = km.consumeFirePress();
     const input = this.input;
     input.moveX = active ? km.moveX : 0;
     input.moveY = active ? km.moveY : 0;
     input.jump = active && (km.jumpHeld || jumpPressed);
     input.aimYaw = aimYaw;
     input.aimPitch = aimPitch;
-    input.fire = false;
+    input.fire = active && (km.fireHeld || firePressed);
     input.swim = false;
     return input;
   }

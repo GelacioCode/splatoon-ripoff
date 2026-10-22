@@ -90,4 +90,31 @@ export const CONFIG = {
     /** How far the camera stays off walls when they push it closer (m). */
     collisionPadding: 0.25,
   },
+  weapon: {
+    /** Seconds between shots while the trigger is held (0.125 = 8 shots per second). */
+    fireInterval: 0.125,
+    /** Random aim wobble per shot (degrees). */
+    spreadDeg: 3,
+    /** Launch speed of a paint shot (m/s). */
+    projectileSpeed: 24,
+    /** Shots fly straight this long before they start to drop (s). */
+    straightTime: 0.15,
+    /** How fast shots drop after the straight part (m/s²). */
+    projectileGravity: 30,
+    /** Shots that hit nothing disappear after this long (s). */
+    maxLifetime: 1.5,
+    /** Radius of the paint splat a shot leaves (m). */
+    splatRadius: 0.85,
+    /** Ink used per shot, out of a full tank. */
+    inkPerShot: 1,
+    inkCapacity: 100,
+    /** Ink refilled per second while not shooting. */
+    inkRefillRate: 12,
+    /** Refilling starts this long after the last shot (s). */
+    inkRefillDelay: 0.5,
+    /** Where the nozzle sits relative to the feet: up, to the right and forward (m). */
+    muzzleHeight: 0.5,
+    muzzleRight: 0.44,
+    muzzleForward: 0.6,
+  },
 };

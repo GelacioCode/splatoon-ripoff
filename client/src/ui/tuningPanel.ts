@@ -3,6 +3,9 @@ import { CONFIG } from '@paint-rush/shared';
 
 export interface TuningActions {
   respawn: () => void;
+  clearPaint: () => void;
+  switchTeam: () => void;
+  refillInk: () => void;
 }
 
 const COPY_LABEL = 'Copy tuning';
@@ -52,19 +55,38 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   camera.add(c, 'mouseSensitivity', 0.0005, 0.006, 0.0001).name('mouse sensitivity');
   camera.add(c, 'followSharpness', 2, 40, 1).name('follow sharpness');
 
+  const w = CONFIG.weapon;
+  const weapon = gui.addFolder('Weapon');
+  weapon.add(w, 'fireInterval', 0.04, 0.5, 0.005).name('seconds between shots');
+  weapon.add(w, 'spreadDeg', 0, 15, 0.5).name('spread (°)');
+  weapon.add(w, 'projectileSpeed', 5, 60, 0.5).name('shot speed (m/s)');
+  weapon.add(w, 'straightTime', 0, 1, 0.01).name('straight flight (s)');
+  weapon.add(w, 'projectileGravity', 0, 80, 1).name('shot drop');
+  weapon.add(w, 'splatRadius', 0.2, 3, 0.05).name('splat radius (m)');
+  weapon.add(w, 'inkPerShot', 0, 10, 0.1).name('ink per shot');
+  weapon.add(w, 'inkRefillRate', 0, 100, 1).name('ink refill / s');
+
   const simulation = gui.addFolder('Simulation');
   simulation.add(CONFIG.net, 'tickRate', 10, 120, 1).name('tick rate (Hz)');
 
   const copyButton: Controller = gui.add({ copy: () => copyTuning(copyButton) }, 'copy');
   copyButton.name(COPY_LABEL);
   gui.add(actions, 'respawn').name('Respawn');
+  gui.add(actions, 'clearPaint').name('Clear all paint');
+  gui.add(actions, 'switchTeam').name('Switch team');
+  gui.add(actions, 'refillInk').name('Refill ink');
   return gui;
 }
 
 /** Copies the current values as JSON, ready to paste back so they can go into config.ts. */
 function copyTuning(button: Controller): void {
   const text = JSON.stringify(
-    { movement: CONFIG.movement, camera: CONFIG.camera, net: { tickRate: CONFIG.net.tickRate } },
+    {
+      movement: CONFIG.movement,
+      camera: CONFIG.camera,
+      weapon: CONFIG.weapon,
+      net: { tickRate: CONFIG.net.tickRate },
+    },
     null,
     2,
   );
