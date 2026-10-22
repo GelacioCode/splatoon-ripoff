@@ -46,10 +46,11 @@ export function stepWeapon(
     while (s.fireCooldown <= 0 && s.ink >= w.inkPerShot) {
       // A fresh generator per shot, seeded by player and shot number.
       const random = createRng((seed ^ Math.imul(s.shotCount + 1, 0x9e3779b1)) >>> 0);
-      const spread = w.spreadDeg * DEG_TO_RAD;
+      // Aimed shots are far more precise and carry further.
+      const spread = (s.aiming ? w.aimSpreadDeg : w.spreadDeg) * DEG_TO_RAD;
       const yaw = s.yaw + (random() * 2 - 1) * spread;
       const pitch = input.aimPitch + (random() * 2 - 1) * spread;
-      out.push(createProjectile(muzzlePosition(s), yaw, pitch, s.team));
+      out.push(createProjectile(muzzlePosition(s), yaw, pitch, s.team, s.aiming));
       s.ink -= w.inkPerShot;
       s.shotCount++;
       s.fireCooldown += w.fireInterval;

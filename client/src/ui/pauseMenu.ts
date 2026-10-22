@@ -10,9 +10,9 @@ export interface PauseMenuActions {
 }
 
 const DESKTOP_KEYS =
-  'WASD move · Mouse aim · Click shoot · R reload · Shift swim · Space jump · Esc pause · ` tuning';
+  'WASD move · Mouse look · Click shoot · Right-click aim · R reload · Shift swim · Space jump · Esc pause · ` tuning';
 const TOUCH_KEYS =
-  'Left thumb: move · Right thumb: drag to aim · SHOOT (drag it to aim too) · SWIM · JUMP · R reload';
+  'Left thumb: move · Right thumb: drag to aim · SHOOT (drag it to aim too) · AIM (zoom) · SWIM · JUMP · R reload';
 
 /**
  * The start/pause screen: a big Play button plus the settings, which save automatically.

@@ -254,6 +254,14 @@ body {
   font-size: 15px;
 }
 
+.touch-aim {
+  right: calc(118px + env(safe-area-inset-right));
+  bottom: calc(164px + env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  font-size: 12px;
+}
+
 .touch-pause {
   position: absolute;
   top: calc(10px + env(safe-area-inset-top));
@@ -320,6 +328,15 @@ body {
 .hud.reloading .ink-fill {
   opacity: 0.55;
   transition: none;
+}
+
+.ink-ring {
+  transition: transform 120ms ease-out;
+}
+
+.hud.aiming .ink-ring {
+  /* Keep the drain direction (rotate) while shrinking the ring around the crosshair. */
+  transform: rotate(-90deg) scale(0.7);
 }
 
 .damage-vignette {

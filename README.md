@@ -29,6 +29,7 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 | Jump | Space |
 | Shoot paint (hold to keep firing) | Left mouse button |
 | Reload (2.5 s, no shooting meanwhile) | R |
+| Aim: zoom in for precise long shots, walk slower (hold) | Right mouse button |
 | Swim: melt into a puddle (fast and hidden in your own paint, climbs painted walls, refills ink) | Shift (hold) |
 | Pause (frees the mouse) | Esc |
 | Live tuning panel (for development) | `` ` `` (backtick, left of 1) |
@@ -37,7 +38,7 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 
 - **Left thumb:** touch anywhere on the left half and drag to move (the joystick appears where you touch).
 - **Right thumb:** drag on the right half to aim. You can also drag the **SHOOT** button to aim while shooting.
-- **Buttons:** SHOOT (hold), SWIM (hold), JUMP, R (reload), II (pause).
+- **Buttons:** SHOOT (hold), SWIM (hold), JUMP, R (reload), AIM (tap to toggle zoom), II (pause).
 - **Optional gyro aim:** turn it on in the pause menu. It needs an `https://` page (see the Cloudflare tunnel tip below), and iPhones ask for permission.
 
 The pause menu (Esc on desktop, II on touch) has sensitivity, invert up/down, volume, gyro and **graphics quality** (Auto / Low / Medium / High). Changing quality reloads the page. Resolution also drops automatically when the frame rate does, shown as `res …%` in the dev overlay.

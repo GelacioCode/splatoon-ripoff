@@ -25,6 +25,8 @@ export class TouchControls {
   private jumpDown = false;
   private jumpPressed = false;
   private reloadPressed = false;
+  private aimOn = false;
+  private aimButton: HTMLElement | null = null;
 
   constructor(onPause: () => void) {
     this.root = document.createElement('div');
@@ -38,6 +40,7 @@ export class TouchControls {
       <button class="touch-button touch-jump" type="button">JUMP</button>
       <button class="touch-button touch-swim" type="button">SWIM</button>
       <button class="touch-button touch-reload" type="button">R</button>
+      <button class="touch-button touch-aim" type="button">AIM</button>
       <button class="touch-pause" type="button" aria-label="Pause">II</button>`;
     document.body.appendChild(this.root);
     this.stick = this.part('.touch-stick');
@@ -77,6 +80,14 @@ export class TouchControls {
     });
     this.hold(this.part('.touch-swim'), (down) => {
       this.swimDown = down;
+      // Swimming cancels aim mode.
+      if (down) this.setAim(false);
+    });
+    // AIM is a toggle: tap to zoom in, tap again to zoom out.
+    this.aimButton = this.part('.touch-aim');
+    this.aimButton.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      this.setAim(!this.aimOn);
     });
     this.hold(this.part('.touch-jump'), (down) => {
       this.jumpDown = down;
@@ -111,6 +122,16 @@ export class TouchControls {
 
   get jumpHeld(): boolean {
     return this.jumpDown;
+  }
+
+  /** Aim mode switched on with the AIM toggle. */
+  get aimToggled(): boolean {
+    return this.aimOn;
+  }
+
+  private setAim(on: boolean): void {
+    this.aimOn = on;
+    this.aimButton?.classList.toggle('pressed', on);
   }
 
   consumeFirePress(): boolean {
@@ -201,6 +222,7 @@ export class TouchControls {
     this.fireDown = false;
     this.swimDown = false;
     this.jumpDown = false;
+    this.aimOn = false;
     this.stick.classList.remove('active');
     for (const button of this.root.querySelectorAll('.pressed')) button.classList.remove('pressed');
   }

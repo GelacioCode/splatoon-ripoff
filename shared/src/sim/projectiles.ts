@@ -2,6 +2,8 @@ import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
 import type { PhysicsWorld } from './physicsWorld';
 
+const DOWN: Vec3 = { x: 0, y: -1, z: 0 };
+
 /** A paint shot in flight. */
 export interface Projectile {
   x: number;
@@ -16,15 +18,26 @@ export interface Projectile {
   vz: number;
   /** Seconds since it was fired. */
   age: number;
+  /** Meters flown since the last drip. */
+  sinceDrip: number;
+  /** Seconds it flies straight before it starts to drop (longer for aimed shots). */
+  straightTime: number;
   team: number;
 }
 
+/** Paint landing somewhere: a shot hitting the map, or a drip falling from a shot. */
 export interface ProjectileHit {
   point: Vec3;
   normal: Vec3;
   /** Index of the map block that was hit. */
   blockIndex: number;
   team: number;
+  /** Radius of the paint splat to leave (m). */
+  radius: number;
+  /** True for the small drops shots leave along their path. */
+  drip: boolean;
+  /** Unit direction the shot was flying (drips are drawn as streaks along it). */
+  direction: Vec3;
 }
 
 /** Unit direction for a yaw/pitch aim (yaw 0 looks toward −Z, positive pitch looks up). */
@@ -37,8 +50,16 @@ export function aimDirection(yaw: number, pitch: number): Vec3 {
   };
 }
 
-export function createProjectile(origin: Vec3, yaw: number, pitch: number, team: number) {
-  const speed = CONFIG.weapon.projectileSpeed;
+/** A new shot. Aimed shots fly faster and stay straight for longer before dropping. */
+export function createProjectile(
+  origin: Vec3,
+  yaw: number,
+  pitch: number,
+  team: number,
+  aimed = false,
+) {
+  const w = CONFIG.weapon;
+  const speed = w.projectileSpeed * (aimed ? w.aimProjectileSpeedMultiplier : 1);
   const direction = aimDirection(yaw, pitch);
   const projectile: Projectile = {
     x: origin.x,
@@ -51,6 +72,8 @@ export function createProjectile(origin: Vec3, yaw: number, pitch: number, team:
     vy: direction.y * speed,
     vz: direction.z * speed,
     age: 0,
+    sinceDrip: 0,
+    straightTime: aimed ? w.aimStraightTime : w.straightTime,
     team,
   };
   return projectile;
@@ -58,7 +81,8 @@ export function createProjectile(origin: Vec3, yaw: number, pitch: number, team:
 
 /**
  * Moves every shot one tick: straight at first, then dropping. A shot that reaches the map is
- * reported through `onHit` and removed from the list.
+ * reported through `onHit` and removed from the list. Along the way, shots drip small paint
+ * spots onto the floor below them, also reported through `onHit` (with `drip` set).
  */
 export function stepProjectiles(
   physics: PhysicsWorld,
@@ -72,24 +96,49 @@ export function stepProjectiles(
     p.px = p.x;
     p.py = p.y;
     p.pz = p.z;
-    if (p.age >= w.straightTime) p.vy -= w.projectileGravity * dt;
+    if (p.age >= p.straightTime) p.vy -= w.projectileGravity * dt;
     p.age += dt;
 
     const dx = p.vx * dt;
     const dy = p.vy * dt;
     const dz = p.vz * dt;
     const length = Math.hypot(dx, dy, dz);
-    const hit =
-      length > 0
-        ? physics.raycast(p, { x: dx / length, y: dy / length, z: dz / length }, length)
-        : null;
+    const direction =
+      length > 0 ? { x: dx / length, y: dy / length, z: dz / length } : { x: 0, y: -1, z: 0 };
+    const hit = length > 0 ? physics.raycast(p, direction, length) : null;
     if (hit) {
-      onHit({ point: hit.point, normal: hit.normal, blockIndex: hit.blockIndex, team: p.team });
+      onHit({
+        point: hit.point,
+        normal: hit.normal,
+        blockIndex: hit.blockIndex,
+        team: p.team,
+        radius: w.splatRadius,
+        drip: false,
+        direction,
+      });
       continue;
     }
     p.x += dx;
     p.y += dy;
     p.z += dz;
+
+    p.sinceDrip += length;
+    if (p.sinceDrip >= w.dripEvery) {
+      p.sinceDrip -= w.dripEvery;
+      const floor = physics.raycast(p, DOWN, w.dripMaxHeight);
+      if (floor && floor.normal.y > 0.5) {
+        onHit({
+          point: floor.point,
+          normal: floor.normal,
+          blockIndex: floor.blockIndex,
+          team: p.team,
+          radius: w.dripRadius,
+          drip: true,
+          direction,
+        });
+      }
+    }
+
     if (p.age < w.maxLifetime && p.y > -10) projectiles[kept++] = p;
   }
   projectiles.length = kept;

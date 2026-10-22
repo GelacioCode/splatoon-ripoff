@@ -12,6 +12,8 @@ export interface PlayerInput {
   jump: boolean;
   /** Asks for a reload now (ignored while already reloading or when the tank is full). */
   reload: boolean;
+  /** Aim mode: zoomed, accurate long-range shots, slower walking. Swimming cancels it. */
+  aim: boolean;
 }
 
 export function createInput(): PlayerInput {
@@ -24,5 +26,6 @@ export function createInput(): PlayerInput {
     swim: false,
     jump: false,
     reload: false,
+    aim: false,
   };
 }

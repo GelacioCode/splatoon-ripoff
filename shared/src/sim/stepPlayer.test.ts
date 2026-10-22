@@ -158,6 +158,17 @@ describe('stepPlayer with paint', () => {
     expect(speed(player)).toBeGreaterThan(CONFIG.movement.walkSpeed);
   });
 
+  it('walks slower while aiming, and swimming cancels aim', () => {
+    const player = spawn(-12, 0.05, -4);
+    for (let i = 0; i < 3; i++) step(player);
+    for (let i = 0; i < 15; i++) step(player, { aim: true, moveY: 1 });
+    expect(player.state.aiming).toBe(true);
+    const aimedSpeed = CONFIG.movement.walkSpeed * CONFIG.movement.aimSpeedMultiplier;
+    expect(speed(player)).toBeCloseTo(aimedSpeed, 6);
+    step(player, { aim: true, swim: true });
+    expect(player.state.aiming).toBe(false);
+  });
+
   it('is a slow puddle outside its own paint', () => {
     const paint = paintedGrid();
     const player = spawn(12, 0.05, -12);

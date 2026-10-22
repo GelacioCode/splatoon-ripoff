@@ -10,7 +10,16 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { ARENA, buildSurfaces, clamp, CONFIG, PaintGrid, type Vec3 } from '@paint-rush/shared';
+import {
+  ARENA,
+  buildSurfaces,
+  clamp,
+  CONFIG,
+  damp,
+  lerp,
+  PaintGrid,
+  type Vec3,
+} from '@paint-rush/shared';
 import {
   aimDirection,
   createPlayerState,
@@ -65,6 +74,8 @@ const PRE_PAINTED: { at: Vec3; radius: number }[] = [
   { at: { x: 0, y: 1.5, z: 0 }, radius: 2.5 },
   { at: { x: -7, y: 1.4, z: -15.4 }, radius: 1.3 },
 ];
+/** Landing faster than this (m/s) makes a puff of droplets. */
+const LANDING_PUFF_SPEED = 5;
 const UP = new Vector3(0, 1, 0);
 const DOWN: Vec3 = { x: 0, y: -1, z: 0 };
 
@@ -117,6 +128,8 @@ class SandboxGame {
   private readonly shadowNormal = new Vector3();
   private readonly tuningActions: TuningActions;
   private pixelRatio = 1;
+  /** Smoothed aim-mode zoom, 0–1. */
+  private aimBlend = 0;
   private emptyClickCooldown = 0;
   private swimTrailTimer = 0;
   private lastFrameMs = 0;
@@ -260,7 +273,10 @@ class SandboxGame {
 
     // Aim follows the mouse/finger every frame, so looking around never waits for a tick.
     const look = this.input.consumeLook(this.settings);
-    this.view.look(look.x, look.y, 1);
+    // Finer aim while zoomed in.
+    this.aimBlend = damp(this.aimBlend, this.player.aiming ? 1 : 0, 14, dt);
+    const lookScale = lerp(1, CONFIG.camera.aimSensitivity, this.aimBlend);
+    this.view.look(look.x * lookScale, look.y * lookScale, 1);
 
     this.loop.stepSeconds = 1 / CONFIG.net.tickRate;
     const steps = this.loop.advance(dt);
@@ -293,7 +309,15 @@ class SandboxGame {
     // Widen the view while swimming fast, for a sense of speed.
     const swimSpeedRatio = clamp(Math.hypot(s.vx, s.vz) / CONFIG.swim.swimSpeed, 0, 1);
     const fovBoost = s.submerged ? CONFIG.camera.swimFovBoost * swimSpeedRatio : 0;
-    this.view.update(this.renderFeet, dt, this.raycastDistance, s.swimBlend, fovBoost);
+    this.view.update(
+      this.renderFeet,
+      dt,
+      this.raycastDistance,
+      s.swimBlend,
+      fovBoost,
+      this.aimBlend,
+    );
+    this.hud.setAiming(s.aiming);
     this.renderer.render(this.scene, this.view.camera);
     this.updateStats(dt);
   };
@@ -304,8 +328,15 @@ class SandboxGame {
     this.previousFeet.set(s.x, s.y, s.z);
     const input = this.input.sampleTick(this.view.yaw, this.aimPitch());
     const wasSubmerged = s.submerged;
+    const wasGrounded = s.grounded;
+    const fallSpeed = -s.vy;
     stepPlayer(this.physics, this.body, s, input, dt, this.paint);
     this.swimEffects(wasSubmerged, dt);
+    // Landing puff: a little splash at your feet after a real fall (not when swimming).
+    if (s.grounded && !wasGrounded && fallSpeed > LANDING_PUFF_SPEED && s.swimBlend < 0.5) {
+      const count = Math.round(clamp(fallSpeed / 2, 4, 12));
+      this.particles.burst({ x: s.x, y: s.y + 0.05, z: s.z }, UP, TEAM_COLORS[s.team], count, 2.5);
+    }
 
     const wasReloading = s.reloadTimer > 0;
     const fired = stepWeapon(s, input, dt, PLAYER_SEED, this.projectiles);
@@ -374,8 +405,11 @@ class SandboxGame {
   }
 
   private readonly handleHit = (hit: ProjectileHit): void => {
-    const splats = this.paint.splat(hit.point, CONFIG.weapon.splatRadius, hit.team);
-    this.atlas.add(splats, hit.team);
+    const splats = this.paint.splat(hit.point, hit.radius, hit.team);
+    // Drips are drawn as thin streaks along the shot's path; real hits as full splats.
+    this.atlas.add(splats, hit.team, hit.drip ? hit.direction : undefined);
+    // Drips just paint quietly; real hits also splash and squish.
+    if (hit.drip) return;
     this.particles.burst(hit.point, hit.normal, TEAM_COLORS[hit.team], 6);
     const s = this.player;
     const distance = Math.hypot(hit.point.x - s.x, hit.point.y - s.y, hit.point.z - s.z);

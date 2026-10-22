@@ -25,6 +25,10 @@ export function createHud() {
   document.body.appendChild(vignette);
 
   return {
+    /** Aim mode tightens the crosshair. */
+    setAiming(aiming: boolean): void {
+      hud.classList.toggle('aiming', aiming);
+    },
     /** `health` from 0 to 1; `enemyColor` tints the edges while hurt. */
     updateHealth(health: number, enemyColor: string): void {
       vignette.style.opacity = String(Math.min(1, (1 - health) * 1.6));

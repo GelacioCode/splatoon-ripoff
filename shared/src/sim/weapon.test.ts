@@ -77,6 +77,27 @@ describe('stepWeapon', () => {
     expect(run(state, 1, { fire: true })).toHaveLength(0);
   });
 
+  it('aims far more precisely, and aimed shots fly faster and straighter for longer', () => {
+    const wobble = (aiming: boolean) => {
+      const state = newPlayer();
+      state.aiming = aiming;
+      const shots = run(state, 1, { fire: true });
+      // Largest sideways angle away from straight ahead (yaw 0 shoots toward −Z).
+      return {
+        shots,
+        maxAngle: Math.max(...shots.map((p) => Math.abs(Math.atan2(p.vx, -p.vz)))),
+      };
+    };
+    const hip = wobble(false);
+    const aimed = wobble(true);
+    expect(aimed.maxAngle).toBeLessThan(hip.maxAngle);
+    expect(aimed.maxAngle).toBeLessThanOrEqual((CONFIG.weapon.aimSpreadDeg * Math.PI) / 180);
+    expect(aimed.shots[0].straightTime).toBeGreaterThan(hip.shots[0].straightTime);
+    expect(Math.hypot(aimed.shots[0].vx, aimed.shots[0].vz)).toBeGreaterThan(
+      Math.hypot(hip.shots[0].vx, hip.shots[0].vz),
+    );
+  });
+
   it('gives the same shot the same spread every time (deterministic)', () => {
     const a = run(newPlayer(), 0.5, { fire: true });
     const b = run(newPlayer(), 0.5, { fire: true });

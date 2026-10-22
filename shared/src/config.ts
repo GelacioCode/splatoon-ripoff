@@ -70,14 +70,16 @@ export const CONFIG = {
     jumpBuffer: 0.12,
     /** Fastest possible fall (m/s). */
     maxFallSpeed: 30,
+    /** Walking speed multiplier while aiming. */
+    aimSpeedMultiplier: 0.65,
   },
   camera: {
     /** Vertical field of view (degrees). */
     fov: 70,
     /** How far behind the player the camera sits (m). */
-    distance: 3.6,
+    distance: 4.6,
     /** Sideways offset for the over-the-shoulder view (m, positive = right). */
-    shoulderOffset: 0.55,
+    shoulderOffset: 0.65,
     /** Height of the point the camera orbits, above the feet (m). */
     pivotHeight: 1.3,
     /** Lowest and highest look angles (degrees). */
@@ -91,6 +93,12 @@ export const CONFIG = {
     collisionPadding: 0.25,
     /** Extra field of view while swimming fast, for a sense of speed (degrees). */
     swimFovBoost: 8,
+    /** Aim mode: zoomed field of view (degrees), closer camera and wider shoulder offset (m). */
+    aimFov: 48,
+    aimDistance: 2.6,
+    aimShoulderOffset: 0.85,
+    /** Look sensitivity multiplier while aiming, for fine adjustments. */
+    aimSensitivity: 0.55,
   },
   swim: {
     /** Time to melt into a puddle or pop back out (s). */
@@ -139,6 +147,16 @@ export const CONFIG = {
     maxLifetime: 1.5,
     /** Radius of the paint splat a shot leaves (m). */
     splatRadius: 0.85,
+    /** Aimed shots: spread (degrees), straight flight (s) and speed multiplier. */
+    aimSpreadDeg: 0.6,
+    aimStraightTime: 0.4,
+    aimProjectileSpeedMultiplier: 1.25,
+    /** Shots drip a small paint spot onto the floor below every this many meters of flight. */
+    dripEvery: 1.5,
+    /** Radius of a drip's paint spot (m); drawn as a thin streak along the shot's path. */
+    dripRadius: 0.3,
+    /** Drips only land when the floor is at most this far below the shot (m). */
+    dripMaxHeight: 2.5,
     /** Ink used per shot, out of a full tank. */
     inkPerShot: 1,
     /** Tank size: 15 shots at 1 ink each (about 2 seconds of fire). */

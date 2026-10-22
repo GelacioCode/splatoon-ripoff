@@ -50,8 +50,19 @@ export class ThirdPersonCamera {
    * Places the camera behind the player's (interpolated) feet position. `swimBlend` (0–1)
    * lowers the view for the puddle form; `fovBoost` widens the view (degrees), e.g. at speed.
    */
-  update(feet: Vector3, dt: number, raycast: RaycastDistance, swimBlend = 0, fovBoost = 0): void {
+  update(
+    feet: Vector3,
+    dt: number,
+    raycast: RaycastDistance,
+    swimBlend = 0,
+    fovBoost = 0,
+    aimBlend = 0,
+  ): void {
     const c = CONFIG.camera;
+    // Aim mode (aimBlend 0–1): zoom in, move closer and further over the shoulder.
+    const distance = lerp(c.distance, c.aimDistance, aimBlend);
+    const shoulderOffset = lerp(c.shoulderOffset, c.aimShoulderOffset, aimBlend);
+    const baseFov = lerp(c.fov, c.aimFov, aimBlend);
 
     // Orbit a point above the feet, smoothed a little so landings don't jolt the view.
     const pivotY = feet.y + lerp(c.pivotHeight, PUDDLE_PIVOT_HEIGHT, swimBlend);
@@ -77,8 +88,8 @@ export class ThirdPersonCamera {
     // Over the shoulder: step right, then back along the view direction.
     this.desired
       .copy(this.pivot)
-      .addScaledVector(this.right, c.shoulderOffset)
-      .addScaledVector(this.forward, -c.distance);
+      .addScaledVector(this.right, shoulderOffset)
+      .addScaledVector(this.forward, -distance);
     this.toCamera.subVectors(this.desired, this.pivot);
     const length = this.toCamera.length();
     this.toCamera.divideScalar(length);
@@ -90,7 +101,7 @@ export class ThirdPersonCamera {
 
     this.camera.position.copy(this.pivot).addScaledVector(this.toCamera, this.boom);
     this.camera.rotation.set(this.pitch, this.yaw, 0);
-    const fov = damp(this.camera.fov, c.fov + fovBoost, 8, dt);
+    const fov = damp(this.camera.fov, baseFov + fovBoost, 8, dt);
     if (Math.abs(fov - this.camera.fov) > 1e-3) {
       this.camera.fov = fov;
       this.camera.updateProjectionMatrix();

@@ -32,6 +32,8 @@ export function stepPlayer(
     ? Math.min(1, s.swimBlend + blendStep)
     : Math.max(0, s.swimBlend - blendStep);
   const swimming = s.swimBlend >= 0.5;
+  // Aim mode only while standing; holding swim cancels it.
+  s.aiming = input.aim && !input.swim && s.swimBlend === 0;
 
   // Requested direction on the ground, relative to where the player aims.
   let moveX = input.moveX;
@@ -60,6 +62,7 @@ export function stepPlayer(
   // Horizontal: speed up toward the requested velocity.
   let maxSpeed = swimming ? (s.submerged ? sw.swimSpeed : sw.puddleSpeed) : m.walkSpeed;
   if (onEnemyPaint) maxSpeed *= h.enemyPaintSpeedMultiplier;
+  if (s.aiming) maxSpeed *= m.aimSpeedMultiplier;
   const accel = s.submerged ? sw.swimAccel : m.groundAccel;
   if (s.grounded || s.climbing) {
     approachVelocity(

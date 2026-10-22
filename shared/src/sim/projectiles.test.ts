@@ -31,6 +31,19 @@ describe('stepProjectiles', () => {
     expect(hits[0].point.z).toBeCloseTo(-1, 1);
   });
 
+  it('drips small paint spots onto the floor along its path before landing', () => {
+    // Fired level from 1 m up, beside the wall, toward −Z.
+    const shots = [createProjectile({ x: 5, y: 1, z: 8 }, 0, 0, 0)];
+    const hits: ProjectileHit[] = [];
+    for (let tick = 0; tick < 60 && shots.length > 0; tick++) {
+      stepProjectiles(physics, shots, 1 / 30, (hit) => hits.push(hit));
+    }
+    const drips = hits.filter((hit) => hit.drip);
+    expect(drips.length).toBeGreaterThanOrEqual(2);
+    expect(drips.every((drip) => drip.point.y < 0.01 && drip.point.z < 8)).toBe(true);
+    expect(hits[hits.length - 1].drip).toBe(false);
+  });
+
   it('drops out of the list when it flies off into nothing', () => {
     const shots = [createProjectile({ x: 0, y: 5, z: 0 }, 0, 0.8, 0)];
     for (let tick = 0; tick < 120; tick++) stepProjectiles(physics, shots, 1 / 30, () => {});

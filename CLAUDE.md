@@ -103,8 +103,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 1A walk the arena (user confirmed working and pushed, 2026-10-23)
   - [x] 1B paint + shooting, plus the reload system and 15-shot tank (user confirmed and pushed)
   - [x] 1C swim, climb, enemy paint (user confirmed and pushed)
-  - [ ] 1D phones + performance (code written 2026-10-23, waiting for the user's test results)
-  - [ ] 1E feel polish
+  - [x] 1D phones + performance (user confirmed working on their phone and pushed)
+  - [ ] 1E feel polish (user feedback 2026-10-23: movement feels good; camera was too close. Added camera 4.6 m back, paint drips from shots, landing puffs and shot streaks; waiting for the user's test results)
 - [ ] Phase 2: networking
 - [ ] Phase 3: lobby, QR join, customization, auto-balance
 - [ ] Phase 4: Capture the Flag

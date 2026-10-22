@@ -48,6 +48,8 @@ export interface PlayerState {
   climbing: boolean;
   /** Team whose paint is under the player's feet, or −1. */
   groundTeam: number;
+  /** In aim mode (aim held, not swimming). */
+  aiming: boolean;
 }
 
 export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
@@ -76,5 +78,6 @@ export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
     submerged: false,
     climbing: false,
     groundTeam: -1,
+    aiming: false,
   };
 }

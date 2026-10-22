@@ -70,6 +70,7 @@ export class InputManager {
     input.fire = on && (km.fireHeld || (touch?.fireHeld ?? false) || firePressed);
     input.swim = on && (km.swimHeld || (touch?.swimHeld ?? false));
     input.reload = on && reloadPressed;
+    input.aim = on && (km.aimHeld || (touch?.aimToggled ?? false));
     input.aimYaw = aimYaw;
     input.aimPitch = aimPitch;
     return input;

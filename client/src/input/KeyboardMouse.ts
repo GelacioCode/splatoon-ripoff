@@ -23,6 +23,7 @@ export class KeyboardMouse {
   private fireDown = false;
   private firePressed = false;
   private reloadPressed = false;
+  private aimDown = false;
 
   constructor(canvas: HTMLCanvasElement, onLockChange: (locked: boolean) => void) {
     this.canvas = canvas;
@@ -33,6 +34,10 @@ export class KeyboardMouse {
     document.addEventListener('mousemove', this.handleMouseMove);
     document.addEventListener('mousedown', this.handleMouseDown);
     document.addEventListener('mouseup', this.handleMouseUp);
+    // The right button aims, so keep the browser's context menu out of the way while playing.
+    document.addEventListener('contextmenu', (event) => {
+      if (this.locked) event.preventDefault();
+    });
     document.addEventListener('pointerlockchange', this.handleLockChange);
     canvas.addEventListener('click', () => {
       if (!this.locked) this.requestLock();
@@ -54,6 +59,11 @@ export class KeyboardMouse {
   /** Shift held: swim (melt into a puddle). */
   get swimHeld(): boolean {
     return this.keys.has('ShiftLeft') || this.keys.has('ShiftRight');
+  }
+
+  /** Right mouse button held: aim mode. */
+  get aimHeld(): boolean {
+    return this.aimDown;
   }
 
   /** Left mouse button held. */
@@ -130,13 +140,16 @@ export class KeyboardMouse {
   };
 
   private readonly handleMouseDown = (event: MouseEvent): void => {
-    if (!this.locked || event.button !== 0) return;
+    if (!this.locked) return;
+    if (event.button === 2) this.aimDown = true;
+    if (event.button !== 0) return;
     this.fireDown = true;
     this.firePressed = true;
   };
 
   private readonly handleMouseUp = (event: MouseEvent): void => {
     if (event.button === 0) this.fireDown = false;
+    if (event.button === 2) this.aimDown = false;
   };
 
   private readonly handleLockChange = (): void => {
@@ -144,6 +157,7 @@ export class KeyboardMouse {
     if (!this.locked) {
       this.keys.clear();
       this.fireDown = false;
+      this.aimDown = false;
     }
     this.onLockChange(this.locked);
   };

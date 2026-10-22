@@ -63,6 +63,11 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   weapon.add(w, 'straightTime', 0, 1, 0.01).name('straight flight (s)');
   weapon.add(w, 'projectileGravity', 0, 80, 1).name('shot drop');
   weapon.add(w, 'splatRadius', 0.2, 3, 0.05).name('splat radius (m)');
+  weapon.add(w, 'aimSpreadDeg', 0, 5, 0.1).name('aimed spread (°)');
+  weapon.add(w, 'aimStraightTime', 0, 1.5, 0.01).name('aimed straight flight (s)');
+  weapon.add(w, 'aimProjectileSpeedMultiplier', 1, 2.5, 0.05).name('aimed shot speed ×');
+  weapon.add(w, 'dripEvery', 0.3, 6, 0.1).name('drip every (m)');
+  weapon.add(w, 'dripRadius', 0, 1.5, 0.05).name('drip radius (m)');
   weapon.add(w, 'inkPerShot', 0, 10, 0.1).name('ink per shot');
   weapon.add(w, 'reloadSeconds', 0.2, 6, 0.1).name('reload time (s)');
   weapon.add(w, 'autoReloadAfterSeconds', 1, 30, 0.5).name('auto-reload after idle (s)');
