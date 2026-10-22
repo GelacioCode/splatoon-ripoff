@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+**/dist
+coverage
+# Docs are formatted by hand; CLAUDE.md holds the spec word for word.
+*.md

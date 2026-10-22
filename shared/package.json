@@ -1,0 +1,17 @@
+{
+  "name": "@paint-rush/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./physics": "./src/physics/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@colyseus/schema": "^5.0.8",
+    "@dimforge/rapier3d-compat": "^0.21.0"
+  }
+}

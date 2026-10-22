@@ -1,0 +1,21 @@
+{
+  "name": "@paint-rush/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@colyseus/core": "^0.18.23",
+    "@colyseus/schema": "^5.0.8",
+    "@colyseus/ws-transport": "^0.18.4",
+    "@paint-rush/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15"
+  }
+}

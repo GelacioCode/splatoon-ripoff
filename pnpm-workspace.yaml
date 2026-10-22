@@ -1,0 +1,16 @@
+packages:
+  - client
+  - server
+  - shared
+
+# pnpm 11+ stops an install when a dependency has an install script nobody has reviewed.
+# true = let the script run, false = skip it.
+allowBuilds:
+  # Compiler used by tsx; its script only verifies the downloaded binary.
+  esbuild: true
+  # Optional native speed-up for Colyseus messages; works fine without its build step.
+  msgpackr-extract: false
+
+minimumReleaseAgeExclude:
+  - '@colyseus/core@0.18.23'
+  - '@colyseus/sdk@0.18.6'

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.log
+
+# Local env files (the committed example lives in client/.env.example)
+.env
+.env.*
+!.env.example
+*.local
+
+.vercel/
+.DS_Store
+Thumbs.db
