@@ -1,5 +1,5 @@
-import { CONFIG } from '@paint-rush/shared';
 import type { Quality, Settings } from '../settings';
+import { createRoleCards } from './roleCards';
 
 export interface PauseMenuActions {
   play: () => void;
@@ -9,13 +9,6 @@ export interface PauseMenuActions {
   enableGyro: () => Promise<boolean>;
   openTuning: () => void;
 }
-
-/** The role cards, lightest to heaviest. `weapon` is the index in WEAPON_KINDS. */
-const ROLES = [
-  { weapon: 1, name: 'Sniper', about: 'Long range · fastest on foot', kind: 'sniper' },
-  { weapon: 0, name: 'Assault', about: 'All-rounder', kind: 'assault' },
-  { weapon: 2, name: 'Machine gun', about: 'Close range · slowest', kind: 'machineGun' },
-] as const;
 
 const DESKTOP_KEYS =
   'WASD move · Mouse look · Click shoot · Right-click aim · R reload · Shift swim · Space jump · Esc pause · ` tuning';
@@ -37,16 +30,7 @@ export function createPauseMenu(
     <div class="menu-card">
       <h1>Paint Rush</h1>
       <p class="menu-heading">Choose your role</p>
-      <div class="menu-roles" role="radiogroup" aria-label="Role">
-        ${ROLES.map(
-          (r) => `
-          <button class="menu-role" type="button" role="radio" data-weapon="${r.weapon}">
-            <strong>${r.name}</strong>
-            <span class="menu-role-shots">${CONFIG.weapons[r.kind].magazine} shots</span>
-            <span>${r.about}</span>
-          </button>`,
-        ).join('')}
-      </div>
+      <div class="menu-roles-slot"></div>
       <button class="menu-play" type="button">${touchDevice ? 'Tap to play' : 'Click to play'}</button>
       <p class="menu-keys">${touchDevice ? TOUCH_KEYS : DESKTOP_KEYS}</p>
       <div class="menu-settings">
@@ -97,24 +81,11 @@ export function createPauseMenu(
     element.hidden = !touchDevice;
   }
 
-  const roleButtons = [...menu.querySelectorAll<HTMLButtonElement>('.menu-role')];
-  const showRole = () => {
-    for (const button of roleButtons) {
-      const selected = Number(button.dataset.weapon) === settings.weapon;
-      button.classList.toggle('selected', selected);
-      button.setAttribute('aria-checked', String(selected));
-    }
-  };
-  showRole();
-  for (const button of roleButtons) {
-    button.addEventListener('click', () => {
-      const weapon = Number(button.dataset.weapon);
-      if (weapon === settings.weapon) return;
-      settings.weapon = weapon;
-      showRole();
-      actions.settingsChanged(settings, 'weapon');
-    });
-  }
+  const roles = createRoleCards(settings.weapon, (weapon) => {
+    settings.weapon = weapon;
+    actions.settingsChanged(settings, 'weapon');
+  });
+  menu.querySelector('.menu-roles-slot')?.replaceWith(roles.element);
 
   const showNote = (text: string) => {
     if (!note) return;
@@ -169,6 +140,8 @@ export function createPauseMenu(
   return {
     setVisible(visible: boolean): void {
       menu.hidden = !visible;
+      // The role may have been picked on the join screen meanwhile.
+      if (visible) roles.select(settings.weapon);
     },
   };
 }

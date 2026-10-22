@@ -105,12 +105,14 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 1C swim, climb, enemy paint (user confirmed and pushed)
   - [x] 1D phones + performance (user confirmed working on their phone and pushed)
   - [x] 1E feel polish: camera 4.6 m back, paint drips drawn as thin streaks, landing puffs, shot streaks, and aim mode (right mouse / AIM toggle: zoom, 0.6° spread, longer straight flight, 65% walk speed). User confirmed and pushed. Open item: the user suspected a small FPS drop after 1E; never measured.
-- [ ] Phase 2: networking (plan approved 2026-10-23; milestones 2A move together, 2B shoot and paint together, 2C reconnection, bandwidth and real-network testing)
+- [x] Phase 2: networking, done 2026-10-23 (plan approved 2026-10-23; milestones 2A move together, 2B shoot and paint together, 2C reconnection, bandwidth and real-network testing)
   - [x] 2A move together: user confirmed two tabs see each other (after fixing quantized fields → float32). Open item: RTT shows ~150 ms on localhost (expected a few ms), probably inputs queueing on the server; investigate in 2C.
   - [x] Roles (user request, inserted before 2B): Sniper / Assault / Machine gun, picked on the start/pause menu. User confirmed working and pushed, 2026-10-23.
   - [x] 2B shoot and paint together: user confirmed working on mobile and desktop and pushed, 2026-10-23.
-  - [ ] 2C reconnection, bandwidth, real-network testing: written 2026-10-23, awaiting the user's test.
-- [ ] Phase 3: lobby, QR join, customization, auto-balance
+  - [x] 2C rejoin on refresh, input catch-up, ping / input delay / data in the overlay: user confirmed all working and pushed, 2026-10-23.
+- [ ] Phase 3: lobby, QR join, customization, auto-balance (plan approved 2026-10-23, with the `uqr` dependency and a `?quick` dev shortcut; milestones 3A lobby/QR/host controls/balance/reveal/countdown, 3B customization)
+  - [ ] 3A: written 2026-10-23, awaiting the user's test.
+  - [ ] 3B customization: eyes, hat, goggles, shoes, body shape; live 3D preview; saved locally
 - [ ] Phase 4: Capture the Flag
 - [ ] Phase 5: 30-bot load test
 - [ ] Phase 6: deployment
@@ -167,4 +169,13 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - **Input catch-up:** the server consumed exactly one input per tick, so a burst left a permanent backlog (each queued input adds 33 ms). Now each tick runs `inputsToRun(queue size)` inputs: one normally, the extras when more than `CONFIG.net.maxQueuedInputs` (2) are waiting, at most `maxCatchUpSteps` (4). It runs them rather than dropping them, so the ack still matches prediction exactly.
   - **Refresh rejoin:** on `pagehide` the client saves `room.reconnectionToken` with a timestamp in sessionStorage (one per tab). On load it tries `client.reconnect` if the token is younger than `CONFIG.net.reconnectSeconds` (20), otherwise it joins fresh. A refresh is a non-consented close, so the server's `onDrop` + `allowReconnection` keeps the player. Colyseus copies `client.view` to the reconnected client.
   - **Data meter (dev / `?debug`):** `meterRoomTraffic` hooks `room.connection.transport.ws`. The SDK captures the `WebSocket` class at import, so patching the global doesn't work. It's SDK internals, so it fails soft with a console warning.
+- Lobby (3A):
+  - One `MatchRoom` (`ROOM_MATCH`) per lobby; its `roomId` is the lobby code (`generateLobbyCode`, 4 characters with no I/O/0/1, unique via a module-level set). Clients `create` or `joinById(code)`.
+  - `MatchState` has `phase` (lobby → reveal → countdown → playing, read with `parsePhase`), `hostId`, `matchMinutes` and `countdown` (whole seconds).
+  - The host is the first joiner; if they leave, the next in join order takes over. Host-only messages: `MSG_START`, `MSG_KICK` (the server sends `MSG_KICKED`, then a consented `leave()`, so the SDK won't auto-rejoin) and `MSG_MATCH_LENGTH`.
+  - In the lobby players have no physics body and their inputs are cleared. On start, `shuffleTeams` (the `TeamBalancer` type is pluggable) assigns teams and puts everyone on their spawns.
+  - Before `playing`, both the server and prediction use `frozenInput` (look around only).
+  - Late joiners go straight into the arena on `smallerTeam`.
+  - Client: `parseRoute` (`/`, `/join/CODE`, `?quick`), `Screens` (DOM; names always via textContent), `MatchBanner` (reveal / countdown / GO, `pointer-events: none`). `World(menuAtStart=false)` plus `setMenuVisible`; the pause menu appears from the reveal on, for the Play click.
+  - QR: `uqr` `encode()` rendered to our own SVG (`ui/qrCode.ts`). On a `localhost` page the host asks `MSG_REQUEST_LAN`; the server answers with its IPv4 addresses (not in production), and `joinUrl` prefers 192.168.x.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

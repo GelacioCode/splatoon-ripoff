@@ -59,16 +59,26 @@ export const NetPlayer = schema(
     shotCount: t.uint32().view(),
     sinceDamage: t.float32().view(),
     groundTeam: t.int8().view(),
+    // Not simulation state: shown in the lobby. Has a default, so a NetPlayer can still be
+    // built from a plain PlayerState (fields without one must be passed in).
+    name: t.string().default(''),
   },
   'NetPlayer',
 );
 export type NetPlayer = SchemaType<typeof NetPlayer>;
 
-/** Everything the arena room syncs. Players are keyed by session id. */
-export const ArenaState = schema(
+/** Everything a match room syncs. Players are keyed by session id. */
+export const MatchState = schema(
   {
+    /** A MatchPhase ('lobby', 'reveal', 'countdown', 'playing'); read it with parsePhase. */
+    phase: t.string().default('lobby'),
+    /** Session id of the host (who can start, kick and set the match length). */
+    hostId: t.string().default(''),
+    matchMinutes: t.uint8().default(5),
+    /** Whole seconds left in a timed phase (the reveal, the 3-2-1 countdown). */
+    countdown: t.uint8().default(0),
     players: t.map(NetPlayer),
   },
-  'ArenaState',
+  'MatchState',
 );
-export type ArenaState = SchemaType<typeof ArenaState>;
+export type MatchState = SchemaType<typeof MatchState>;

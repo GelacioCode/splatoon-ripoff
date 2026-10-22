@@ -1,13 +1,43 @@
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 export const DEFAULT_SERVER_PORT = 2567;
 
-/** Colyseus room names. */
-export const ROOM_ARENA = 'arena';
+/**
+ * Colyseus room name. Each lobby is one room of this type; its room id is the lobby code
+ * (e.g. `K7QX`), so players join with `joinById(code)`.
+ */
+export const ROOM_MATCH = 'match';
+
+/** Options a client sends when creating or joining a lobby. Everything is checked by the server. */
+export interface MatchJoinOptions {
+  name?: string;
+  /** Starting role (index in WEAPON_KINDS); invalid values mean assault. */
+  weapon?: number;
+}
 
 /** Client → server: switch to another role. Payload: the role's index in WEAPON_KINDS. */
 export const MSG_CHOOSE_WEAPON = 'chooseWeapon';
+
+/** Host → server: start the match (team reveal, countdown, play). No payload. */
+export const MSG_START = 'start';
+
+/** Host → server: remove a player. Payload: their session id. */
+export const MSG_KICK = 'kick';
+
+/** Server → a kicked player, just before closing their connection. No payload. */
+export const MSG_KICKED = 'kicked';
+
+/** Host → server: match length. Payload: minutes, one of CONFIG.lobby.matchMinuteOptions. */
+export const MSG_MATCH_LENGTH = 'matchLength';
+
+/**
+ * Client → server (development only): which addresses this computer has on the local network,
+ * so a host page opened on `localhost` can put a QR code phones can actually reach.
+ * The server answers with MSG_LAN_ADDRESSES: a list of IPv4 addresses.
+ */
+export const MSG_REQUEST_LAN = 'requestLan';
+export const MSG_LAN_ADDRESSES = 'lanAddresses';
 
 /** Client → server: send me all paint on the map (after joining or reconnecting). No payload. */
 export const MSG_REQUEST_PAINT = 'requestPaint';
@@ -27,9 +57,3 @@ export const MSG_SHOTS = 'shots';
  */
 export const MSG_PING = 'ping';
 export const MSG_PONG = 'pong';
-
-/** Options a client sends when joining the arena. */
-export interface ArenaJoinOptions {
-  /** Starting role (index in WEAPON_KINDS); invalid values mean assault. */
-  weapon?: number;
-}

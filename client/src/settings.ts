@@ -1,4 +1,4 @@
-import { DEFAULT_WEAPON, parseWeaponChoice } from '@paint-rush/shared';
+import { CONFIG, DEFAULT_WEAPON, parseWeaponChoice } from '@paint-rush/shared';
 
 export type Quality = 'auto' | 'low' | 'medium' | 'high';
 
@@ -17,6 +17,8 @@ export interface Settings {
   gyroSensitivity: number;
   /** Chosen role: an index in WEAPON_KINDS (0 assault, 1 sniper, 2 machine gun). */
   weapon: number;
+  /** Name shown in lobbies, as typed (the server cleans it up). Empty until first set. */
+  name: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,6 +30,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gyro: false,
   gyroSensitivity: 1,
   weapon: DEFAULT_WEAPON,
+  name: '',
 };
 
 const STORAGE_KEY = 'paint-rush.settings';
@@ -58,6 +61,10 @@ export function parseSettings(raw: string | null): Settings {
     gyro: typeof saved.gyro === 'boolean' ? saved.gyro : d.gyro,
     gyroSensitivity: numberIn(saved.gyroSensitivity, 0.1, 5, d.gyroSensitivity),
     weapon: parseWeaponChoice(saved.weapon) ?? d.weapon,
+    name:
+      typeof saved.name === 'string'
+        ? Array.from(saved.name).slice(0, CONFIG.lobby.maxNameLength).join('')
+        : d.name,
   };
 }
 

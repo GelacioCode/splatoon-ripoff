@@ -1,5 +1,6 @@
 import './style.css';
 import { DEFAULT_SERVER_PORT } from '@paint-rush/shared';
+import { parseRoute } from './net/route';
 import { resolveServerUrl } from './net/serverUrl';
 import { createDevOverlay } from './ui/devOverlay';
 
@@ -7,7 +8,8 @@ const overlay = createDevOverlay(requireElement('dev-overlay'));
 const container = requireElement('app');
 
 // The game (and Rapier, ~2 MB) loads as a separate chunk, so the page shows up right away.
-// Online (the arena on the game server) by default; `?offline` opens the solo sandbox.
+// Online by default: the start screen, or a lobby's join screen for `/join/CODE` links.
+// `?offline` opens the solo sandbox.
 const start = new URLSearchParams(window.location.search).has('offline')
   ? import('./game/SandboxGame').then(({ startSandbox }) => startSandbox(container, overlay))
   : import('./game/OnlineGame').then(({ startOnline }) =>
@@ -20,6 +22,7 @@ const start = new URLSearchParams(window.location.search).has('offline')
           location: window.location,
           defaultPort: DEFAULT_SERVER_PORT,
         }),
+        parseRoute(window.location.pathname, window.location.search),
       ),
     );
 start.catch((error: unknown) => {

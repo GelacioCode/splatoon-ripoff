@@ -1,0 +1,293 @@
+import { CONFIG, LOBBY_CODE_LENGTH, parseLobbyCode } from '@paint-rush/shared';
+import { TEAM_COLORS } from '../render/palette';
+import { createRoleCards } from './roleCards';
+
+/** One row of the lobby's player list. */
+export interface LobbyPlayer {
+  id: string;
+  name: string;
+  host: boolean;
+  me: boolean;
+}
+
+/** Everything the lobby screen shows; re-rendered whenever it changes. */
+export interface LobbyView {
+  code: string;
+  players: LobbyPlayer[];
+  isHost: boolean;
+  matchMinutes: number;
+  /** SVG markup of the join QR code (host only), or null while it's being made. */
+  qrSvg: string | null;
+  joinLink: string;
+}
+
+export interface LobbyActions {
+  start: () => void;
+  kick: (id: string) => void;
+  setMinutes: (minutes: number) => void;
+  leave: () => void;
+}
+
+function cssColor(hex: number): string {
+  return `#${hex.toString(16).padStart(6, '0')}`;
+}
+
+function element<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
+  const el = element('button', className, label);
+  el.type = 'button';
+  el.addEventListener('click', onClick);
+  return el;
+}
+
+/**
+ * The full-screen menus before and around a match: home, join, lobby and messages. One shows
+ * at a time, over the 3D arena. Names always go in as text (never HTML), since players type them.
+ */
+export class Screens {
+  private readonly root = element('div', 'screen');
+  private readonly card = element('div', 'menu-card screen-card');
+
+  constructor() {
+    this.root.append(this.card);
+    this.root.hidden = true;
+    document.body.append(this.root);
+  }
+
+  hide(): void {
+    this.root.hidden = true;
+  }
+
+  /** Start screen: create a lobby, or type a code to join one. */
+  showHome(actions: { create: () => void; joinCode: (code: string) => void }, note = ''): void {
+    const codeInput = element('input', 'screen-code-input');
+    codeInput.placeholder = 'CODE';
+    codeInput.maxLength = LOBBY_CODE_LENGTH + 1;
+    codeInput.autocapitalize = 'characters';
+    codeInput.autocomplete = 'off';
+    codeInput.spellcheck = false;
+    const error = element('p', 'menu-note', note);
+    error.hidden = note === '';
+    const join = () => {
+      const code = parseLobbyCode(codeInput.value);
+      if (code) actions.joinCode(code);
+      else {
+        error.textContent = `Lobby codes are ${LOBBY_CODE_LENGTH} letters/numbers, like K7QX.`;
+        error.hidden = false;
+      }
+    };
+    codeInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') join();
+    });
+    const joinRow = element('div', 'screen-row');
+    joinRow.append(codeInput, button('Join', 'screen-button', join));
+    const offline = element('a', 'screen-link', 'Practice alone (offline sandbox)');
+    offline.href = '/?offline';
+
+    this.show(
+      element('h1', undefined, 'Paint Rush'),
+      button('Create Lobby', 'menu-play', actions.create),
+      element('p', 'menu-heading', 'or join with a code'),
+      joinRow,
+      error,
+      offline,
+    );
+  }
+
+  /**
+   * Name and role, then Join (or Create, when `code` is null). Returns a way to show progress
+   * and errors while connecting.
+   */
+  showJoin(options: {
+    code: string | null;
+    name: string;
+    weapon: number;
+    submit: (name: string) => void;
+    pickWeapon: (weapon: number) => void;
+    back: () => void;
+  }) {
+    const nameInput = element('input', 'screen-name-input');
+    nameInput.placeholder = 'Your name';
+    nameInput.value = options.name;
+    nameInput.maxLength = CONFIG.lobby.maxNameLength;
+    // A valid HTML autofill hint, but missing from TypeScript's AutoFill type.
+    nameInput.setAttribute('autocomplete', 'nickname');
+    const label = element('label', 'screen-label', 'Name');
+    label.append(nameInput);
+    const roles = createRoleCards(options.weapon, options.pickWeapon);
+    const status = element('p', 'menu-note');
+    status.hidden = true;
+    const go = button(options.code ? 'Join' : 'Create lobby', 'menu-play', () =>
+      options.submit(nameInput.value),
+    );
+    nameInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !go.disabled) go.click();
+    });
+
+    this.show(
+      element('h1', undefined, options.code ? `Join lobby ${options.code}` : 'New lobby'),
+      label,
+      element('p', 'menu-heading', 'Choose your role'),
+      roles.element,
+      go,
+      status,
+      button('Back', 'screen-link-button', options.back),
+    );
+    nameInput.focus();
+    return {
+      busy(text: string): void {
+        go.disabled = true;
+        status.textContent = text;
+        status.hidden = false;
+      },
+      failed(text: string): void {
+        go.disabled = false;
+        status.textContent = text;
+        status.hidden = false;
+      },
+    };
+  }
+
+  /** The lobby: QR code and code for the host, the player list, and the host's controls. */
+  showLobby(view: LobbyView, actions: LobbyActions): void {
+    const parts: HTMLElement[] = [element('h1', undefined, 'Lobby')];
+    const code = element('p', 'screen-code', view.code);
+    if (view.isHost) {
+      const qr = element('div', 'screen-qr');
+      if (view.qrSvg) qr.innerHTML = view.qrSvg;
+      const link = element('p', 'screen-join-link', view.joinLink);
+      parts.push(qr, element('p', 'menu-heading', 'Scan to join, or enter the code:'), code, link);
+    } else {
+      parts.push(element('p', 'menu-heading', 'Lobby code'), code);
+    }
+
+    const list = element('ul', 'screen-players');
+    for (const player of view.players) {
+      const row = element('li', player.me ? 'me' : undefined);
+      row.append(element('span', 'screen-player-name', player.name));
+      if (player.host) row.append(element('span', 'screen-tag', 'host'));
+      if (player.me) row.append(element('span', 'screen-tag', 'you'));
+      if (view.isHost && !player.me) {
+        const kick = button('✕', 'screen-kick', () => actions.kick(player.id));
+        kick.title = `Remove ${player.name}`;
+        kick.setAttribute('aria-label', `Remove ${player.name}`);
+        row.append(kick);
+      }
+      list.append(row);
+    }
+    parts.push(
+      element('p', 'menu-heading', `Players (${view.players.length}/${CONFIG.lobby.maxPlayers})`),
+      list,
+    );
+
+    if (view.isHost) {
+      const minutes = element('select', 'screen-select');
+      for (const option of CONFIG.lobby.matchMinuteOptions) {
+        const el = element('option', undefined, `${option} minutes`);
+        el.value = String(option);
+        el.selected = option === view.matchMinutes;
+        minutes.append(el);
+      }
+      minutes.addEventListener('change', () => actions.setMinutes(Number(minutes.value)));
+      const length = element('label', 'screen-label', 'Match length');
+      length.append(minutes);
+      const enough = view.players.length >= CONFIG.lobby.minPlayersToStart;
+      const start = button(
+        enough ? 'Start' : `Start (needs ${CONFIG.lobby.minPlayersToStart} players)`,
+        'menu-play',
+        actions.start,
+      );
+      start.disabled = !enough;
+      parts.push(length, start);
+    } else {
+      parts.push(
+        element('p', 'screen-waiting', `Waiting for the host… (${view.matchMinutes} min match)`),
+      );
+    }
+    parts.push(button('Leave lobby', 'screen-link-button', actions.leave));
+    this.show(...parts);
+  }
+
+  /** A message with one button, e.g. "You were removed by the host". */
+  showMessage(title: string, text: string, action: { label: string; run: () => void }): void {
+    this.show(
+      element('h1', undefined, title),
+      element('p', 'screen-message', text),
+      button(action.label, 'menu-play', action.run),
+    );
+  }
+
+  private show(...children: HTMLElement[]): void {
+    this.card.replaceChildren(...children);
+    this.root.hidden = false;
+  }
+}
+
+/**
+ * The banner over the game around the start: both teams during the reveal, then a big
+ * 3 · 2 · 1 and GO. It never blocks clicks, so you can still click to play.
+ */
+export class MatchBanner {
+  private readonly root = element('div', 'match-banner');
+  private shown = '';
+  private hideTimer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor() {
+    this.root.hidden = true;
+    document.body.append(this.root);
+  }
+
+  /** Team lists (team 0 then team 1), plus "Starting in N". */
+  showReveal(teams: [string[], string[]], secondsLeft: number): void {
+    const key = `reveal|${teams[0].join(',')}|${teams[1].join(',')}|${secondsLeft}`;
+    if (!this.update(key)) return;
+    const columns = element('div', 'banner-teams');
+    teams.forEach((names, team) => {
+      const column = element('div', 'banner-team');
+      column.style.setProperty('--team', cssColor(TEAM_COLORS[team]));
+      column.append(element('h2', undefined, team === 0 ? 'Pink team' : 'Cyan team'));
+      const list = element('ul');
+      for (const name of names) list.append(element('li', undefined, name));
+      column.append(list);
+      columns.append(column);
+    });
+    this.root.replaceChildren(columns, element('p', 'banner-sub', `Starting in ${secondsLeft}…`));
+  }
+
+  showCountdown(secondsLeft: number): void {
+    if (this.update(`count|${secondsLeft}`)) {
+      this.root.replaceChildren(element('p', 'banner-big', String(Math.max(1, secondsLeft))));
+    }
+  }
+
+  /** "GO!" for a moment, then the banner hides by itself. */
+  showGo(): void {
+    if (!this.update('go')) return;
+    this.root.replaceChildren(element('p', 'banner-big', 'GO!'));
+    this.hideTimer = setTimeout(() => this.hide(), 900);
+  }
+
+  hide(): void {
+    this.shown = '';
+    this.root.hidden = true;
+  }
+
+  /** Only rebuild when the content actually changes (this is called every frame). */
+  private update(key: string): boolean {
+    if (key === this.shown) return false;
+    clearTimeout(this.hideTimer);
+    this.shown = key;
+    this.root.hidden = false;
+    return true;
+  }
+}

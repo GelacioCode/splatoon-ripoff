@@ -2,28 +2,37 @@ import { Vector3 } from 'three';
 import { Client, Predict, type InputHandle } from '@colyseus/sdk';
 import {
   ARENA,
-  ArenaState,
   CONFIG,
   decodePaintEvents,
   decodePaintSnapshot,
   decodeShotEvents,
+  MatchState,
   MSG_CHOOSE_WEAPON,
+  MSG_KICK,
+  MSG_KICKED,
+  MSG_LAN_ADDRESSES,
+  MSG_MATCH_LENGTH,
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
   MSG_PING,
   MSG_PONG,
+  MSG_REQUEST_LAN,
   MSG_REQUEST_PAINT,
   MSG_SHOTS,
-  ROOM_ARENA,
+  MSG_START,
+  NetInput,
+  parsePhase,
+  ROOM_MATCH,
   seedFromString,
   wrapAngle,
-  NetInput,
-  type ArenaJoinOptions,
+  type MatchJoinOptions,
+  type MatchPhase,
   type NetPlayer,
 } from '@paint-rush/shared';
 import {
   createPlayerState,
   createProjectile,
+  frozenInput,
   initPhysics,
   stepPlayer,
   stepProjectiles,
@@ -34,21 +43,25 @@ import {
   type Projectile,
 } from '@paint-rush/shared/sim';
 import { clearReconnectToken, loadReconnectToken, saveReconnectToken } from '../net/reconnectToken';
+import { isLocalPage, joinPath, joinUrl, type Route } from '../net/route';
 import { meterRoomTraffic, TrafficMeter } from '../net/trafficMeter';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
+import { saveSettings } from '../settings';
 import type { DevOverlay } from '../ui/devOverlay';
+import { qrCodeSvg } from '../ui/qrCode';
+import { MatchBanner, Screens, type LobbyPlayer } from '../ui/screens';
 import { FixedStep } from './fixedStep';
 import { NewShotFilter } from './newShotFilter';
 import { snapshotOf, World, type PlayerSnapshot } from './World';
 
-/** Wait this long before retrying a failed join, or reloading after losing the room (ms). */
-const RETRY_MS = 2000;
 /** How often the dev overlay's connection line refreshes (s). */
 const STATUS_INTERVAL = 0.5;
 /** Fields smoothed for drawing other players (yaw is smoothed separately, as an angle). */
 const SMOOTHED_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'swimBlend'] as const;
 /** Other players' shots sound this much quieter than your own. */
 const REMOTE_SHOT_VOLUME = 0.5;
+/** Name used by the `?quick` dev shortcut when none was ever entered. */
+const QUICK_NAME = 'Tester';
 
 /** Byte messages arrive as Uint8Array; anything else means a server/client version mismatch. */
 function asBytes(payload: unknown): Uint8Array | null {
@@ -57,14 +70,19 @@ function asBytes(payload: unknown): Uint8Array | null {
   return null;
 }
 
-function joinArena(serverUrl: string, options: ArenaJoinOptions = {}) {
-  return new Client(serverUrl).joinOrCreate(ROOM_ARENA, options, ArenaState);
+/** Makes a new lobby; the room id the server gives it is the lobby code. */
+function createLobby(serverUrl: string, options: MatchJoinOptions) {
+  return new Client(serverUrl).create(ROOM_MATCH, options, MatchState);
 }
-type ArenaRoom = Awaited<ReturnType<typeof joinArena>>;
+type MatchRoom = Awaited<ReturnType<typeof createLobby>>;
+
+function joinLobby(serverUrl: string, code: string, options: MatchJoinOptions): Promise<MatchRoom> {
+  return new Client(serverUrl).joinById<MatchState>(code, options, MatchState);
+}
 
 /** Takes back the player this tab had before a refresh (the server keeps it for a while). */
-function rejoinArena(serverUrl: string, token: string): Promise<ArenaRoom> {
-  return new Client(serverUrl).reconnect<ArenaState>(token, ArenaState);
+function rejoinLobby(serverUrl: string, token: string): Promise<MatchRoom> {
+  return new Client(serverUrl).reconnect<MatchState>(token, MatchState);
 }
 
 /** Network data use is metered in development, and in any build with `?debug`. */
@@ -75,7 +93,7 @@ const PING_SMOOTHING = 0.3;
 
 /** Predicts our own player with the shared rules, replaying inputs the server hasn't seen yet. */
 function createReconciler(
-  predict: Predict<ArenaState>,
+  predict: Predict<MatchState>,
   player: NetPlayer,
   input: InputHandle<NetInput>,
   simulate: (state: PlayerState, command: PlayerInput, dt: number) => void,
@@ -88,35 +106,54 @@ function createReconciler(
 }
 type OwnReconciler = ReturnType<typeof createReconciler>;
 
-/** Loads physics, then shows the arena right away and joins the server in the background. */
+/** Loads physics, shows the arena behind the menus, and opens the screen the link asks for. */
 export async function startOnline(
   container: HTMLElement,
   overlay: DevOverlay,
   serverUrl: string,
+  route: Route,
 ): Promise<void> {
   const rapierVersion = await initPhysics();
-  overlay.update({ physics: `Rapier ${rapierVersion}`, serverUrl });
+  overlay.update({ physics: `Rapier ${rapierVersion}`, serverUrl, server: 'not connected' });
   // `?debug` adds Colyseus' netcode panel: prediction drift and a latency simulator.
   if (new URLSearchParams(window.location.search).has('debug')) {
     import('@colyseus/sdk/debug').catch((error: unknown) => console.warn(error));
   }
-  const game = new OnlineGame(container, overlay);
+  const game = new OnlineGame(container, overlay, serverUrl);
   game.start();
-  game.connect(serverUrl);
+  game.open(route);
 }
 
 /** Shown before the server has placed us: the team 0 spawn, standing still. */
 const WAITING_STATE = createPlayerState(ARENA.spawns[0][0], Math.PI, 0);
 
-/** The multiplayer game: everyone in one arena room, with the server in charge. */
+/** Why a session ended. */
+type LeaveReason = 'left' | 'kicked' | 'lost';
+
+/** The page's query string without the `?quick` shortcut (so a refresh doesn't make a new lobby). */
+function searchWithoutQuick(): string {
+  const params = new URLSearchParams(window.location.search);
+  params.delete('quick');
+  const search = params.toString();
+  return search ? `?${search}` : '';
+}
+
+/**
+ * The multiplayer game: the start and lobby screens, then a match room with the server in
+ * charge. The 3D arena is always drawn, behind the menus too.
+ */
 class OnlineGame {
   private readonly world: World;
   private readonly overlay: DevOverlay;
+  private readonly serverUrl: string;
+  private readonly screens = new Screens();
+  private readonly banner = new MatchBanner();
   private session: NetSession | null = null;
   private readonly waitingFeet = new Vector3(WAITING_STATE.x, WAITING_STATE.y, WAITING_STATE.z);
 
-  constructor(container: HTMLElement, overlay: DevOverlay) {
+  constructor(container: HTMLElement, overlay: DevOverlay, serverUrl: string) {
     this.overlay = overlay;
+    this.serverUrl = serverUrl;
     const onlyOffline = () => console.info('Only available in the offline sandbox (?offline).');
     this.world = new World(
       container,
@@ -129,6 +166,8 @@ class OnlineGame {
       },
       // The server switches the role; our blaster and ink follow once it confirms.
       (weapon) => this.session?.chooseWeapon(weapon),
+      // The lobby screens come first; the pause menu appears when the match does.
+      false,
     );
     this.world.view.yaw = Math.PI;
   }
@@ -137,28 +176,123 @@ class OnlineGame {
     this.world.start(this.frame);
   }
 
-  connect(serverUrl: string): void {
-    this.overlay.update({ server: 'connecting' });
-    const join = () => joinArena(serverUrl, { weapon: this.world.settings.weapon });
-    // After a refresh, first try to take our player back; if that fails, join as a new one.
+  /** A refreshed tab first tries to take its player back; otherwise the link decides. */
+  open(route: Route): void {
     const token = loadReconnectToken(CONFIG.net.reconnectSeconds);
     clearReconnectToken();
-    const joining = token
-      ? rejoinArena(serverUrl, token).catch((error: unknown) => {
-          console.info('[net] could not rejoin as the same player; joining fresh', error);
-          return join();
-        })
-      : join();
-    joining.then(
-      (room) => {
-        this.session = new NetSession(this.world, this.overlay, room);
-      },
+    if (!token) {
+      this.openRoute(route);
+      return;
+    }
+    this.overlay.update({ server: 'rejoining…' });
+    rejoinLobby(this.serverUrl, token).then(
+      (room) => this.enter(room),
       (error: unknown) => {
-        console.warn('[net] could not join the arena, retrying…', error);
-        this.overlay.update({ server: 'offline' });
-        setTimeout(() => this.connect(serverUrl), RETRY_MS);
+        console.info('[net] could not rejoin as the same player', error);
+        this.overlay.update({ server: 'not connected' });
+        this.openRoute(route);
       },
     );
+  }
+
+  private openRoute(route: Route): void {
+    if (route.kind === 'join') this.showJoin(route.code);
+    else if (route.kind === 'quick') this.quickStart();
+    else this.showHome(route.badCode ? `"${route.badCode}" isn't a lobby code.` : '');
+  }
+
+  private showHome(note = ''): void {
+    window.history.replaceState(null, '', `/${searchWithoutQuick()}`);
+    this.screens.showHome(
+      { create: () => this.showJoin(null), joinCode: (code) => this.showJoin(code) },
+      note,
+    );
+  }
+
+  /** Name and role, then join the lobby `code`, or create a new one when `code` is null. */
+  private showJoin(code: string | null): void {
+    const settings = this.world.settings;
+    const form = this.screens.showJoin({
+      code,
+      name: settings.name,
+      weapon: settings.weapon,
+      pickWeapon: (weapon) => {
+        settings.weapon = weapon;
+        saveSettings(settings);
+      },
+      back: () => this.showHome(),
+      submit: (name) => {
+        settings.name = name.trim();
+        saveSettings(settings);
+        form.busy(code ? 'Joining…' : 'Creating lobby…');
+        const options = { name: settings.name, weapon: settings.weapon };
+        const joining = code
+          ? joinLobby(this.serverUrl, code, options)
+          : createLobby(this.serverUrl, options);
+        joining.then(
+          (room) => this.enter(room),
+          (error: unknown) => {
+            console.warn('[net] could not join', error);
+            form.failed(
+              code
+                ? `Couldn't join ${code}. The lobby may have closed or be full.`
+                : "Couldn't reach the game server. Is it running?",
+            );
+          },
+        );
+      },
+    });
+  }
+
+  /** Dev shortcut (`?quick`): make a lobby with the saved name and start it straight away. */
+  private quickStart(): void {
+    const settings = this.world.settings;
+    createLobby(this.serverUrl, {
+      name: settings.name || QUICK_NAME,
+      weapon: settings.weapon,
+    }).then(
+      (room) => {
+        this.enter(room);
+        room.send(MSG_START);
+      },
+      (error: unknown) => {
+        console.warn('[net] quick start failed', error);
+        this.screens.showMessage('No server', "Couldn't reach the game server. Is it running?", {
+          label: 'Try again',
+          run: () => window.location.reload(),
+        });
+      },
+    );
+  }
+
+  private enter(room: MatchRoom): void {
+    // The address bar shows the lobby's link, ready to share.
+    window.history.replaceState(null, '', `${joinPath(room.roomId)}${searchWithoutQuick()}`);
+    this.screens.hide();
+    this.session = new NetSession(
+      this.world,
+      this.overlay,
+      room,
+      this.screens,
+      this.banner,
+      (why) => this.afterLeave(why),
+    );
+  }
+
+  private afterLeave(why: LeaveReason): void {
+    this.session?.dispose();
+    this.session = null;
+    this.banner.hide();
+    this.world.setMenuVisible(false);
+    this.overlay.update({ server: 'not connected', players: undefined });
+    const home = { label: 'Back to start', run: () => this.showHome() };
+    if (why === 'kicked') {
+      this.screens.showMessage('Removed', 'The host removed you from the lobby.', home);
+    } else if (why === 'lost') {
+      this.screens.showMessage('Disconnected', 'Lost the connection to the lobby.', home);
+    } else {
+      this.showHome();
+    }
   }
 
   private readonly frame = (timeMs: number): void => {
@@ -177,15 +311,18 @@ interface RemotePlayer {
 }
 
 /**
- * One joined arena room: our predicted player plus smoothed remote players. Shots on screen
- * are for show (our own appear instantly, others' as the server reports them); the paint
- * they leave comes from the server, so every screen has the same paint.
+ * One joined match room. In the lobby it keeps the lobby screen up to date; from the team
+ * reveal on it runs the game: our predicted player plus smoothed remote players. Shots on
+ * screen are for show (our own appear instantly, others' as the server reports them); the
+ * paint they leave comes from the server, so every screen has the same paint.
  */
 class NetSession {
   private readonly world: World;
   private readonly overlay: DevOverlay;
-  private readonly room: ArenaRoom;
-  private readonly predict: Predict<ArenaState>;
+  private readonly room: MatchRoom;
+  private readonly screens: Screens;
+  private readonly banner: MatchBanner;
+  private readonly predict: Predict<MatchState>;
   private readonly netInput: InputHandle<NetInput>;
   private readonly remotes = new Map<string, RemotePlayer>();
   private readonly feet = new Vector3();
@@ -205,11 +342,30 @@ class NetSession {
   private firing = false;
   private pingMs: number | null = null;
   private readonly traffic = METER_TRAFFIC ? new TrafficMeter() : null;
+  /** The phase the screens were last set up for (null: not yet). */
+  private shownPhase: MatchPhase | null = null;
+  /** What the lobby screen last showed, so it's only rebuilt when something changes. */
+  private lobbyKey = '';
+  private lanAddresses: string[] = [];
+  private askedForLan = false;
+  private qr: { url: string; svg: string } | null = null;
+  private kicked = false;
+  private leaving = false;
+  private readonly saveToken = () => saveReconnectToken(this.room.reconnectionToken);
 
-  constructor(world: World, overlay: DevOverlay, room: ArenaRoom) {
+  constructor(
+    world: World,
+    overlay: DevOverlay,
+    room: MatchRoom,
+    screens: Screens,
+    banner: MatchBanner,
+    ended: (why: LeaveReason) => void,
+  ) {
     this.world = world;
     this.overlay = overlay;
     this.room = room;
+    this.screens = screens;
+    this.banner = banner;
     this.seed = seedFromString(room.sessionId);
     // Others are drawn slightly in the past, between two snapshots, so they move smoothly.
     this.predict = Predict.get(room, { mode: 'lerp', delay: CONFIG.net.interpolationDelayMs });
@@ -221,12 +377,20 @@ class NetSession {
     room.onMessage(MSG_SHOTS, (payload: unknown) => this.receiveShots(payload));
     room.onMessage(MSG_PAINT_SNAPSHOT, (payload: unknown) => this.receiveSnapshot(payload));
     room.onMessage(MSG_PONG, (sentAt: unknown) => this.receivePong(sentAt));
+    room.onMessage(MSG_KICKED, () => {
+      this.kicked = true;
+    });
+    room.onMessage(MSG_LAN_ADDRESSES, (addresses: unknown) => {
+      if (Array.isArray(addresses)) {
+        this.lanAddresses = addresses.filter((a): a is string => typeof a === 'string');
+      }
+    });
     // Handlers are in place, so the snapshot can't arrive before we listen for it.
     room.send(MSG_REQUEST_PAINT);
     this.meterTraffic();
 
     // Leaving the page (refresh, or switching away on a phone): remember how to rejoin.
-    window.addEventListener('pagehide', () => saveReconnectToken(room.reconnectionToken));
+    window.addEventListener('pagehide', this.saveToken);
 
     room.onDrop(() => this.overlay.update({ server: 'reconnecting…' }));
     room.onReconnect(() => {
@@ -237,22 +401,35 @@ class NetSession {
     });
     room.onLeave((code) => {
       clearReconnectToken();
-      console.info(`[net] left the arena (code ${code}); reloading`);
-      this.overlay.update({ server: 'offline' });
-      setTimeout(() => window.location.reload(), RETRY_MS);
+      console.info(`[net] left lobby ${room.roomId} (code ${code})`);
+      ended(this.kicked ? 'kicked' : this.leaving ? 'left' : 'lost');
     });
-    this.overlay.update({ server: 'connected' });
+    this.overlay.update({ server: `lobby ${room.roomId}` });
+  }
+
+  /** Cleans up after leaving: characters, physics body, shots and paint. */
+  dispose(): void {
+    window.removeEventListener('pagehide', this.saveToken);
+    for (const remote of this.remotes.values()) this.world.removeCharacter(remote.character);
+    this.remotes.clear();
+    if (this.character) this.world.removeCharacter(this.character);
+    if (this.body) this.world.physics.removeCharacter(this.body);
+    this.shots.length = 0;
+    this.world.paint.clear();
+    this.world.atlas.clear();
   }
 
   frame(timeMs: number): void {
     const world = this.world;
+    const phase = parsePhase(this.room.state.phase);
+    this.updateScreens(phase);
     const me = this.me;
     const dt = world.beginFrame(timeMs, me?.state.aiming ?? false);
-    this.syncPlayers();
+    if (phase !== 'lobby') this.syncPlayers();
 
     // One input per fixed server tick that's due, sent before reading anything to draw.
     const steps = this.predict.tick();
-    for (let i = 0; i < steps; i++) this.sendInput();
+    if (me) for (let i = 0; i < steps; i++) this.sendInput();
 
     if (me && this.character) {
       const s = me.state;
@@ -285,6 +462,8 @@ class NetSession {
       this.character.setWeapon(s.weapon);
       world.weaponSounds(this.wasReloading, s, this.firing, dt);
       this.wasReloading = s.reloadTimer > 0;
+    } else {
+      this.feet.set(WAITING_STATE.x, WAITING_STATE.y, WAITING_STATE.z);
     }
     for (const remote of this.remotes.values()) {
       remote.character.update(dt, this.remotePose(remote.player));
@@ -302,18 +481,103 @@ class NetSession {
     this.updateStatus(dt);
   }
 
+  /** Asks the server for another role (it checks the choice and refills the tank). */
+  chooseWeapon(weapon: number): void {
+    this.room.send(MSG_CHOOSE_WEAPON, weapon);
+  }
+
+  /** The lobby screen, then the team reveal, the countdown and GO as the phase moves on. */
+  private updateScreens(phase: MatchPhase): void {
+    const previous = this.shownPhase;
+    this.shownPhase = phase;
+    if (phase === 'lobby') {
+      if (previous !== 'lobby') {
+        this.world.setMenuVisible(false);
+        this.banner.hide();
+      }
+      this.updateLobby();
+      return;
+    }
+    if (previous === 'lobby' || previous === null) {
+      // The match is on: menus away, and the pause menu's Play button to capture the mouse.
+      this.screens.hide();
+      this.lobbyKey = '';
+      this.world.setMenuVisible(true);
+    }
+    const secondsLeft = this.room.state.countdown;
+    if (phase === 'reveal') this.banner.showReveal(this.teamNames(), secondsLeft);
+    else if (phase === 'countdown') this.banner.showCountdown(secondsLeft);
+    else if (previous === 'countdown') this.banner.showGo();
+    else if (previous !== 'playing') this.banner.hide();
+  }
+
+  private updateLobby(): void {
+    const state = this.room.state;
+    const isHost = state.hostId === this.room.sessionId;
+    if (isHost && !this.askedForLan && isLocalPage(window.location.hostname)) {
+      // The QR code needs this computer's network address; the server knows it.
+      this.askedForLan = true;
+      this.room.send(MSG_REQUEST_LAN);
+    }
+    const players: LobbyPlayer[] = [];
+    for (const [id, player] of state.players) {
+      players.push({
+        id,
+        name: player.name,
+        host: id === state.hostId,
+        me: id === this.room.sessionId,
+      });
+    }
+    const link = joinUrl(window.location, this.room.roomId, this.lanAddresses);
+    if (isHost && this.qr?.url !== link) this.qr = { url: link, svg: qrCodeSvg(link) };
+
+    const key = JSON.stringify([players, isHost, state.matchMinutes, link]);
+    if (key === this.lobbyKey) return;
+    this.lobbyKey = key;
+    this.screens.showLobby(
+      {
+        code: this.room.roomId,
+        players,
+        isHost,
+        matchMinutes: state.matchMinutes,
+        qrSvg: isHost ? (this.qr?.svg ?? null) : null,
+        joinLink: link,
+      },
+      {
+        start: () => this.room.send(MSG_START),
+        kick: (id) => this.room.send(MSG_KICK, id),
+        setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
+        leave: () => {
+          this.leaving = true;
+          this.room.leave().catch((error: unknown) => console.warn(error));
+        },
+      },
+    );
+  }
+
+  /** Names on each team, for the reveal. */
+  private teamNames(): [string[], string[]] {
+    const teams: [string[], string[]] = [[], []];
+    for (const player of this.room.state.players.values()) {
+      teams[player.team === 1 ? 1 : 0].push(player.name);
+    }
+    return teams;
+  }
+
   /**
    * One predicted tick of our own player: movement, then the weapon. Shots it fires appear
    * on screen right away, unless it's a replay of a tick whose shots are already flying.
+   * Before GO only looking around works, exactly as on the server.
    */
   private predictTick(
     state: PlayerState,
-    command: PlayerInput,
+    input: PlayerInput,
     dt: number,
     body: Collider,
     newShots: NewShotFilter,
   ): void {
     const world = this.world;
+    const command = parsePhase(this.room.state.phase) === 'playing' ? input : frozenInput(input);
     stepPlayer(world.physics, body, state, command, dt, world.paint);
     this.fired.length = 0;
     const fired = stepWeapon(state, command, dt, this.seed, this.fired);
@@ -357,11 +621,6 @@ class NetSession {
     }
   }
 
-  /** Asks the server for another role (it checks the choice and refills the tank). */
-  chooseWeapon(weapon: number): void {
-    this.room.send(MSG_CHOOSE_WEAPON, weapon);
-  }
-
   private sendInput(): void {
     const world = this.world;
     // Yaw goes over the wire wrapped to −π…π, so prediction must use the same value.
@@ -389,7 +648,7 @@ class NetSession {
     console.warn(`[net] ${problem}`, details);
   }
 
-  /** Creates characters for players who just joined and removes those who left. */
+  /** Creates characters for players who just entered the arena and removes those who left. */
   private syncPlayers(): void {
     const players = this.room.state.players;
     for (const [sessionId, player] of players) {

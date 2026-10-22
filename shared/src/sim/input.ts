@@ -16,6 +16,14 @@ export interface PlayerInput {
   aim: boolean;
 }
 
+/**
+ * The input with everything but looking around switched off: for the countdown before a
+ * match, when players stand on their spawn pads. Server and prediction both use it.
+ */
+export function frozenInput(input: PlayerInput): PlayerInput {
+  return { ...createInput(), aimYaw: input.aimYaw, aimPitch: input.aimPitch };
+}
+
 export function createInput(): PlayerInput {
   return {
     moveX: 0,

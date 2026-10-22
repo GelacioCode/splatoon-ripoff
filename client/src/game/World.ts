@@ -112,6 +112,8 @@ export class World {
   private readonly toonRamp = createToonRamp();
   private readonly hud = createHud();
   private readonly menu: ReturnType<typeof createPauseMenu>;
+  /** False while lobby screens are up: the menu then never appears (e.g. on Esc). */
+  private menuEnabled: boolean;
   private readonly resolution = new DynamicResolution();
   private readonly shadow: Mesh;
   private readonly shadowNormal = new Vector3();
@@ -125,13 +127,15 @@ export class World {
 
   /**
    * `roleChanged` runs when the player picks another role in the menu (already saved in
-   * `settings.weapon`).
+   * `settings.weapon`). With `menuAtStart` false, the pause menu stays hidden until
+   * `setMenuVisible(true)` (online, the lobby screens come first).
    */
   constructor(
     container: HTMLElement,
     overlay: DevOverlay,
     tuning: TuningActions,
     roleChanged: (weapon: number) => void,
+    menuAtStart = true,
   ) {
     this.overlay = overlay;
     this.roleChanged = roleChanged;
@@ -180,6 +184,8 @@ export class World {
       enableGyro: () => this.input.gyro.enable(),
       openTuning: () => toggleTuningPanel(tuning),
     });
+    this.menuEnabled = menuAtStart;
+    this.menu.setVisible(menuAtStart);
     this.input = new InputManager(
       this.renderer.domElement,
       this.touchDevice,
@@ -187,7 +193,7 @@ export class World {
         // Desktop: playing exactly while the mouse is captured (Esc frees it and pauses).
         if (this.touchDevice) return;
         this.input.playing = locked;
-        this.menu.setVisible(!locked);
+        this.menu.setVisible(!locked && this.menuEnabled);
       },
       () => this.pause(),
     );
@@ -203,6 +209,22 @@ export class World {
       toggleTuningPanel(tuning);
     });
     this.overlay.update({ renderer: `three r${REVISION} · WebGL2 · ${this.quality} quality` });
+  }
+
+  /**
+   * Shows the pause menu (with its Play button), or hides it and stops play, e.g. when going
+   * back to a lobby screen.
+   */
+  setMenuVisible(visible: boolean): void {
+    this.menuEnabled = visible;
+    if (visible) {
+      this.pause();
+      return;
+    }
+    this.input.playing = false;
+    this.input.touch?.setVisible(false);
+    if (document.pointerLockElement) document.exitPointerLock();
+    this.menu.setVisible(false);
   }
 
   /** Starts calling `frame` once per display refresh. */

@@ -2,15 +2,27 @@
 
 A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming through your own paint, and Capture the Flag. Players join from their phones by scanning a QR code.
 
-> **Status: Phase 2 (networking) in progress.** Players in several tabs or phones share one arena.
+> **Status: Phase 3 (lobby) in progress.** Create a lobby, players join by QR code or code, the host starts, and teams are balanced automatically.
 
 ## Game modes (page address options)
 
 | Address | What you get |
 | --- | --- |
-| `http://localhost:5173` | **Online arena** on the game server (needs `pnpm dev` running). Open it in several tabs or on phones to play together; teams alternate pink and cyan. Everyone sees everyone's shots and paint, and a tab opened later gets the paint already on the map. |
+| `http://localhost:5173` | **Start screen** (needs `pnpm dev` running): **Create Lobby**, or join one with its code. |
+| `…/join/K7QX` | **Join screen** for lobby `K7QX`: this is the link in the lobby's QR code. |
+| `…/?quick` | Dev shortcut: creates a lobby and starts it at once (solo testing of online play). |
 | `…/?offline` | **Offline sandbox**: play solo without the server (handy for tuning the feel). |
-| `…/?debug` | Online, plus Colyseus' netcode panel: prediction drift and a **latency simulator** to test lag. |
+| `…/?debug` | Online, plus Colyseus' netcode panel: prediction drift and a **latency simulator** to test lag. Works together with the others, e.g. `?quick&debug`. |
+
+## Lobbies
+
+1. The host clicks **Create Lobby**, enters a name and picks a role. The lobby shows a big **QR code** and a 4-character **code**.
+2. Players scan the QR code (or open the site and type the code), enter a name, pick a role and join. Names are remembered on each device.
+3. The host sees everyone in the list. They can remove a player (✕), set the match length, and press **Start**, which needs 2 players. The host plays too.
+4. On Start, players are shuffled into two even teams. A **team reveal** shows, then **3 · 2 · 1 · GO!** while everyone waits on their spawn pad. Then click or tap to play.
+5. Players who join while a match is on go straight in, on the smaller team.
+
+When you run `pnpm dev` and open the host page as `localhost`, the QR code uses your PC's network address instead, so phones on the same Wi-Fi can open it. If Windows asks, allow Node.js on private networks.
 
 ## Requirements
 
@@ -29,7 +41,7 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 
 ## Online play
 
-- **Refreshing the page puts you back as the same player** (same team, role and position), as long as you're back within 20 seconds. Each tab is its own player.
+- **Refreshing the page puts you back as the same player** (same lobby, team, role and position), as long as you're back within 20 seconds. Each tab is its own player.
 - The dev overlay (top left) shows:
   - **Ping:** the plain network round trip to the server.
   - **Input delay:** from pressing something until the server has used it and told you. It's always a bit higher than ping, because it includes waiting for the server's next tick and update. If inputs pile up, the server runs the extras straight away so the delay doesn't keep growing.

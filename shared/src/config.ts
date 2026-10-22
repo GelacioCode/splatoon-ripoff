@@ -23,6 +23,14 @@ export const CONFIG = {
   lobby: {
     maxPlayers: 30,
     maxNameLength: 16,
+    /** The lobby's Start button needs this many players (the server itself accepts 1, for testing). */
+    minPlayersToStart: 2,
+    /** Match lengths the host can pick (minutes). */
+    matchMinuteOptions: [3, 5, 7],
+    /** How long the team reveal shows before the countdown (s). */
+    revealSeconds: 3,
+    /** 3 · 2 · 1 before GO (s). Players stand on their spawn pads meanwhile. */
+    countdownSeconds: 3,
   },
   player: {
     maxHp: 100,
