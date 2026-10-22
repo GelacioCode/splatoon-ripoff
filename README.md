@@ -33,6 +33,17 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 | Pause (frees the mouse) | Esc |
 | Live tuning panel (for development) | `` ` `` (backtick, left of 1) |
 
+## Controls (phones and tablets)
+
+- **Left thumb:** touch anywhere on the left half and drag to move (the joystick appears where you touch).
+- **Right thumb:** drag on the right half to aim. You can also drag the **SHOOT** button to aim while shooting.
+- **Buttons:** SHOOT (hold), SWIM (hold), JUMP, R (reload), II (pause).
+- **Optional gyro aim:** turn it on in the pause menu. It needs an `https://` page (see the Cloudflare tunnel tip below), and iPhones ask for permission.
+
+The pause menu (Esc on desktop, II on touch) has sensitivity, invert up/down, volume, gyro and **graphics quality** (Auto / Low / Medium / High). Changing quality reloads the page. Resolution also drops automatically when the frame rate does, shown as `res …%` in the dev overlay.
+
+To test gyro over https on your phone, run a temporary tunnel to the dev server: `cloudflared tunnel --url http://localhost:5173`. Install it once with `winget install --id Cloudflare.cloudflared`.
+
 The tuning panel has sliders for movement and camera feel. **Copy tuning** copies the current values so they can be saved into `shared/src/config.ts`.
 
 ## Scripts (run from the repo root)

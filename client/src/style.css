@@ -64,44 +64,207 @@ body {
   pointer-events: none;
 }
 
-.start-screen {
+/* Start / pause menu */
+
+.pause-menu {
   position: fixed;
   inset: 0;
   z-index: 10;
   display: grid;
   place-items: center;
+  padding: 16px;
   background: rgb(29 17 53 / 35%);
-  cursor: pointer;
+  overflow-y: auto;
+  /* The game blocks touch scrolling everywhere else; the menu may need it on small screens. */
+  touch-action: pan-y;
 }
 
-.start-screen[hidden] {
+.pause-menu[hidden] {
   display: none;
 }
 
-.start-card {
-  padding: 24px 32px;
+.menu-card {
+  width: min(420px, 100%);
+  padding: 20px 24px;
   border-radius: 16px;
-  background: rgb(29 17 53 / 88%);
+  background: rgb(29 17 53 / 90%);
   color: #fff;
   text-align: center;
+  user-select: none;
 }
 
-.start-card h1 {
-  margin: 0 0 8px;
-  font-size: 32px;
-}
-
-.start-cta {
+.menu-card h1 {
   margin: 0 0 12px;
-  color: #fd3fb4;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 30px;
 }
 
-.start-keys {
-  margin: 0;
-  font-size: 13px;
+.menu-play {
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #fd3fb4;
+  color: #fff;
+  font:
+    700 20px system-ui,
+    sans-serif;
+  cursor: pointer;
+}
+
+.menu-keys {
+  margin: 12px 0;
+  font-size: 12px;
+  line-height: 1.5;
   opacity: 0.8;
+}
+
+.menu-settings {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  text-align: left;
+  font-size: 14px;
+}
+
+.menu-settings label {
+  display: grid;
+  gap: 4px;
+}
+
+.menu-settings label.menu-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-settings [hidden] {
+  display: none;
+}
+
+.menu-note {
+  margin: 0;
+  color: #ffd166;
+  font-size: 12px;
+}
+
+.menu-tuning {
+  padding: 8px 12px;
+  border: 1px solid rgb(255 255 255 / 40%);
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* Touch controls */
+
+.touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+}
+
+.touch-controls[hidden] {
+  display: none;
+}
+
+.touch-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+}
+
+.touch-move-zone {
+  left: 0;
+}
+
+.touch-aim-zone {
+  right: 0;
+}
+
+.touch-stick {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border: 2px solid rgb(255 255 255 / 45%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 15%);
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.touch-stick.active {
+  visibility: visible;
+}
+
+.touch-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 75%);
+}
+
+.touch-button {
+  position: absolute;
+  border: 3px solid rgb(255 255 255 / 70%);
+  border-radius: 50%;
+  background: rgb(29 17 53 / 45%);
+  color: #fff;
+  font:
+    700 13px system-ui,
+    sans-serif;
+}
+
+.touch-button.pressed {
+  background: rgb(253 63 180 / 65%);
+}
+
+.touch-fire {
+  right: calc(24px + env(safe-area-inset-right));
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  width: 96px;
+  height: 96px;
+}
+
+.touch-jump {
+  right: calc(134px + env(safe-area-inset-right));
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  width: 68px;
+  height: 68px;
+}
+
+.touch-swim {
+  right: calc(38px + env(safe-area-inset-right));
+  bottom: calc(138px + env(safe-area-inset-bottom));
+  width: 68px;
+  height: 68px;
+}
+
+.touch-reload {
+  right: calc(128px + env(safe-area-inset-right));
+  bottom: calc(106px + env(safe-area-inset-bottom));
+  width: 48px;
+  height: 48px;
+  font-size: 15px;
+}
+
+.touch-pause {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: rgb(29 17 53 / 55%);
+  color: #fff;
+  font-weight: 800;
 }
 
 .hud {

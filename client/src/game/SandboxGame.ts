@@ -30,17 +30,20 @@ import { Sfx } from '../audio/Sfx';
 import { ThirdPersonCamera } from '../camera/ThirdPersonCamera';
 import { InputManager } from '../input/InputManager';
 import { BlobCharacter } from '../render/BlobCharacter';
+import { DynamicResolution } from '../render/DynamicResolution';
 import { createMapMesh } from '../render/mapMesh';
 import { packAtlas } from '../render/paint/atlasPacker';
 import { PaintAtlas } from '../render/paint/PaintAtlas';
 import { HEMISPHERE_GROUND_COLOR, SKY_COLOR, SUN_DIRECTION, TEAM_COLORS } from '../render/palette';
 import { Particles } from '../render/Particles';
 import { ProjectileView } from '../render/ProjectileView';
+import { QUALITY_PRESETS, resolveQuality, type QualityLevel } from '../render/quality';
 import { createToonRamp } from '../render/toon';
+import { loadSettings, saveSettings, type Settings } from '../settings';
 import type { DevOverlay } from '../ui/devOverlay';
 import { createHud } from '../ui/hud';
-import { createStartScreen } from '../ui/startScreen';
-import { toggleTuningPanel } from '../ui/tuningPanel';
+import { createPauseMenu } from '../ui/pauseMenu';
+import { toggleTuningPanel, type TuningActions } from '../ui/tuningPanel';
 import { FixedStep } from './fixedStep';
 
 /** Team 0 (pink) starts at −Z and faces +Z, toward the middle of the map. */
@@ -50,8 +53,7 @@ const SPAWN_YAW = Math.PI;
 const RESPAWN_BELOW_Y = -10;
 /** Identifies this player's shots (Phase 2 uses a per-player seed). */
 const PLAYER_SEED = 1;
-/** Paint texture size and the most detail per meter it may use. */
-const PAINT_TEXTURE_SIZE = 2048;
+/** Most paint detail per meter the paint texture may use. */
 const PAINT_PIXELS_PER_METER = 16;
 /** How far ahead the crosshair looks for something to aim at (m). */
 const AIM_DISTANCE = 80;
@@ -77,13 +79,19 @@ function cssColor(hex: number): string {
   return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
-/** Phase 1 offline sandbox: one player running, jumping and painting the arena. */
+/** Phones and tablets get touch controls; computers get mouse and keyboard. */
+function isTouchDevice(): boolean {
+  return window.matchMedia('(pointer: coarse)').matches;
+}
+
+/** Phase 1 offline sandbox: one player running, jumping, painting and swimming. */
 class SandboxGame {
   private readonly overlay: DevOverlay;
-  private readonly renderer = new WebGLRenderer({
-    antialias: true,
-    powerPreference: 'high-performance',
-  });
+  private readonly settings: Settings = loadSettings();
+  private readonly touchDevice = isTouchDevice();
+  private readonly quality: QualityLevel;
+  private readonly renderer: WebGLRenderer;
+  private readonly resolution = new DynamicResolution();
   private readonly scene = new Scene();
   private readonly physics = new PhysicsWorld(ARENA.blocks);
   private readonly surfaces = buildSurfaces(ARENA.blocks);
@@ -92,6 +100,7 @@ class SandboxGame {
   private readonly view = new ThirdPersonCamera(window.innerWidth / window.innerHeight);
   private readonly loop = new FixedStep(1 / CONFIG.net.tickRate);
   private readonly input: InputManager;
+  private readonly menu: ReturnType<typeof createPauseMenu>;
   private readonly player: PlayerState;
   private readonly body: Collider;
   private readonly character: BlobCharacter;
@@ -106,6 +115,8 @@ class SandboxGame {
   private readonly currentFeet = new Vector3();
   private readonly renderFeet = new Vector3();
   private readonly shadowNormal = new Vector3();
+  private readonly tuningActions: TuningActions;
+  private pixelRatio = 1;
   private emptyClickCooldown = 0;
   private swimTrailTimer = 0;
   private lastFrameMs = 0;
@@ -114,9 +125,17 @@ class SandboxGame {
 
   constructor(container: HTMLElement, overlay: DevOverlay) {
     this.overlay = overlay;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.quality = resolveQuality(this.settings.quality, this.touchDevice);
+    const preset = QUALITY_PRESETS[this.quality];
+
+    this.renderer = new WebGLRenderer({
+      antialias: preset.antialias,
+      powerPreference: 'high-performance',
+    });
+    this.applyPixelRatio(1);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(this.renderer.domElement);
+    this.sfx.setVolume(this.settings.volume);
 
     this.scene.background = new Color(SKY_COLOR);
     this.scene.add(new HemisphereLight(0xffffff, HEMISPHERE_GROUND_COLOR, 1.4));
@@ -124,14 +143,14 @@ class SandboxGame {
     sun.position.set(...SUN_DIRECTION).multiplyScalar(30);
     this.scene.add(sun);
 
-    const layout = packAtlas(this.surfaces, PAINT_TEXTURE_SIZE, PAINT_PIXELS_PER_METER);
+    const layout = packAtlas(this.surfaces, preset.paintTextureSize, PAINT_PIXELS_PER_METER);
     this.atlas = new PaintAtlas(this.renderer, this.surfaces, layout);
     this.scene.add(createMapMesh(ARENA, this.surfaces, this.atlas));
 
     const toonRamp = createToonRamp();
     this.character = new BlobCharacter(TEAM_COLORS[START_TEAM], toonRamp);
     this.scene.add(this.character.root);
-    this.particles = new Particles(300, toonRamp);
+    this.particles = new Particles(preset.particles, toonRamp);
     this.scene.add(this.particles.mesh, this.projectileView.mesh);
 
     const shadowGeometry = new CircleGeometry(0.42, 24);
@@ -153,10 +172,39 @@ class SandboxGame {
     this.syncFeet();
     this.prePaint();
 
-    const startScreen = createStartScreen(() => this.input.keyboardMouse.requestLock());
-    this.input = new InputManager(this.renderer.domElement, (locked) => {
-      startScreen.setVisible(!locked);
+    this.tuningActions = {
+      respawn: () => this.respawn(),
+      clearPaint: () => {
+        this.paint.clear();
+        this.atlas.clear();
+      },
+      switchTeam: () => {
+        this.player.team = 1 - this.player.team;
+        this.character.setColor(TEAM_COLORS[this.player.team]);
+      },
+      refillInk: () => {
+        this.player.ink = CONFIG.weapon.inkCapacity;
+        this.player.reloadTimer = 0;
+      },
+    };
+
+    this.menu = createPauseMenu(this.settings, this.touchDevice, {
+      play: () => this.play(),
+      settingsChanged: (settings, changed) => this.settingsChanged(settings, changed),
+      enableGyro: () => this.input.gyro.enable(),
+      openTuning: () => toggleTuningPanel(this.tuningActions),
     });
+    this.input = new InputManager(
+      this.renderer.domElement,
+      this.touchDevice,
+      (locked) => {
+        // Desktop: playing exactly while the mouse is captured (Esc frees it and pauses).
+        if (this.touchDevice) return;
+        this.input.playing = locked;
+        this.menu.setVisible(!locked);
+      },
+      () => this.pause(),
+    );
 
     window.addEventListener('resize', () => {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -166,36 +214,53 @@ class SandboxGame {
       if (event.code !== 'Backquote' || event.repeat) return;
       // Free the mouse so the panel's sliders can be used.
       if (document.pointerLockElement) document.exitPointerLock();
-      toggleTuningPanel({
-        respawn: () => this.respawn(),
-        clearPaint: () => {
-          this.paint.clear();
-          this.atlas.clear();
-        },
-        switchTeam: () => {
-          this.player.team = 1 - this.player.team;
-          this.character.setColor(TEAM_COLORS[this.player.team]);
-        },
-        refillInk: () => {
-          this.player.ink = CONFIG.weapon.inkCapacity;
-          this.player.reloadTimer = 0;
-        },
-      });
+      toggleTuningPanel(this.tuningActions);
     });
   }
 
   start(): void {
-    this.overlay.update({ renderer: `three r${REVISION} · WebGL2` });
+    this.overlay.update({ renderer: `three r${REVISION} · WebGL2 · ${this.quality} quality` });
     this.renderer.setAnimationLoop(this.frame);
   }
 
-  private readonly frame = (timeMs: number): void => {
-    const dt = this.lastFrameMs === 0 ? 0 : Math.min((timeMs - this.lastFrameMs) / 1000, 0.25);
-    this.lastFrameMs = timeMs;
+  private play(): void {
+    if (!this.touchDevice) {
+      this.input.keyboardMouse.requestLock();
+      return;
+    }
+    this.input.playing = true;
+    this.menu.setVisible(false);
+    this.input.touch?.setVisible(true);
+    // Best effort: fullscreen hides the browser bars (not supported on iPhone).
+    document.documentElement.requestFullscreen?.().catch(() => undefined);
+    if (this.settings.gyro) {
+      this.input.gyro.enable().catch(() => undefined);
+    }
+  }
 
-    // Aim follows the mouse every frame, so looking around never waits for a tick.
-    const look = this.input.consumeLook();
-    this.view.look(look.x, look.y, CONFIG.camera.mouseSensitivity);
+  private pause(): void {
+    this.input.playing = false;
+    this.input.touch?.setVisible(false);
+    this.menu.setVisible(true);
+  }
+
+  private settingsChanged(settings: Settings, changed: keyof Settings): void {
+    saveSettings(settings);
+    if (changed === 'volume') this.sfx.setVolume(settings.volume);
+    if (changed === 'gyro' && !settings.gyro) this.input.gyro.disable();
+    // Paint texture size and anti-aliasing are fixed when the renderer starts.
+    if (changed === 'quality') window.location.reload();
+  }
+
+  private readonly frame = (timeMs: number): void => {
+    const frameMs = this.lastFrameMs === 0 ? 0 : timeMs - this.lastFrameMs;
+    const dt = Math.min(frameMs / 1000, 0.25);
+    this.lastFrameMs = timeMs;
+    if (frameMs > 0) this.applyPixelRatio(this.resolution.update(frameMs));
+
+    // Aim follows the mouse/finger every frame, so looking around never waits for a tick.
+    const look = this.input.consumeLook(this.settings);
+    this.view.look(look.x, look.y, 1);
 
     this.loop.stepSeconds = 1 / CONFIG.net.tickRate;
     const steps = this.loop.advance(dt);
@@ -257,6 +322,15 @@ class SandboxGame {
     this.physics.step();
     if (s.y < RESPAWN_BELOW_Y) this.respawn();
     this.currentFeet.set(s.x, s.y, s.z);
+  }
+
+  /** Renders at the quality preset's pixel ratio times the dynamic-resolution scale. */
+  private applyPixelRatio(scale: number): void {
+    const preset = QUALITY_PRESETS[this.quality];
+    const ratio = Math.min(window.devicePixelRatio, preset.maxPixelRatio) * scale;
+    if (Math.abs(ratio - this.pixelRatio) < 0.01) return;
+    this.pixelRatio = ratio;
+    this.renderer.setPixelRatio(ratio);
   }
 
   /** Splashes and sounds for diving into and out of your own paint, plus a ripple trail. */
@@ -358,6 +432,7 @@ class SandboxGame {
     this.overlay.update({
       fps: Math.round(this.framesCounted / this.statsSeconds),
       tickRate: CONFIG.net.tickRate,
+      resolution: Math.round(this.resolution.scale * 100),
     });
     this.framesCounted = 0;
     this.statsSeconds = 0;

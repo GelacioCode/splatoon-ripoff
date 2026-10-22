@@ -7,6 +7,8 @@ export interface DevOverlayState {
   rttMs?: number;
   fps?: number;
   tickRate?: number;
+  /** Dynamic resolution scale (%). */
+  resolution?: number;
 }
 
 /** Small always-on-top status panel for development. */
@@ -23,7 +25,7 @@ export function createDevOverlay(element: HTMLElement) {
       'Paint Rush · dev',
       `Renderer  ${state.renderer}`,
       `Physics   ${state.physics}`,
-      `Frame     ${state.fps ?? '–'} fps · tick ${state.tickRate ?? '–'} Hz`,
+      `Frame     ${state.fps ?? '–'} fps · tick ${state.tickRate ?? '–'} Hz · res ${state.resolution ?? '–'}%`,
       `Server    ${state.server} · ${state.serverUrl}`,
       `Players   ${state.players ?? '–'}`,
       `RTT       ${state.rttMs === undefined ? '–' : `${state.rttMs} ms`}`,

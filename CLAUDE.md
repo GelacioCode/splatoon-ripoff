@@ -102,8 +102,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - [ ] Phase 1: offline sandbox, split into milestones with a test stop after each:
   - [x] 1A walk the arena (user confirmed working and pushed, 2026-10-23)
   - [x] 1B paint + shooting, plus the reload system and 15-shot tank (user confirmed and pushed)
-  - [ ] 1C swim, climb, enemy paint (code written 2026-10-23, waiting for the user's test results)
-  - [ ] 1D phones + performance
+  - [x] 1C swim, climb, enemy paint (user confirmed and pushed)
+  - [ ] 1D phones + performance (code written 2026-10-23, waiting for the user's test results)
   - [ ] 1E feel polish
 - [ ] Phase 2: networking
 - [ ] Phase 3: lobby, QR join, customization, auto-balance
@@ -134,4 +134,10 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - `submerged` = puddle form on own paint, or climbing own-painted wall: fast, hidden, ink refills, and a full tank ends a reload.
   - No shooting unless `swimBlend` is 0.
   - Enemy paint: slow, lower jump, damage down to the 40 HP floor; regen after `regenDelay`.
+- Phones (1D):
+  - `(pointer: coarse)` → touch controls (`TouchControls`, Pointer Events).
+  - `InputManager.playing` gates all input. Desktop plays while the mouse is captured; touch plays after "Tap to play" until II.
+  - Settings live in localStorage (`client/src/settings.ts`).
+  - Quality presets in `render/quality.ts`; changing quality reloads the page.
+  - `DynamicResolution` scales the pixel ratio to hold 60 fps.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

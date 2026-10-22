@@ -1,5 +1,7 @@
 /** Splats closer together than this (s) only make one sound, so bursts don't get noisy. */
 const SPLAT_SOUND_GAP = 0.04;
+/** Loudness at full volume; kept below 1 so overlapping sounds don't clip. */
+const MASTER_GAIN = 0.35;
 
 /**
  * Sound effects synthesized with WebAudio (no audio files). Browsers only allow sound after
@@ -10,6 +12,13 @@ export class Sfx {
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private lastSplat = 0;
+  private volume = 1;
+
+  /** Overall loudness, 0–1. */
+  setVolume(volume: number): void {
+    this.volume = volume;
+    if (this.master) this.master.gain.value = MASTER_GAIN * volume;
+  }
 
   constructor() {
     const unlock = () => this.ready();
@@ -77,7 +86,7 @@ export class Sfx {
       if (typeof AudioContext === 'undefined') return null;
       const ctx = new AudioContext();
       this.master = ctx.createGain();
-      this.master.gain.value = 0.35;
+      this.master.gain.value = MASTER_GAIN * this.volume;
       this.master.connect(ctx.destination);
       this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const data = this.noise.getChannelData(0);
