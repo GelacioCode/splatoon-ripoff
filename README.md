@@ -2,7 +2,15 @@
 
 A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming through your own paint, and Capture the Flag. Players join from their phones by scanning a QR code.
 
-> **Status: Phase 1 (offline sandbox) in progress.** You can run and jump around the arena. Painting, swimming and phone controls come next.
+> **Status: Phase 2 (networking) in progress.** Players in several tabs or phones share one arena.
+
+## Game modes (page address options)
+
+| Address | What you get |
+| --- | --- |
+| `http://localhost:5173` | **Online arena** on the game server (needs `pnpm dev` running). Open it in several tabs or on phones to play together; teams alternate pink and cyan. |
+| `…/?offline` | **Offline sandbox**: play solo without the server (handy for tuning the feel). |
+| `…/?debug` | Online, plus Colyseus' netcode panel: prediction drift and a **latency simulator** to test lag. |
 
 ## Requirements
 

@@ -99,13 +99,15 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 
 ## Status
 - [x] Phase 0: monorepo scaffold. Verified 2026-10-23: `pnpm install`, typecheck, lint, Prettier, 14 unit tests, the browser scene (WebGL2, Rapier 0.21.0, server connected, RTT shown) and `/health`. Not yet reported: the two-tab player count and the automatic rejoin after a server restart.
-- [ ] Phase 1: offline sandbox, split into milestones with a test stop after each:
+- [x] Phase 1: offline sandbox (done 2026-10-23), split into milestones with a test stop after each:
   - [x] 1A walk the arena (user confirmed working and pushed, 2026-10-23)
   - [x] 1B paint + shooting, plus the reload system and 15-shot tank (user confirmed and pushed)
   - [x] 1C swim, climb, enemy paint (user confirmed and pushed)
   - [x] 1D phones + performance (user confirmed working on their phone and pushed)
-  - [ ] 1E feel polish (user feedback 2026-10-23: movement feels good; camera was too close. Added camera 4.6 m back, paint drips from shots, landing puffs and shot streaks; waiting for the user's test results)
-- [ ] Phase 2: networking
+  - [x] 1E feel polish: camera 4.6 m back, paint drips drawn as thin streaks, landing puffs, shot streaks, and aim mode (right mouse / AIM toggle: zoom, 0.6° spread, longer straight flight, 65% walk speed). User confirmed and pushed. Open item: the user suspected a small FPS drop after 1E; never measured.
+- [ ] Phase 2: networking (plan approved 2026-10-23; milestones 2A move together, 2B shoot and paint together, 2C reconnection, bandwidth and real-network testing)
+  - [x] 2A move together: user confirmed two tabs see each other (after fixing quantized fields → float32). Open item: RTT shows ~150 ms on localhost (expected a few ms), probably inputs queueing on the server; investigate in 2C.
+  - [ ] 2B shoot and paint together
 - [ ] Phase 3: lobby, QR join, customization, auto-balance
 - [ ] Phase 4: Capture the Flag
 - [ ] Phase 5: 30-bot load test
@@ -140,4 +142,14 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - Settings live in localStorage (`client/src/settings.ts`).
   - Quality presets in `render/quality.ts`; changing quality reloads the page.
   - `DynamicResolution` scales the pixel ratio to hold 60 fps.
+- Netcode (2A):
+  - `ArenaRoom` (server): `defineInput(NetInput)` with a hold-last-input idle policy, `setFixedTimestep(30 Hz)`, `next()` per player then the shared `stepPlayer`; `allowReconnection` for 20 s in `onDrop`.
+  - `NetPlayer` (`shared/src/net/schemas.ts`) has every `PlayerState` field. Pose fields are public; timers and ink are `.view()`, owner only via `client.view.add(player)`.
+  - **Gotcha (found in testing):** the Colyseus reconciler only mirrors plain numeric fields. `t.quantized()` / `t.angle()` fields came through as `undefined`, leaving the predicted player with no position (blank screen). Use `t.float32()` for anything prediction reads.
+  - Client `OnlineGame`:
+    - `Predict.get(room, lerp 100 ms)`, with `attachAll` for remotes (yaw as an angle).
+    - `predict.reconciler(ownPlayer, step = stepPlayer)`.
+    - One `input.send()` per `predict.tick()` step, with yaw wrapped to −π…π.
+    - `?offline` = sandbox, `?debug` = Colyseus netcode panel.
+  - Shared scene code is in `client/src/game/World.ts`.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

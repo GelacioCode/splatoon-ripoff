@@ -66,6 +66,11 @@ export class ThirdPersonCamera {
 
     // Orbit a point above the feet, smoothed a little so landings don't jolt the view.
     const pivotY = feet.y + lerp(c.pivotHeight, PUDDLE_PIVOT_HEIGHT, swimBlend);
+    // Smoothing a bad value keeps it bad forever, so start over if that ever happened.
+    if (!Number.isFinite(this.pivot.x + this.pivot.y + this.pivot.z + this.boom)) {
+      this.hasPivot = false;
+      this.boom = c.distance;
+    }
     if (this.hasPivot) {
       this.pivot.set(
         damp(this.pivot.x, feet.x, c.followSharpness, dt),

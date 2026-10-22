@@ -164,6 +164,14 @@ body {
   z-index: 5;
 }
 
+/* No browser gestures (scroll, pinch, double-tap zoom) on any touch control. */
+.touch-controls,
+.touch-controls * {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .touch-controls[hidden] {
   display: none;
 }
