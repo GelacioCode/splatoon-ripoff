@@ -10,9 +10,12 @@ import {
   encodePaintEvents,
   encodePaintSnapshot,
   encodeShotEvents,
+  inputsToRun,
   MSG_CHOOSE_WEAPON,
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
+  MSG_PING,
+  MSG_PONG,
   MSG_REQUEST_PAINT,
   MSG_SHOTS,
   NetInput,
@@ -37,8 +40,6 @@ import {
 
 /** Falling below this height puts a player back on their team's spawn pad. */
 const RESPAWN_BELOW_Y = -10;
-/** A dropped player is kept this long, so a reconnecting client gets them back (s). */
-const RECONNECT_SECONDS = 20;
 
 /**
  * The authoritative arena: runs every player with the shared game rules at a fixed 30 Hz.
@@ -78,6 +79,10 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
     [MSG_REQUEST_PAINT]: (client: Client) => {
       client.sendBytes(MSG_PAINT_SNAPSHOT, encodePaintSnapshot(this.paint.exportCells()));
     },
+    // Answered right away (not on a tick), so it measures just the network.
+    [MSG_PING]: (client: Client, payload: unknown) => {
+      if (typeof payload === 'number') client.send(MSG_PONG, payload);
+    },
   };
 
   onJoin(client: Client, options?: ArenaJoinOptions) {
@@ -97,8 +102,9 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
   }
 
   onDrop(client: Client) {
-    // If they come back within the window they keep their player; otherwise onLeave runs.
-    void this.allowReconnection(client, RECONNECT_SECONDS);
+    // Lost connection or a page refresh: if they come back within the window they keep their
+    // player; otherwise onLeave runs.
+    void this.allowReconnection(client, CONFIG.net.reconnectSeconds);
   }
 
   onLeave(client: Client) {
@@ -120,28 +126,14 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
   private step(ctx: StepContext): void {
     for (const [sessionId, player] of this.state.players) {
       const body = this.bodies.get(sessionId);
-      const input = this.inputs.get(sessionId).next();
-      if (!body || !input) continue;
-      stepPlayer(this.physics, body, player, input, ctx.dt, this.paint);
-
-      const firstNew = this.projectiles.length;
-      // Seeded by session id: the shooter's screen predicts exactly the same spread.
-      const fired = stepWeapon(player, input, ctx.dt, seedFromString(sessionId), this.projectiles);
-      if (fired > 0) this.sendShots(sessionId, this.projectiles.slice(firstNew));
-
-      if (player.y < RESPAWN_BELOW_Y) {
-        // Shot numbers keep counting, so the player's screen never mistakes new shots for old.
-        const { shotCount } = player;
-        Object.assign(
-          player,
-          createPlayerState(
-            this.spawnFor(player.team),
-            spawnYaw(player.team),
-            player.team,
-            player.weapon,
-          ),
-        );
-        player.shotCount = shotCount;
+      if (!body) continue;
+      const inputs = this.inputs.get(sessionId);
+      // Usually one input; more when a backlog built up, so it doesn't add delay for good.
+      const runs = inputsToRun(inputs.size);
+      for (let i = 0; i < runs; i++) {
+        const input = inputs.next();
+        if (!input) break;
+        this.stepPlayerTick(sessionId, player, body, input, ctx.dt);
       }
     }
 
@@ -157,6 +149,37 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
     );
     this.physics.step();
     if (landed.length > 0) this.applyPaint(landed);
+  }
+
+  /** One input's worth of the shared rules for one player: movement, then their weapon. */
+  private stepPlayerTick(
+    sessionId: string,
+    player: NetPlayer,
+    body: Collider,
+    input: NetInput,
+    dt: number,
+  ): void {
+    stepPlayer(this.physics, body, player, input, dt, this.paint);
+
+    const firstNew = this.projectiles.length;
+    // Seeded by session id: the shooter's screen predicts exactly the same spread.
+    const fired = stepWeapon(player, input, dt, seedFromString(sessionId), this.projectiles);
+    if (fired > 0) this.sendShots(sessionId, this.projectiles.slice(firstNew));
+
+    if (player.y < RESPAWN_BELOW_Y) {
+      // Shot numbers keep counting, so the player's screen never mistakes new shots for old.
+      const { shotCount } = player;
+      Object.assign(
+        player,
+        createPlayerState(
+          this.spawnFor(player.team),
+          spawnYaw(player.team),
+          player.team,
+          player.weapon,
+        ),
+      );
+      player.shotCount = shotCount;
+    }
   }
 
   /** Tells everyone but the shooter about new shots, so their screens can fly them too. */

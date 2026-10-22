@@ -4,7 +4,13 @@ export interface DevOverlayState {
   serverUrl: string;
   server: string;
   players?: number;
-  rttMs?: number;
+  /** Plain network round trip (ping message, answered right away). */
+  pingMs?: number;
+  /** Input sent → server has used it and confirmed (includes waiting in its queue). */
+  inputDelayMs?: number;
+  /** Network data use, when metered (dev builds and `?debug`). */
+  downKBps?: number;
+  upKBps?: number;
   fps?: number;
   tickRate?: number;
   /** Dynamic resolution scale (%). */
@@ -20,6 +26,8 @@ export function createDevOverlay(element: HTMLElement) {
     server: 'connecting',
   };
 
+  const ms = (value?: number) => (value === undefined ? '–' : `${value} ms`);
+  const kb = (value?: number) => (value === undefined ? '–' : value.toFixed(1));
   const render = () => {
     element.textContent = [
       'Paint Rush · dev',
@@ -28,7 +36,8 @@ export function createDevOverlay(element: HTMLElement) {
       `Frame     ${state.fps ?? '–'} fps · tick ${state.tickRate ?? '–'} Hz · res ${state.resolution ?? '–'}%`,
       `Server    ${state.server} · ${state.serverUrl}`,
       `Players   ${state.players ?? '–'}`,
-      `RTT       ${state.rttMs === undefined ? '–' : `${state.rttMs} ms`}`,
+      `Ping      ${ms(state.pingMs)} · input delay ${ms(state.inputDelayMs)}`,
+      `Data      ↓ ${kb(state.downKBps)} KB/s · ↑ ${kb(state.upKBps)} KB/s`,
     ].join('\n');
   };
 

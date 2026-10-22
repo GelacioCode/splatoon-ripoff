@@ -27,6 +27,15 @@ pnpm dev       # start the client (Vite) and the game server (Colyseus) together
 
 Open http://localhost:5173. The game server listens on http://localhost:2567 and has a health check at http://localhost:2567/health.
 
+## Online play
+
+- **Refreshing the page puts you back as the same player** (same team, role and position), as long as you're back within 20 seconds. Each tab is its own player.
+- The dev overlay (top left) shows:
+  - **Ping:** the plain network round trip to the server.
+  - **Input delay:** from pressing something until the server has used it and told you. It's always a bit higher than ping, because it includes waiting for the server's next tick and update. If inputs pile up, the server runs the extras straight away so the delay doesn't keep growing.
+  - **Data:** KB/s down and up. Only shown in `pnpm dev`, or with `?debug` in the link.
+- `?debug` also opens the Colyseus netcode panel, which has a latency simulator for testing lag.
+
 ## Roles
 
 Pick a role on the start screen. Your pick is remembered on this device, and you can switch any time from the pause menu (switching refills your tank).

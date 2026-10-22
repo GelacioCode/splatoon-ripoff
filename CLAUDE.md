@@ -108,7 +108,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - [ ] Phase 2: networking (plan approved 2026-10-23; milestones 2A move together, 2B shoot and paint together, 2C reconnection, bandwidth and real-network testing)
   - [x] 2A move together: user confirmed two tabs see each other (after fixing quantized fields → float32). Open item: RTT shows ~150 ms on localhost (expected a few ms), probably inputs queueing on the server; investigate in 2C.
   - [x] Roles (user request, inserted before 2B): Sniper / Assault / Machine gun, picked on the start/pause menu. User confirmed working and pushed, 2026-10-23.
-  - [ ] 2B shoot and paint together: written 2026-10-23, awaiting the user's test.
+  - [x] 2B shoot and paint together: user confirmed working on mobile and desktop and pushed, 2026-10-23.
+  - [ ] 2C reconnection, bandwidth, real-network testing: written 2026-10-23, awaiting the user's test.
 - [ ] Phase 3: lobby, QR join, customization, auto-balance
 - [ ] Phase 4: Capture the Flag
 - [ ] Phase 5: 30-bot load test
@@ -161,4 +162,9 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - Own shots: the reconciler step runs `stepPlayer` + `stepWeapon`. `NewShotFilter` uses `shotCount` so replays don't show shots twice. The server keeps `shotCount` across respawns for this.
   - All on-screen shots are cosmetic: hits make splashes and sounds, never paint. Paint only comes from `MSG_PAINT`, so your own paint shows about one round trip after your shot lands (user accepted; an instant local-paint option was offered).
   - Late join and reconnect: the client sends `MSG_REQUEST_PAINT` once its handlers are set up. The server replies with `MSG_PAINT_SNAPSHOT` (run-length cells, `encodePaintSnapshot`), and the client redraws every painted cell as a soft blob (`PaintAtlas.addBlob`).
+- Netcode (2C):
+  - **The overlay's old "RTT" was input delay, not ping.** Colyseus' `clock.rtt()` measures input sent → server echoes it as consumed in a patch. That includes waiting in the server's input queue and for the next 20 Hz patch. The overlay now shows **ping** (`MSG_PING`/`MSG_PONG`, answered immediately) next to **input delay**.
+  - **Input catch-up:** the server consumed exactly one input per tick, so a burst left a permanent backlog (each queued input adds 33 ms). Now each tick runs `inputsToRun(queue size)` inputs: one normally, the extras when more than `CONFIG.net.maxQueuedInputs` (2) are waiting, at most `maxCatchUpSteps` (4). It runs them rather than dropping them, so the ack still matches prediction exactly.
+  - **Refresh rejoin:** on `pagehide` the client saves `room.reconnectionToken` with a timestamp in sessionStorage (one per tab). On load it tries `client.reconnect` if the token is younger than `CONFIG.net.reconnectSeconds` (20), otherwise it joins fresh. A refresh is a non-consented close, so the server's `onDrop` + `allowReconnection` keeps the player. Colyseus copies `client.view` to the reconnected client.
+  - **Data meter (dev / `?debug`):** `meterRoomTraffic` hooks `room.connection.transport.ws`. The SDK captures the `WebSocket` class at import, so patching the global doesn't work. It's SDK internals, so it fails soft with a console warning.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

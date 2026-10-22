@@ -10,6 +10,15 @@ export const CONFIG = {
     snapshotRate: 20,
     /** Remote players are drawn this far behind the newest snapshot (ms). */
     interpolationDelayMs: 100,
+    /**
+     * A player's inputs waiting on the server beyond this many get run in the same tick
+     * (catch-up), so network hiccups don't leave them permanently behind.
+     */
+    maxQueuedInputs: 2,
+    /** Most inputs one player can run in a single tick while catching up. */
+    maxCatchUpSteps: 4,
+    /** A dropped player (lost connection, page refresh) is kept this long for them to rejoin (s). */
+    reconnectSeconds: 20,
   },
   lobby: {
     maxPlayers: 30,

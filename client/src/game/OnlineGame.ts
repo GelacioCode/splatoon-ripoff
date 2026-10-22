@@ -10,6 +10,8 @@ import {
   MSG_CHOOSE_WEAPON,
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
+  MSG_PING,
+  MSG_PONG,
   MSG_REQUEST_PAINT,
   MSG_SHOTS,
   ROOM_ARENA,
@@ -31,6 +33,8 @@ import {
   type PlayerState,
   type Projectile,
 } from '@paint-rush/shared/sim';
+import { clearReconnectToken, loadReconnectToken, saveReconnectToken } from '../net/reconnectToken';
+import { meterRoomTraffic, TrafficMeter } from '../net/trafficMeter';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
 import type { DevOverlay } from '../ui/devOverlay';
 import { FixedStep } from './fixedStep';
@@ -57,6 +61,17 @@ function joinArena(serverUrl: string, options: ArenaJoinOptions = {}) {
   return new Client(serverUrl).joinOrCreate(ROOM_ARENA, options, ArenaState);
 }
 type ArenaRoom = Awaited<ReturnType<typeof joinArena>>;
+
+/** Takes back the player this tab had before a refresh (the server keeps it for a while). */
+function rejoinArena(serverUrl: string, token: string): Promise<ArenaRoom> {
+  return new Client(serverUrl).reconnect<ArenaState>(token, ArenaState);
+}
+
+/** Network data use is metered in development, and in any build with `?debug`. */
+const METER_TRAFFIC =
+  import.meta.env.DEV || new URLSearchParams(window.location.search).has('debug');
+/** Weight of each new ping sample in the smoothed ping. */
+const PING_SMOOTHING = 0.3;
 
 /** Predicts our own player with the shared rules, replaying inputs the server hasn't seen yet. */
 function createReconciler(
@@ -124,7 +139,17 @@ class OnlineGame {
 
   connect(serverUrl: string): void {
     this.overlay.update({ server: 'connecting' });
-    joinArena(serverUrl, { weapon: this.world.settings.weapon }).then(
+    const join = () => joinArena(serverUrl, { weapon: this.world.settings.weapon });
+    // After a refresh, first try to take our player back; if that fails, join as a new one.
+    const token = loadReconnectToken(CONFIG.net.reconnectSeconds);
+    clearReconnectToken();
+    const joining = token
+      ? rejoinArena(serverUrl, token).catch((error: unknown) => {
+          console.info('[net] could not rejoin as the same player; joining fresh', error);
+          return join();
+        })
+      : join();
+    joining.then(
       (room) => {
         this.session = new NetSession(this.world, this.overlay, room);
       },
@@ -178,6 +203,8 @@ class NetSession {
   private readonly seed: number;
   private wasReloading = false;
   private firing = false;
+  private pingMs: number | null = null;
+  private readonly traffic = METER_TRAFFIC ? new TrafficMeter() : null;
 
   constructor(world: World, overlay: DevOverlay, room: ArenaRoom) {
     this.world = world;
@@ -193,16 +220,23 @@ class NetSession {
     room.onMessage(MSG_PAINT, (payload: unknown) => this.receivePaint(payload));
     room.onMessage(MSG_SHOTS, (payload: unknown) => this.receiveShots(payload));
     room.onMessage(MSG_PAINT_SNAPSHOT, (payload: unknown) => this.receiveSnapshot(payload));
+    room.onMessage(MSG_PONG, (sentAt: unknown) => this.receivePong(sentAt));
     // Handlers are in place, so the snapshot can't arrive before we listen for it.
     room.send(MSG_REQUEST_PAINT);
+    this.meterTraffic();
+
+    // Leaving the page (refresh, or switching away on a phone): remember how to rejoin.
+    window.addEventListener('pagehide', () => saveReconnectToken(room.reconnectionToken));
 
     room.onDrop(() => this.overlay.update({ server: 'reconnecting…' }));
     room.onReconnect(() => {
       this.overlay.update({ server: 'connected' });
       // Paint may have changed while we were away.
       room.send(MSG_REQUEST_PAINT);
+      this.meterTraffic();
     });
     room.onLeave((code) => {
+      clearReconnectToken();
       console.info(`[net] left the arena (code ${code}); reloading`);
       this.overlay.update({ server: 'offline' });
       setTimeout(() => window.location.reload(), RETRY_MS);
@@ -418,10 +452,29 @@ class NetSession {
   private updateStatus(dt: number): void {
     this.statusTimer += dt;
     if (this.statusTimer < STATUS_INTERVAL) return;
+    const traffic = this.traffic?.sample(this.statusTimer);
     this.statusTimer = 0;
+    this.room.send(MSG_PING, performance.now());
     this.overlay.update({
       players: this.room.state.players.size,
-      rttMs: Math.round(this.room.clock.rtt()),
+      pingMs: this.pingMs === null ? undefined : Math.round(this.pingMs),
+      inputDelayMs: Math.round(this.room.clock.rtt()),
+      downKBps: traffic?.downKBps,
+      upKBps: traffic?.upKBps,
     });
+  }
+
+  private receivePong(sentAt: unknown): void {
+    if (typeof sentAt !== 'number') return;
+    const sample = performance.now() - sentAt;
+    this.pingMs =
+      this.pingMs === null ? sample : this.pingMs + (sample - this.pingMs) * PING_SMOOTHING;
+  }
+
+  /** Dev only: count this room's network bytes (again after a reconnect: new socket). */
+  private meterTraffic(): void {
+    if (this.traffic && !meterRoomTraffic(this.room, this.traffic)) {
+      this.warnOnce('traffic meter could not attach (Colyseus internals changed?)', null);
+    }
   }
 }

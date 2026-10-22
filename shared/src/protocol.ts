@@ -21,6 +21,13 @@ export const MSG_PAINT = 'paint';
 /** Server → everyone but the shooter, bytes: shots fired this tick (see encodeShotEvents). */
 export const MSG_SHOTS = 'shots';
 
+/**
+ * Client → server: a plain network ping. Payload: a client timestamp (ms), which the server
+ * echoes straight back in MSG_PONG. Unlike the input round trip, nothing waits in a queue.
+ */
+export const MSG_PING = 'ping';
+export const MSG_PONG = 'pong';
+
 /** Options a client sends when joining the arena. */
 export interface ArenaJoinOptions {
   /** Starting role (index in WEAPON_KINDS); invalid values mean assault. */

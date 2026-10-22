@@ -4,6 +4,7 @@ export * from './maps/surfaces';
 export * from './maps/types';
 export * from './math';
 export * from './math3d';
+export * from './net/catchUp';
 export * from './net/events';
 export * from './net/schemas';
 export * from './paint/paintGrid';
