@@ -4,9 +4,11 @@ import {
   ARENA,
   ArenaState,
   CONFIG,
+  MSG_CHOOSE_WEAPON,
   ROOM_ARENA,
   wrapAngle,
   NetInput,
+  type ArenaJoinOptions,
   type NetPlayer,
 } from '@paint-rush/shared';
 import {
@@ -28,8 +30,8 @@ const STATUS_INTERVAL = 0.5;
 /** Fields smoothed for drawing other players (yaw is smoothed separately, as an angle). */
 const SMOOTHED_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'swimBlend'] as const;
 
-function joinArena(serverUrl: string) {
-  return new Client(serverUrl).joinOrCreate(ROOM_ARENA, {}, ArenaState);
+function joinArena(serverUrl: string, options: ArenaJoinOptions = {}) {
+  return new Client(serverUrl).joinOrCreate(ROOM_ARENA, options, ArenaState);
 }
 type ArenaRoom = Awaited<ReturnType<typeof joinArena>>;
 
@@ -78,12 +80,18 @@ class OnlineGame {
   constructor(container: HTMLElement, overlay: DevOverlay) {
     this.overlay = overlay;
     const onlyOffline = () => console.info('Only available in the offline sandbox (?offline).');
-    this.world = new World(container, overlay, {
-      respawn: onlyOffline,
-      clearPaint: onlyOffline,
-      switchTeam: onlyOffline,
-      refillInk: onlyOffline,
-    });
+    this.world = new World(
+      container,
+      overlay,
+      {
+        respawn: onlyOffline,
+        clearPaint: onlyOffline,
+        switchTeam: onlyOffline,
+        refillInk: onlyOffline,
+      },
+      // The server switches the role; our blaster and ink follow once it confirms.
+      (weapon) => this.session?.chooseWeapon(weapon),
+    );
     this.world.view.yaw = Math.PI;
   }
 
@@ -93,7 +101,7 @@ class OnlineGame {
 
   connect(serverUrl: string): void {
     this.overlay.update({ server: 'connecting' });
-    joinArena(serverUrl).then(
+    joinArena(serverUrl, { weapon: this.world.settings.weapon }).then(
       (room) => {
         this.session = new NetSession(this.world, this.overlay, room);
       },
@@ -193,13 +201,20 @@ class NetSession {
         submerged: s.submerged,
         climbing: s.climbing,
       });
+      this.character.setWeapon(s.weapon);
     }
     for (const remote of this.remotes.values()) {
       remote.character.update(dt, this.remotePose(remote.player));
+      remote.character.setWeapon(remote.player.weapon);
     }
 
     world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, [], 0);
     this.updateStatus(dt);
+  }
+
+  /** Asks the server for another role (it checks the choice and refills the tank). */
+  chooseWeapon(weapon: number): void {
+    this.room.send(MSG_CHOOSE_WEAPON, weapon);
   }
 
   private sendInput(): void {
@@ -244,11 +259,14 @@ class NetSession {
   private addPlayer(player: NetPlayer, sessionId: string): void {
     const world = this.world;
     if (sessionId !== this.room.sessionId) {
-      this.remotes.set(sessionId, { player, character: world.createCharacter(player.team) });
+      const character = world.createCharacter(player.team, player.weapon);
+      this.remotes.set(sessionId, { player, character });
       return;
     }
     // Our own player: predicted locally with the same rules the server runs.
-    this.character = world.createCharacter(player.team);
+    this.character = world.createCharacter(player.team, player.weapon);
+    // The role may have been changed in the menu while we were still joining.
+    if (player.weapon !== world.settings.weapon) this.chooseWeapon(world.settings.weapon);
     const body = world.physics.createCharacter(player);
     this.body = body;
     world.view.yaw = player.yaw;

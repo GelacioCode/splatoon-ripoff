@@ -107,6 +107,7 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 1E feel polish: camera 4.6 m back, paint drips drawn as thin streaks, landing puffs, shot streaks, and aim mode (right mouse / AIM toggle: zoom, 0.6° spread, longer straight flight, 65% walk speed). User confirmed and pushed. Open item: the user suspected a small FPS drop after 1E; never measured.
 - [ ] Phase 2: networking (plan approved 2026-10-23; milestones 2A move together, 2B shoot and paint together, 2C reconnection, bandwidth and real-network testing)
   - [x] 2A move together: user confirmed two tabs see each other (after fixing quantized fields → float32). Open item: RTT shows ~150 ms on localhost (expected a few ms), probably inputs queueing on the server; investigate in 2C.
+  - [ ] Roles (user request, plan approved 2026-10-23, inserted before 2B): Sniper / Assault / Machine gun, picked on the start/pause menu. Written, awaiting the user's test.
   - [ ] 2B shoot and paint together
 - [ ] Phase 3: lobby, QR join, customization, auto-balance
 - [ ] Phase 4: Capture the Flag
@@ -130,6 +131,7 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - Paint: `PaintGrid` (shared, 0.5 m cells, team per cell) is the gameplay truth. The client's `PaintAtlas` is one 2048² render target with a region per paintable surface (`atlasPacker`). Its texels store coverage in red and team in green, and the map shader turns that into glossy paint. Splats are spheres projected onto every nearby surface (`projectSplat`).
 - Shots: `stepWeapon` + `stepProjectiles` in `shared/src/sim`. The spread is seeded by player seed and shot number, so it's deterministic. The client corrects aim pitch so shots go from the nozzle to the crosshair target.
 - Ink/reload (user decision, 2026-10-23): ink never trickles back while shooting. A full reload takes 2.5 s and nothing fires during it. It starts when the tank is empty, after 10 s without shooting, or on R. Swimming in own paint will still refill ink fast (1C).
+- Roles (user request, 2026-10-23): `PlayerState.weapon` is an index into `WEAPON_KINDS` (0 assault, 1 sniper, 2 machine gun; `shared/src/weapons.ts`). Per-role values are in `CONFIG.weapons` (magazine 20 / 5 / 40; walk speed ×1 / ×1.1 / ×0.8; sniper longest range, machine gun shortest). Values shared by every role stay in `CONFIG.weapon`. The client joins with `{ weapon }` and switches with the `chooseWeapon` message. The server validates both with `parseWeaponChoice` and ignores re-picking the current role. A switch refills the tank; Phase 4 may restrict switching to respawn. The choice is saved in `Settings.weapon`.
 - Swim/climb (1C):
   - `stepPlayer` takes an optional `PaintGrid` and reads the paint under the feet (short ray down) and on a wall ahead (short ray along the move direction).
   - `swimBlend` 0→1 over `transformTime`.

@@ -2,6 +2,7 @@ import type { Collider } from '@dimforge/rapier3d-compat';
 import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
 import { NO_TEAM, type PaintGrid } from '../paint/paintGrid';
+import { weaponStats } from '../weapons';
 import type { PlayerInput } from './input';
 import { characterCenterOffset, type PhysicsWorld, type RayHit } from './physicsWorld';
 import type { PlayerState } from './playerState';
@@ -63,6 +64,8 @@ export function stepPlayer(
   let maxSpeed = swimming ? (s.submerged ? sw.swimSpeed : sw.puddleSpeed) : m.walkSpeed;
   if (onEnemyPaint) maxSpeed *= h.enemyPaintSpeedMultiplier;
   if (s.aiming) maxSpeed *= m.aimSpeedMultiplier;
+  // Heavier weapons slow you down (sniper fastest, machine gun slowest).
+  maxSpeed *= weaponStats(s.weapon).moveSpeedMultiplier;
   const accel = s.submerged ? sw.swimAccel : m.groundAccel;
   if (s.grounded || s.climbing) {
     approachVelocity(

@@ -1,3 +1,5 @@
+import { DEFAULT_WEAPON, parseWeaponChoice } from '@paint-rush/shared';
+
 export type Quality = 'auto' | 'low' | 'medium' | 'high';
 
 /** Player preferences, saved in this browser. */
@@ -13,6 +15,8 @@ export interface Settings {
   /** Aim by turning the phone (needs https:// and, on iPhone, a permission tap). */
   gyro: boolean;
   gyroSensitivity: number;
+  /** Chosen role: an index in WEAPON_KINDS (0 assault, 1 sniper, 2 machine gun). */
+  weapon: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -23,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.8,
   gyro: false,
   gyroSensitivity: 1,
+  weapon: DEFAULT_WEAPON,
 };
 
 const STORAGE_KEY = 'paint-rush.settings';
@@ -52,6 +57,7 @@ export function parseSettings(raw: string | null): Settings {
     volume: numberIn(saved.volume, 0, 1, d.volume),
     gyro: typeof saved.gyro === 'boolean' ? saved.gyro : d.gyro,
     gyroSensitivity: numberIn(saved.gyroSensitivity, 0.1, 5, d.gyroSensitivity),
+    weapon: parseWeaponChoice(saved.weapon) ?? d.weapon,
   };
 }
 

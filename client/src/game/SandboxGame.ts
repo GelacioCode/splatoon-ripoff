@@ -1,8 +1,9 @@
 import { Vector3 } from 'three';
-import { ARENA, CONFIG, type Vec3 } from '@paint-rush/shared';
+import { ARENA, CONFIG, weaponStats, type Vec3 } from '@paint-rush/shared';
 import {
   createPlayerState,
   initPhysics,
+  setWeapon,
   stepPlayer,
   stepProjectiles,
   stepWeapon,
@@ -54,23 +55,32 @@ class SandboxGame {
   private emptyClickCooldown = 0;
 
   constructor(container: HTMLElement, overlay: DevOverlay) {
-    this.world = new World(container, overlay, {
-      respawn: () => this.respawn(),
-      clearPaint: () => {
-        this.world.paint.clear();
-        this.world.atlas.clear();
+    this.world = new World(
+      container,
+      overlay,
+      {
+        respawn: () => this.respawn(),
+        clearPaint: () => {
+          this.world.paint.clear();
+          this.world.atlas.clear();
+        },
+        switchTeam: () => {
+          this.player.team = 1 - this.player.team;
+          this.character.setColor(TEAM_COLORS[this.player.team]);
+        },
+        refillInk: () => {
+          this.player.ink = weaponStats(this.player.weapon).magazine;
+          this.player.reloadTimer = 0;
+        },
       },
-      switchTeam: () => {
-        this.player.team = 1 - this.player.team;
-        this.character.setColor(TEAM_COLORS[this.player.team]);
+      (weapon) => {
+        setWeapon(this.player, weapon);
+        this.character.setWeapon(weapon);
       },
-      refillInk: () => {
-        this.player.ink = CONFIG.weapon.inkCapacity;
-        this.player.reloadTimer = 0;
-      },
-    });
-    this.character = this.world.createCharacter(START_TEAM);
-    this.player = createPlayerState(this.spawnPoint(), SPAWN_YAW, START_TEAM);
+    );
+    const weapon = this.world.settings.weapon;
+    this.character = this.world.createCharacter(START_TEAM, weapon);
+    this.player = createPlayerState(this.spawnPoint(), SPAWN_YAW, START_TEAM, weapon);
     this.body = this.world.physics.createCharacter(this.player);
     this.world.view.yaw = SPAWN_YAW;
     this.syncFeet();
@@ -150,8 +160,8 @@ class SandboxGame {
   }
 
   private respawn(): void {
-    const team = this.player.team;
-    Object.assign(this.player, createPlayerState(this.spawnPoint(), SPAWN_YAW, team));
+    const { team, weapon } = this.player;
+    Object.assign(this.player, createPlayerState(this.spawnPoint(), SPAWN_YAW, team, weapon));
     this.world.view.yaw = SPAWN_YAW;
     this.syncFeet();
   }

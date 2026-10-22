@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../config';
+import { weaponStats } from '../weapons';
 import { createInput, type PlayerInput } from './input';
 import { createPlayerState, type PlayerState } from './playerState';
 import type { Projectile } from './projectiles';
 import { stepWeapon } from './weapon';
 
 const DT = 1 / 30;
+const ASSAULT = 0;
+const SNIPER = 1;
+const assault = weaponStats(ASSAULT);
 
-function newPlayer(ink: number = CONFIG.weapon.inkCapacity): PlayerState {
-  const state = createPlayerState({ x: 0, y: 0, z: 0 });
+function newPlayer(ink: number = assault.magazine, weapon = ASSAULT): PlayerState {
+  const state = createPlayerState({ x: 0, y: 0, z: 0 }, 0, 0, weapon);
   state.ink = ink;
   return state;
 }
@@ -22,16 +26,13 @@ function run(state: PlayerState, seconds: number, buttons: Partial<PlayerInput> 
 }
 
 describe('stepWeapon', () => {
-  it('fires at the configured rate and never refills while shooting', () => {
+  it('fires at the role rate and never refills while shooting', () => {
     const state = newPlayer();
     const shots = run(state, 1, { fire: true });
-    const expected = 1 / CONFIG.weapon.fireInterval;
+    const expected = 1 / assault.fireInterval;
     expect(shots.length).toBeGreaterThanOrEqual(Math.floor(expected));
     expect(shots.length).toBeLessThanOrEqual(Math.ceil(expected) + 1);
-    expect(state.ink).toBeCloseTo(
-      CONFIG.weapon.inkCapacity - shots.length * CONFIG.weapon.inkPerShot,
-      9,
-    );
+    expect(state.ink).toBeCloseTo(assault.magazine - shots.length * CONFIG.weapon.inkPerShot, 9);
   });
 
   it('reloads when the tank runs dry, and blocks shooting until the reload is done', () => {
@@ -39,25 +40,25 @@ describe('stepWeapon', () => {
     // Two shots empty the tank; holding the trigger for the rest of the second fires nothing.
     expect(run(state, 1, { fire: true })).toHaveLength(2);
     expect(state.reloadTimer).toBeGreaterThan(0);
-    run(state, CONFIG.weapon.reloadSeconds);
+    run(state, assault.reloadSeconds);
     expect(state.reloadTimer).toBe(0);
-    expect(state.ink).toBe(CONFIG.weapon.inkCapacity);
+    expect(state.ink).toBe(assault.magazine);
   });
 
   it('reloads by itself after a long pause without shooting', () => {
-    const half = CONFIG.weapon.inkCapacity / 2;
+    const half = assault.magazine / 2;
     const state = newPlayer(half);
     run(state, CONFIG.weapon.autoReloadAfterSeconds - 1);
     expect(state.reloadTimer).toBe(0);
     expect(state.ink).toBe(half);
     run(state, 1.5);
     expect(state.reloadTimer).toBeGreaterThan(0);
-    run(state, CONFIG.weapon.reloadSeconds + 0.1);
-    expect(state.ink).toBe(CONFIG.weapon.inkCapacity);
+    run(state, assault.reloadSeconds + 0.1);
+    expect(state.ink).toBe(assault.magazine);
   });
 
   it('reloads on request and cannot shoot meanwhile', () => {
-    const state = newPlayer(CONFIG.weapon.inkCapacity / 2);
+    const state = newPlayer(assault.magazine / 2);
     run(state, DT, { reload: true });
     expect(state.reloadTimer).toBeGreaterThan(0);
     expect(run(state, 1, { fire: true })).toHaveLength(0);
@@ -66,8 +67,8 @@ describe('stepWeapon', () => {
   it('refills quickly while hidden in own paint, which also ends a reload', () => {
     const state = newPlayer(0);
     state.submerged = true;
-    run(state, CONFIG.weapon.inkCapacity / CONFIG.swim.inkRefillRate + 0.1);
-    expect(state.ink).toBe(CONFIG.weapon.inkCapacity);
+    run(state, assault.magazine / CONFIG.swim.inkRefillRate + 0.1);
+    expect(state.ink).toBe(assault.magazine);
     expect(state.reloadTimer).toBe(0);
   });
 
@@ -91,11 +92,28 @@ describe('stepWeapon', () => {
     const hip = wobble(false);
     const aimed = wobble(true);
     expect(aimed.maxAngle).toBeLessThan(hip.maxAngle);
-    expect(aimed.maxAngle).toBeLessThanOrEqual((CONFIG.weapon.aimSpreadDeg * Math.PI) / 180);
+    expect(aimed.maxAngle).toBeLessThanOrEqual((assault.aimSpreadDeg * Math.PI) / 180);
     expect(aimed.shots[0].straightTime).toBeGreaterThan(hip.shots[0].straightTime);
     expect(Math.hypot(aimed.shots[0].vx, aimed.shots[0].vz)).toBeGreaterThan(
       Math.hypot(hip.shots[0].vx, hip.shots[0].vz),
     );
+  });
+
+  it("empties a sniper's tank after its magazine of shots", () => {
+    const state = newPlayer(weaponStats(SNIPER).magazine, SNIPER);
+    const shots = run(state, 10, { fire: true });
+    // Holding fire for 10 s: one magazine, a reload, then more shots; the first batch is the magazine.
+    expect(shots.length).toBeGreaterThan(weaponStats(SNIPER).magazine);
+    const quick = newPlayer(weaponStats(SNIPER).magazine, SNIPER);
+    const firstMagazine = run(
+      quick,
+      weaponStats(SNIPER).magazine * weaponStats(SNIPER).fireInterval + 0.5,
+      {
+        fire: true,
+      },
+    );
+    expect(firstMagazine).toHaveLength(weaponStats(SNIPER).magazine);
+    expect(quick.reloadTimer).toBeGreaterThan(0);
   });
 
   it('gives the same shot the same spread every time (deterministic)', () => {

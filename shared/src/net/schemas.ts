@@ -40,6 +40,7 @@ export const NetPlayer = schema(
     vz: t.float32(),
     yaw: t.float32(),
     team: t.uint8(),
+    weapon: t.uint8(),
     grounded: t.boolean(),
     swimBlend: t.float32(),
     submerged: t.boolean(),

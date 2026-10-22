@@ -27,6 +27,18 @@ pnpm dev       # start the client (Vite) and the game server (Colyseus) together
 
 Open http://localhost:5173. The game server listens on http://localhost:2567 and has a health check at http://localhost:2567/health.
 
+## Roles
+
+Pick a role on the start screen. Your pick is remembered on this device, and you can switch any time from the pause menu (switching refills your tank).
+
+| Role | Shots per reload | Range | Walking speed |
+| --- | --- | --- | --- |
+| Sniper | 5 | Long, fast shots with a long trail | Fastest |
+| Assault | 20 | Medium (all-rounder) | Normal |
+| Machine gun | 40 | Short, wide spray | Slowest |
+
+Each role has its own blaster shape. All role values live in `CONFIG.weapons` in `shared/src/config.ts`, and the tuning panel has a folder per role.
+
 ## Controls (desktop)
 
 | Action | Key |
@@ -36,7 +48,7 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 | Look and aim | Mouse |
 | Jump | Space |
 | Shoot paint (hold to keep firing) | Left mouse button |
-| Reload (2.5 s, no shooting meanwhile) | R |
+| Reload (2.5–3 s depending on role, no shooting meanwhile) | R |
 | Aim: zoom in for precise long shots, walk slower (hold) | Right mouse button |
 | Swim: melt into a puddle (fast and hidden in your own paint, climbs painted walls, refills ink) | Shift (hold) |
 | Pause (frees the mouse) | Esc |
@@ -49,7 +61,7 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 - **Buttons:** SHOOT (hold), SWIM (hold), JUMP, R (reload), AIM (tap to toggle zoom), II (pause).
 - **Optional gyro aim:** turn it on in the pause menu. It needs an `https://` page (see the Cloudflare tunnel tip below), and iPhones ask for permission.
 
-The pause menu (Esc on desktop, II on touch) has sensitivity, invert up/down, volume, gyro and **graphics quality** (Auto / Low / Medium / High). Changing quality reloads the page. Resolution also drops automatically when the frame rate does, shown as `res …%` in the dev overlay.
+The pause menu (Esc on desktop, II on touch) has the role picker, sensitivity, invert up/down, volume, gyro and **graphics quality** (Auto / Low / Medium / High). Changing quality reloads the page. Resolution also drops automatically when the frame rate does, shown as `res …%` in the dev overlay.
 
 To test gyro over https on your phone, run a temporary tunnel to the dev server: `cloudflared tunnel --url http://localhost:5173`. Install it once with `winget install --id Cloudflare.cloudflared`.
 

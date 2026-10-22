@@ -132,42 +132,79 @@ export const CONFIG = {
     /** Health regained per second. */
     regenPerSecond: 30,
   },
+  /** Settings shared by every role's weapon. Each role's own numbers are in `weapons`. */
   weapon: {
-    /** Seconds between shots while the trigger is held (0.125 = 8 shots per second). */
-    fireInterval: 0.125,
-    /** Random aim wobble per shot (degrees). */
-    spreadDeg: 3,
-    /** Launch speed of a paint shot (m/s). */
-    projectileSpeed: 24,
-    /** Shots fly straight this long before they start to drop (s). */
-    straightTime: 0.15,
-    /** How fast shots drop after the straight part (m/s²). */
+    /** How fast shots drop after their straight part (m/s²). */
     projectileGravity: 30,
     /** Shots that hit nothing disappear after this long (s). */
     maxLifetime: 1.5,
-    /** Radius of the paint splat a shot leaves (m). */
-    splatRadius: 0.85,
-    /** Aimed shots: spread (degrees), straight flight (s) and speed multiplier. */
-    aimSpreadDeg: 0.6,
-    aimStraightTime: 0.4,
+    /** Aimed shots fly this much faster. */
     aimProjectileSpeedMultiplier: 1.25,
-    /** Shots drip a small paint spot onto the floor below every this many meters of flight. */
-    dripEvery: 1.5,
-    /** Radius of a drip's paint spot (m); drawn as a thin streak along the shot's path. */
-    dripRadius: 0.3,
     /** Drips only land when the floor is at most this far below the shot (m). */
     dripMaxHeight: 2.5,
-    /** Ink used per shot, out of a full tank. */
+    /** Ink used per shot (the tank holds `magazine` shots). */
     inkPerShot: 1,
-    /** Tank size: 15 shots at 1 ink each (about 2 seconds of fire). */
-    inkCapacity: 15,
-    /** A reload refills the whole tank and takes this long; no shooting meanwhile (s). */
-    reloadSeconds: 2.5,
     /** A partly empty tank reloads by itself after this long without shooting (s). */
     autoReloadAfterSeconds: 10,
     /** Where the nozzle sits relative to the feet: up, to the right and forward (m). */
     muzzleHeight: 0.5,
     muzzleRight: 0.44,
     muzzleForward: 0.6,
+  },
+  /**
+   * The three roles players pick from. Fields per role:
+   * - magazine: shots before a reload; reloadSeconds: how long the reload takes
+   * - fireInterval: seconds between shots while the trigger is held
+   * - spreadDeg / aimSpreadDeg: random aim wobble per shot, normally / while aiming (degrees)
+   * - projectileSpeed (m/s); straightTime / aimStraightTime: flight before dropping (s)
+   * - splatRadius: paint left on a hit (m); dripEvery / dripRadius: the paint trail (m)
+   * - moveSpeedMultiplier: walking and swimming speed (heavier guns are slower)
+   */
+  weapons: {
+    /** Balanced all-rounder. */
+    assault: {
+      magazine: 20,
+      reloadSeconds: 2.5,
+      fireInterval: 0.125,
+      spreadDeg: 3,
+      aimSpreadDeg: 0.6,
+      projectileSpeed: 24,
+      straightTime: 0.15,
+      aimStraightTime: 0.4,
+      splatRadius: 0.85,
+      dripEvery: 1.5,
+      dripRadius: 0.3,
+      moveSpeedMultiplier: 1,
+    },
+    /** Few, slow, pinpoint long-range shots with a long paint trail. Fastest on foot. */
+    sniper: {
+      magazine: 5,
+      reloadSeconds: 2.5,
+      fireInterval: 0.6,
+      spreadDeg: 0.4,
+      aimSpreadDeg: 0,
+      projectileSpeed: 45,
+      straightTime: 0.6,
+      aimStraightTime: 1,
+      splatRadius: 1.1,
+      dripEvery: 0.9,
+      dripRadius: 0.32,
+      moveSpeedMultiplier: 1.1,
+    },
+    /** A short-range spray of small splats. Heaviest, so the slowest on foot. */
+    machineGun: {
+      magazine: 40,
+      reloadSeconds: 3,
+      fireInterval: 0.07,
+      spreadDeg: 6,
+      aimSpreadDeg: 3,
+      projectileSpeed: 20,
+      straightTime: 0.08,
+      aimStraightTime: 0.2,
+      splatRadius: 0.6,
+      dripEvery: 2,
+      dripRadius: 0.25,
+      moveSpeedMultiplier: 0.8,
+    },
   },
 };

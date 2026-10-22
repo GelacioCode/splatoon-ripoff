@@ -8,6 +8,7 @@ import {
   MeshToonMaterial,
   SphereGeometry,
   type DataTexture,
+  type Material,
   type Object3D,
 } from 'three';
 import { clamp, CONFIG, damp, dampAngle, lerp } from '@paint-rush/shared';
@@ -51,6 +52,7 @@ export class BlobCharacter {
   private readonly skin: MeshToonMaterial;
   /** Eyes, hands, blaster and feet: hidden while melted. */
   private readonly details: Object3D[] = [];
+  private readonly blasters: Object3D[];
   private walkPhase = 0;
   private squash = 0;
   private squashVelocity = 0;
@@ -60,7 +62,7 @@ export class BlobCharacter {
   private puddleHeight = PUDDLE_HEIGHT;
   private climbTilt = 0;
 
-  constructor(color: number, toonRamp: DataTexture) {
+  constructor(color: number, toonRamp: DataTexture, weapon = 0) {
     const skin = new MeshToonMaterial({ color, gradientMap: toonRamp });
     this.skin = skin;
     const ink = new MeshBasicMaterial({ color: OUTLINE_COLOR });
@@ -96,11 +98,14 @@ export class BlobCharacter {
       this.body.add(hand);
       this.details.push(hand);
     }
-    const blaster = new Mesh(new CylinderGeometry(0.06, 0.08, 0.44, 12), ink);
-    blaster.rotation.x = Math.PI / 2;
+    // One blaster per role (see WEAPON_KINDS); only the current one is shown.
+    const blaster = new Group();
     blaster.position.set(0.44, BODY_CENTER_Y - 0.06, -0.34);
+    this.blasters = [createAssaultBlaster(ink), createSniperBlaster(ink), createMachineGun(ink)];
+    blaster.add(...this.blasters);
     this.body.add(blaster);
     this.details.push(blaster);
+    this.setWeapon(weapon);
 
     const footGeometry = new SphereGeometry(0.12, 12, 8);
     this.leftFoot = new Mesh(footGeometry, skin);
@@ -114,6 +119,12 @@ export class BlobCharacter {
   /** Repaints the body, hands and feet (e.g. after switching team). */
   setColor(color: number): void {
     this.skin.color.setHex(color);
+  }
+
+  /** Shows the blaster of a role (index in WEAPON_KINDS). Cheap to call every frame. */
+  setWeapon(weapon: number): void {
+    const shown = this.blasters[weapon] ? weapon : 0;
+    this.blasters.forEach((blaster, i) => (blaster.visible = i === shown));
   }
 
   /** Call every rendered frame with the interpolated pose. */
@@ -181,4 +192,36 @@ export class BlobCharacter {
     );
     this.body.rotation.z = clamp(-localX * 0.03, -0.2, 0.2) * lean;
   }
+}
+
+/** A barrel along −Z (forward), starting at the hand and `length` long. */
+function barrel(radiusTip: number, radiusBase: number, length: number, material: Material): Mesh {
+  const mesh = new Mesh(new CylinderGeometry(radiusTip, radiusBase, length, 12), material);
+  mesh.rotation.x = Math.PI / 2;
+  mesh.position.z = 0.22 - length / 2;
+  return mesh;
+}
+
+/** Assault: the original short, slightly tapered blaster. */
+function createAssaultBlaster(material: Material): Object3D {
+  return barrel(0.06, 0.08, 0.44, material);
+}
+
+/** Sniper: a long thin barrel with a scope on top. */
+function createSniperBlaster(material: Material): Object3D {
+  const group = new Group();
+  const scope = barrel(0.035, 0.035, 0.2, material);
+  scope.position.set(0, 0.08, -0.05);
+  group.add(barrel(0.035, 0.055, 0.78, material), scope);
+  return group;
+}
+
+/** Machine gun: a chunky barrel with an ink drum underneath. */
+function createMachineGun(material: Material): Object3D {
+  const group = new Group();
+  const drum = new Mesh(new CylinderGeometry(0.11, 0.11, 0.09, 16), material);
+  drum.rotation.z = Math.PI / 2;
+  drum.position.set(0, -0.1, 0.04);
+  group.add(barrel(0.09, 0.1, 0.42, material), drum);
+  return group;
 }

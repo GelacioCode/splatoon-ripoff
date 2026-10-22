@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
+import { DEFAULT_WEAPON, weaponStats } from '../weapons';
 import type { PhysicsWorld } from './physicsWorld';
 
 const DOWN: Vec3 = { x: 0, y: -1, z: 0 };
@@ -20,8 +21,12 @@ export interface Projectile {
   age: number;
   /** Meters flown since the last drip. */
   sinceDrip: number;
-  /** Seconds it flies straight before it starts to drop (longer for aimed shots). */
+  /** Seconds it flies straight before it starts to drop (depends on the role, longer aimed). */
   straightTime: number;
+  /** Paint it leaves: the splat on a hit, and the drip trail along the way (m). */
+  splatRadius: number;
+  dripEvery: number;
+  dripRadius: number;
   team: number;
 }
 
@@ -50,16 +55,20 @@ export function aimDirection(yaw: number, pitch: number): Vec3 {
   };
 }
 
-/** A new shot. Aimed shots fly faster and stay straight for longer before dropping. */
+/**
+ * A new shot from a role's weapon (`weapon` indexes WEAPON_KINDS). Aimed shots fly faster and
+ * stay straight for longer before dropping.
+ */
 export function createProjectile(
   origin: Vec3,
   yaw: number,
   pitch: number,
   team: number,
   aimed = false,
+  weapon = DEFAULT_WEAPON,
 ) {
-  const w = CONFIG.weapon;
-  const speed = w.projectileSpeed * (aimed ? w.aimProjectileSpeedMultiplier : 1);
+  const role = weaponStats(weapon);
+  const speed = role.projectileSpeed * (aimed ? CONFIG.weapon.aimProjectileSpeedMultiplier : 1);
   const direction = aimDirection(yaw, pitch);
   const projectile: Projectile = {
     x: origin.x,
@@ -73,7 +82,10 @@ export function createProjectile(
     vz: direction.z * speed,
     age: 0,
     sinceDrip: 0,
-    straightTime: aimed ? w.aimStraightTime : w.straightTime,
+    straightTime: aimed ? role.aimStraightTime : role.straightTime,
+    splatRadius: role.splatRadius,
+    dripEvery: role.dripEvery,
+    dripRadius: role.dripRadius,
     team,
   };
   return projectile;
@@ -112,7 +124,7 @@ export function stepProjectiles(
         normal: hit.normal,
         blockIndex: hit.blockIndex,
         team: p.team,
-        radius: w.splatRadius,
+        radius: p.splatRadius,
         drip: false,
         direction,
       });
@@ -123,8 +135,8 @@ export function stepProjectiles(
     p.z += dz;
 
     p.sinceDrip += length;
-    if (p.sinceDrip >= w.dripEvery) {
-      p.sinceDrip -= w.dripEvery;
+    if (p.sinceDrip >= p.dripEvery) {
+      p.sinceDrip -= p.dripEvery;
       const floor = physics.raycast(p, DOWN, w.dripMaxHeight);
       if (floor && floor.normal.y > 0.5) {
         onHit({
@@ -132,7 +144,7 @@ export function stepProjectiles(
           normal: floor.normal,
           blockIndex: floor.blockIndex,
           team: p.team,
-          radius: w.dripRadius,
+          radius: p.dripRadius,
           drip: true,
           direction,
         });

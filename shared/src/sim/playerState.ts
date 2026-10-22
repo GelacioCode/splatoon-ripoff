@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
+import { DEFAULT_WEAPON, weaponStats } from '../weapons';
 
 /**
  * Everything the simulation knows about one player. Only flat numbers and booleans, so the
@@ -18,6 +19,8 @@ export interface PlayerState {
   yaw: number;
   /** Team index: 0 or 1. */
   team: number;
+  /** Role / weapon: an index into WEAPON_KINDS (0 assault, 1 sniper, 2 machine gun). */
+  weapon: number;
   grounded: boolean;
   /** Seconds since the player last stood on the ground. */
   airTime: number;
@@ -52,7 +55,12 @@ export interface PlayerState {
   aiming: boolean;
 }
 
-export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
+export function createPlayerState(
+  feet: Vec3,
+  yaw = 0,
+  team = 0,
+  weapon = DEFAULT_WEAPON,
+): PlayerState {
   return {
     x: feet.x,
     y: feet.y,
@@ -62,12 +70,13 @@ export function createPlayerState(feet: Vec3, yaw = 0, team = 0): PlayerState {
     vz: 0,
     yaw,
     team,
+    weapon,
     grounded: false,
     airTime: 0,
     jumped: false,
     jumpBuffer: 0,
     jumpHeld: false,
-    ink: CONFIG.weapon.inkCapacity,
+    ink: weaponStats(weapon).magazine,
     fireCooldown: 0,
     sinceShot: 0,
     reloadTimer: 0,

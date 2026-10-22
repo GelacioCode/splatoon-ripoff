@@ -9,3 +9,4 @@ export * from './paint/paintGrid';
 export * from './paint/projectSplat';
 export * from './protocol';
 export * from './rng';
+export * from './weapons';

@@ -16,4 +16,9 @@ describe('parseSettings', () => {
     expect(settings.volume).toBe(1);
     expect(settings.invertY).toBe(true);
   });
+
+  it('remembers the chosen role, falling back to assault for an unknown one', () => {
+    expect(parseSettings(JSON.stringify({ weapon: 2 })).weapon).toBe(2);
+    expect(parseSettings(JSON.stringify({ weapon: 9 })).weapon).toBe(DEFAULT_SETTINGS.weapon);
+  });
 });

@@ -18,6 +18,7 @@ import {
   damp,
   lerp,
   PaintGrid,
+  weaponStats,
   type Vec3,
 } from '@paint-rush/shared';
 import {
@@ -106,6 +107,7 @@ export class World {
   readonly projectileView = new ProjectileView(TEAM_COLORS);
   readonly sfx = new Sfx();
   readonly overlay: DevOverlay;
+  private readonly roleChanged: (weapon: number) => void;
   private readonly toonRamp = createToonRamp();
   private readonly hud = createHud();
   private readonly menu: ReturnType<typeof createPauseMenu>;
@@ -119,8 +121,18 @@ export class World {
   private framesCounted = 0;
   private statsSeconds = 0;
 
-  constructor(container: HTMLElement, overlay: DevOverlay, tuning: TuningActions) {
+  /**
+   * `roleChanged` runs when the player picks another role in the menu (already saved in
+   * `settings.weapon`).
+   */
+  constructor(
+    container: HTMLElement,
+    overlay: DevOverlay,
+    tuning: TuningActions,
+    roleChanged: (weapon: number) => void,
+  ) {
     this.overlay = overlay;
+    this.roleChanged = roleChanged;
     if (this.touchDevice) preventBrowserZoom();
     this.quality = resolveQuality(this.settings.quality, this.touchDevice);
     const preset = QUALITY_PRESETS[this.quality];
@@ -196,8 +208,8 @@ export class World {
     this.renderer.setAnimationLoop(frame);
   }
 
-  createCharacter(team: number): BlobCharacter {
-    const character = new BlobCharacter(TEAM_COLORS[team], this.toonRamp);
+  createCharacter(team: number, weapon: number): BlobCharacter {
+    const character = new BlobCharacter(TEAM_COLORS[team], this.toonRamp, weapon);
     this.scene.add(character.root);
     return character;
   }
@@ -299,7 +311,7 @@ export class World {
     this.particles.update(dt);
     this.atlas.flush();
 
-    const ink = s.ink / CONFIG.weapon.inkCapacity;
+    const ink = s.ink / weaponStats(s.weapon).magazine;
     this.hud.update(ink, reloadProgress(s), cssColor(TEAM_COLORS[s.team]), ink < 0.2);
     this.hud.updateHealth(s.hp / CONFIG.player.maxHp, cssColor(TEAM_COLORS[1 - s.team]));
     this.hud.setAiming(s.aiming);
@@ -344,6 +356,7 @@ export class World {
   private settingsChanged(settings: Settings, changed: keyof Settings): void {
     saveSettings(settings);
     if (changed === 'volume') this.sfx.setVolume(settings.volume);
+    if (changed === 'weapon') this.roleChanged(settings.weapon);
     if (changed === 'gyro' && !settings.gyro) this.input.gyro.disable();
     // Paint texture size and anti-aliasing are fixed when the renderer starts.
     if (changed === 'quality') window.location.reload();

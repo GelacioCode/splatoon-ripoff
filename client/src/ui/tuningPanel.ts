@@ -1,5 +1,5 @@
 import type { Controller, GUI } from 'lil-gui';
-import { CONFIG } from '@paint-rush/shared';
+import { CONFIG, WEAPON_KINDS, type WeaponKind } from '@paint-rush/shared';
 
 export interface TuningActions {
   respawn: () => void;
@@ -56,21 +56,12 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   camera.add(c, 'followSharpness', 2, 40, 1).name('follow sharpness');
 
   const w = CONFIG.weapon;
-  const weapon = gui.addFolder('Weapon');
-  weapon.add(w, 'fireInterval', 0.04, 0.5, 0.005).name('seconds between shots');
-  weapon.add(w, 'spreadDeg', 0, 15, 0.5).name('spread (°)');
-  weapon.add(w, 'projectileSpeed', 5, 60, 0.5).name('shot speed (m/s)');
-  weapon.add(w, 'straightTime', 0, 1, 0.01).name('straight flight (s)');
+  const weapon = gui.addFolder('Weapons (all roles)');
   weapon.add(w, 'projectileGravity', 0, 80, 1).name('shot drop');
-  weapon.add(w, 'splatRadius', 0.2, 3, 0.05).name('splat radius (m)');
-  weapon.add(w, 'aimSpreadDeg', 0, 5, 0.1).name('aimed spread (°)');
-  weapon.add(w, 'aimStraightTime', 0, 1.5, 0.01).name('aimed straight flight (s)');
   weapon.add(w, 'aimProjectileSpeedMultiplier', 1, 2.5, 0.05).name('aimed shot speed ×');
-  weapon.add(w, 'dripEvery', 0.3, 6, 0.1).name('drip every (m)');
-  weapon.add(w, 'dripRadius', 0, 1.5, 0.05).name('drip radius (m)');
   weapon.add(w, 'inkPerShot', 0, 10, 0.1).name('ink per shot');
-  weapon.add(w, 'reloadSeconds', 0.2, 6, 0.1).name('reload time (s)');
   weapon.add(w, 'autoReloadAfterSeconds', 1, 30, 0.5).name('auto-reload after idle (s)');
+  for (const kind of WEAPON_KINDS) addRoleFolder(gui, kind);
 
   const sw = CONFIG.swim;
   const swim = gui.addFolder('Swim');
@@ -106,6 +97,31 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   return gui;
 }
 
+const ROLE_NAMES: Record<WeaponKind, string> = {
+  assault: 'Assault',
+  sniper: 'Sniper',
+  machineGun: 'Machine gun',
+};
+
+/** One folder per role; a magazine change shows after the next reload. */
+function addRoleFolder(gui: GUI, kind: WeaponKind): void {
+  const r = CONFIG.weapons[kind];
+  const role = gui.addFolder(`Role: ${ROLE_NAMES[kind]}`);
+  role.add(r, 'magazine', 1, 100, 1).name('shots per reload');
+  role.add(r, 'reloadSeconds', 0.2, 6, 0.1).name('reload time (s)');
+  role.add(r, 'fireInterval', 0.04, 1.5, 0.005).name('seconds between shots');
+  role.add(r, 'moveSpeedMultiplier', 0.5, 1.5, 0.05).name('walk speed ×');
+  role.add(r, 'spreadDeg', 0, 15, 0.1).name('spread (°)');
+  role.add(r, 'aimSpreadDeg', 0, 5, 0.1).name('aimed spread (°)');
+  role.add(r, 'projectileSpeed', 5, 80, 0.5).name('shot speed (m/s)');
+  role.add(r, 'straightTime', 0, 1.5, 0.01).name('straight flight (s)');
+  role.add(r, 'aimStraightTime', 0, 2, 0.01).name('aimed straight flight (s)');
+  role.add(r, 'splatRadius', 0.2, 3, 0.05).name('splat radius (m)');
+  role.add(r, 'dripEvery', 0.3, 6, 0.1).name('drip every (m)');
+  role.add(r, 'dripRadius', 0, 1.5, 0.05).name('drip radius (m)');
+  role.close();
+}
+
 /** Copies the current values as JSON, ready to paste back so they can go into config.ts. */
 function copyTuning(button: Controller): void {
   const text = JSON.stringify(
@@ -113,6 +129,7 @@ function copyTuning(button: Controller): void {
       movement: CONFIG.movement,
       camera: CONFIG.camera,
       weapon: CONFIG.weapon,
+      weapons: CONFIG.weapons,
       swim: CONFIG.swim,
       health: CONFIG.health,
       net: { tickRate: CONFIG.net.tickRate },

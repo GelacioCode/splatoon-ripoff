@@ -5,11 +5,21 @@ import {
   ArenaState,
   buildSurfaces,
   CONFIG,
+  DEFAULT_WEAPON,
+  MSG_CHOOSE_WEAPON,
   NetInput,
   NetPlayer,
   PaintGrid,
+  parseWeaponChoice,
+  type ArenaJoinOptions,
 } from '@paint-rush/shared';
-import { createPlayerState, PhysicsWorld, stepPlayer, type Collider } from '@paint-rush/shared/sim';
+import {
+  createPlayerState,
+  PhysicsWorld,
+  setWeapon,
+  stepPlayer,
+  type Collider,
+} from '@paint-rush/shared/sim';
 
 /** Falling below this height puts a player back on their team's spawn pad. */
 const RESPAWN_BELOW_Y = -10;
@@ -39,9 +49,23 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
     this.setFixedTimestep((ctx) => this.step(ctx), CONFIG.net.tickRate);
   }
 
-  onJoin(client: Client) {
+  messages = {
+    // Switching role: checked here, so a client can't ask for a weapon that doesn't exist.
+    // Re-picking the same role is ignored, so it can't be used as an instant reload.
+    [MSG_CHOOSE_WEAPON]: (client: Client, payload: unknown) => {
+      const weapon = parseWeaponChoice(payload);
+      const player = this.state.players.get(client.sessionId);
+      if (weapon === null || !player || player.weapon === weapon) return;
+      setWeapon(player, weapon);
+    },
+  };
+
+  onJoin(client: Client, options?: ArenaJoinOptions) {
     const team = this.pickTeam();
-    const player = new NetPlayer(createPlayerState(this.spawnFor(team), spawnYaw(team), team));
+    const weapon = parseWeaponChoice(options?.weapon) ?? DEFAULT_WEAPON;
+    const player = new NetPlayer(
+      createPlayerState(this.spawnFor(team), spawnYaw(team), team, weapon),
+    );
     this.state.players.set(client.sessionId, player);
     this.bodies.set(client.sessionId, this.physics.createCharacter(player));
     // Owner-only fields (timers, ink) go to this client for its own player.
@@ -79,7 +103,12 @@ export class ArenaRoom extends Room<{ state: ArenaState; input: NetInput }> {
       if (player.y < RESPAWN_BELOW_Y) {
         Object.assign(
           player,
-          createPlayerState(this.spawnFor(player.team), spawnYaw(player.team), player.team),
+          createPlayerState(
+            this.spawnFor(player.team),
+            spawnYaw(player.team),
+            player.team,
+            player.weapon,
+          ),
         );
       }
     }
