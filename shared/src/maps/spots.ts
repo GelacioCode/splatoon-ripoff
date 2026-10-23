@@ -8,7 +8,7 @@ const MIDDLE_REACH = 0.6;
 const EDGE_CLEARANCE = 0.8;
 /** Spots are never higher than this (m). */
 const MAX_HEIGHT = 3;
-const TRIES = 12;
+const TRIES = 24;
 
 type Random = () => number;
 
@@ -36,15 +36,23 @@ export function groundAt(map: MapDef, x: number, z: number): number | null {
 
 /**
  * A random spot on the middle line (z = 0), the same distance from both teams' spawns: on
- * flat ground, clear of edges and ramps. Used for the flag every round. Falls back to the
- * map's own flag spot if none is found.
+ * flat ground, clear of edges and ramps. With `flatAround` (m), the ground along the line is
+ * also the same height that far to either side, so a circle around the spot (the hill) lies
+ * flat instead of hanging over the platform's edge. Used for the flag and the hill every
+ * round. Falls back to the map's own flag spot if none is found.
  */
-export function randomMiddleSpot(map: MapDef, random: Random): Vec3 {
+export function randomMiddleSpot(map: MapDef, random: Random, flatAround = 0): Vec3 {
   const reach = map.bounds.maxX * MIDDLE_REACH;
   for (let i = 0; i < TRIES; i++) {
     const x = (random() * 2 - 1) * reach;
     const y = groundAt(map, x, 0);
-    if (y !== null && y <= MAX_HEIGHT) return { x, y, z: 0 };
+    if (y === null || y > MAX_HEIGHT) continue;
+    if (flatAround > 0) {
+      const left = groundAt(map, x - flatAround, 0);
+      const right = groundAt(map, x + flatAround, 0);
+      if (left !== y || right !== y) continue;
+    }
+    return { x, y, z: 0 };
   }
   return { ...map.flagSpawn };
 }

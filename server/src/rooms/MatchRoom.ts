@@ -9,6 +9,7 @@ import {
   cleanName,
   CONFIG,
   createFlag,
+  createHill,
   createRng,
   DamageLog,
   decodePaintEvents,
@@ -18,14 +19,17 @@ import {
   encodePaintSnapshot,
   encodeShotEvents,
   generateLobbyCode,
+  HILL_FREE,
   inputsToRun,
   isCaptureGoal,
+  isGameMode,
   isMatchLength,
   matchResult,
   MatchState,
   MSG_CAPTURE_GOAL,
   MSG_CHOOSE_WEAPON,
   MSG_FLAG,
+  MSG_GAME_MODE,
   MSG_HIT,
   MSG_KICK,
   MSG_KICKED,
@@ -47,10 +51,13 @@ import {
   NetPlayer,
   nextPhase,
   PaintGrid,
+  parseGameMode,
   parseLook,
   parsePhase,
+  parseStageMode,
   parseWeaponChoice,
   phaseSeconds,
+  pickStageMode,
   randomLook,
   randomMiddleSpot,
   seedFromString,
@@ -58,10 +65,15 @@ import {
   shuffleTeams,
   smallerTeam,
   stepFlag,
+  stepHill,
   WEAPON_KINDS,
   type Flag,
   type FlagEvent,
   type FlagPlayer,
+  type Hill,
+  type HillEvent,
+  type HillPlayer,
+  type StageMode,
   newLayoutSeed,
   type MapDef,
   type MatchJoinOptions,
@@ -166,8 +178,12 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private rewind!: Rewind;
   /** The one neutral flag (mirrored into the synced state every tick). */
   private flag: Flag = createFlag(ARENA.flagSpawn);
-  /** Where this round's flag appears, and returns to when dropped (see placeFlag). */
+  /** Where this round's flag appears, and returns to when dropped (see setupStage). */
   private flagSpot: Vec3 = ARENA.flagSpawn;
+  /** King of the Hill stages: the circle and its bar (mirrored into the synced state). */
+  private hill: Hill = createHill(ARENA.flagSpawn);
+  /** The last team announced as holding the hill, so it's only said again when it changes. */
+  private hillAnnounced = HILL_FREE;
   /** Seconds of match time left while playing. */
   private matchTimer = 0;
   /** Bots the room plays itself, by player id ("bot-1", …); they're in `state.players` too. */
@@ -246,6 +262,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     [MSG_MATCH_LENGTH]: (client: Client, payload: unknown) => {
       if (this.isHost(client) && this.phase === 'lobby' && isMatchLength(payload)) {
         this.state.matchMinutes = payload;
+      }
+    },
+    [MSG_GAME_MODE]: (client: Client, payload: unknown) => {
+      if (this.isHost(client) && this.phase === 'lobby' && isGameMode(payload)) {
+        this.state.gameMode = payload;
       }
     },
     [MSG_SET_BOTS]: (client: Client, payload: unknown) => {
@@ -398,7 +419,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.winReason = '';
     this.teamPaint = [0, 0];
     this.damageLog.clear();
-    this.placeFlag();
+    this.setupStage();
     // The match clock runs for the whole match (it pauses between rounds).
     this.matchTimer = this.state.matchMinutes * 60;
     this.state.timeLeft = Math.ceil(this.matchTimer);
@@ -430,16 +451,30 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.arenaSize = size;
   }
 
-  /** This round's flag: at a fresh random spot on the middle line (it returns there when dropped). */
-  private placeFlag(): void {
+  /**
+   * This stage: Capture the Flag or King of the Hill (by the host's game mode; random flips a
+   * coin), with its objective at a fresh random spot on the middle line. The flag stays
+   * hidden and still during a hill stage.
+   */
+  private setupStage(): void {
+    this.state.stageMode = pickStageMode(parseGameMode(this.state.gameMode), Math.random);
     this.flagSpot = randomMiddleSpot(this.map, Math.random);
     this.flag = createFlag(this.flagSpot);
     this.syncFlag();
+    // The whole circle lies level: on the platform, or on the floor beside it.
+    const radius = CONFIG.koth.hillRadius;
+    this.hill = createHill(randomMiddleSpot(this.map, Math.random, radius - 1), radius);
+    this.hillAnnounced = HILL_FREE;
+    this.syncHill();
+  }
+
+  private get stageMode(): StageMode {
+    return parseStageMode(this.state.stageMode);
   }
 
   /**
-   * After a capture: the next round on a brand-new random layout, everyone back on their
-   * spawn with fresh state, the flag on the middle line, no paint. Then a fresh 3-2-1.
+   * After a stage is won: the next one on a brand-new random layout, everyone back on their
+   * spawn with fresh state, a new objective on the middle line, no paint. Then a fresh 3-2-1.
    */
   private startRound(): void {
     this.loadMap(newLayoutSeed(Math.random), this.state.arenaSize);
@@ -447,8 +482,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     for (const [id, player] of this.state.players) {
       if (this.bodies.has(id)) this.placeOnSpawn(player);
     }
-    this.placeFlag();
-    console.log(`[match] ${this.roomId}: new round on ${this.map.name}`);
+    this.setupStage();
+    console.log(`[match] ${this.roomId}: new ${this.stageMode} stage on ${this.map.name}`);
   }
 
   /**
@@ -481,14 +516,62 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   }
 
   /**
-   * Capture the Flag, once per tick while playing: the clock, the flag, the carrier, and
-   * whether someone has won.
+   * The match, once per tick while playing: the clock, this stage's objective (the flag or
+   * the hill), and whether someone has won the stage or the match.
    */
   private stepMatch(dt: number): void {
     this.matchTimer = Math.max(0, this.matchTimer - dt);
     const left = Math.ceil(this.matchTimer);
     if (left !== this.state.timeLeft) this.state.timeLeft = left;
 
+    const stageWon = this.stageMode === 'koth' ? this.stepKoth(dt) : this.stepCtf(dt);
+    const s = this.state;
+    const result = matchResult(
+      [s.score0, s.score1],
+      this.matchTimer,
+      this.teamPaint,
+      s.capturesToWin,
+    );
+    if (result) this.endMatch(result);
+    // A stage won without winning the match: a moment to celebrate, then a new stage.
+    else if (stageWon) this.setPhase('scored');
+  }
+
+  /** King of the Hill: who's in the circle, the bar, the news. True when a team won the stage. */
+  private stepKoth(dt: number): boolean {
+    const inArena: HillPlayer[] = [];
+    for (const [id, p] of this.state.players) {
+      if (!this.bodies.has(id)) continue;
+      inArena.push({ team: p.team, x: p.x, y: p.y, z: p.z, alive: p.respawnTimer <= 0 });
+    }
+    const won = stepHill(this.hill, inArena, dt);
+    this.syncHill();
+    // "Pink has the hill!" when a team takes it over (not again for the same team).
+    const holder = this.hill.holder;
+    if ((holder === 0 || holder === 1) && holder !== this.hillAnnounced) {
+      this.hillAnnounced = holder;
+      this.broadcast(MSG_FLAG, { kind: 'hillHeld', team: holder } satisfies HillEvent);
+    }
+    if (won < 0) return false;
+    if (won === 0) this.state.score0++;
+    else this.state.score1++;
+    this.broadcast(MSG_FLAG, { kind: 'hillWon', team: won } satisfies HillEvent);
+    return true;
+  }
+
+  /** Mirrors the hill into the synced state. */
+  private syncHill(): void {
+    const s = this.state;
+    const h = this.hill;
+    s.hillX = h.x;
+    s.hillY = h.y;
+    s.hillZ = h.z;
+    if (s.hillBalance !== h.balance) s.hillBalance = h.balance;
+    if (s.hillHolder !== h.holder) s.hillHolder = h.holder;
+  }
+
+  /** Capture the Flag: the flag and its carrier. True when a capture won the stage. */
+  private stepCtf(dt: number): boolean {
     const inArena: FlagPlayer[] = [];
     for (const [id, p] of this.state.players) {
       if (!this.bodies.has(id)) continue;
@@ -505,17 +588,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     const event = stepFlag(this.flag, inArena, dt, this.flagSpot, this.map.bases);
     if (event) this.onFlagEvent(event);
     this.syncFlag();
-
-    const s = this.state;
-    const result = matchResult(
-      [s.score0, s.score1],
-      this.matchTimer,
-      this.teamPaint,
-      s.capturesToWin,
-    );
-    if (result) this.endMatch(result);
-    // A capture that didn't win: a moment to celebrate, then a new round (see startRound).
-    else if (event?.kind === 'captured') this.setPhase('scored');
+    return event?.kind === 'captured';
   }
 
   private onFlagEvent(event: FlagEvent): void {

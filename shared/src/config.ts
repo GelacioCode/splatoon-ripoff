@@ -85,6 +85,18 @@ export const CONFIG = {
     /** Standing this close to the flag picks it up (m, measured flat; height within 2 m). */
     flagPickupRadius: 1.3,
   },
+  /** King of the Hill (user decisions: a tug-of-war bar, the hill on the middle line). */
+  koth: {
+    /**
+     * Holding the hill alone for this long, net, wins the stage (s): the bar goes from the
+     * middle to the enemy's end. While the enemy holds it alone, the bar comes back.
+     */
+    winSeconds: 60,
+    /** The hill circle (m). */
+    hillRadius: 4.5,
+    /** Players count as in the hill this far above or below its floor (m). */
+    hillHeight: 2.5,
+  },
   paint: {
     /** Size of one paint-grid cell on floors and walls (m). */
     cellSize: 0.5,

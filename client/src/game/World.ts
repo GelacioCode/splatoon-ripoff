@@ -117,6 +117,9 @@ export class World {
   atlas: PaintAtlas;
   /** Scene objects that belong to the current arena (its mesh and base zones). */
   private mapObjects: Mesh[] = [];
+  /** The base zones' meshes (also in mapObjects), and whether they're shown. */
+  private baseZones: Mesh[] = [];
+  private basesVisible = true;
   private readonly paintTextureSize: number;
   readonly view = new ThirdPersonCamera(window.innerWidth / window.innerHeight);
   readonly input: InputManager;
@@ -280,6 +283,7 @@ export class World {
       (object.material as Material).dispose();
     }
     this.mapObjects = [];
+    this.baseZones = [];
     this.atlas.dispose();
     this.physics.dispose();
     this.map = map;
@@ -326,9 +330,19 @@ export class World {
       );
       floor.rotation.x = -Math.PI / 2;
       floor.position.set(zone.center.x, zone.center.y - zone.size.y / 2 + 0.03, zone.center.z);
+      volume.visible = this.basesVisible;
+      floor.visible = this.basesVisible;
       this.scene.add(volume, floor);
       this.mapObjects.push(volume, floor);
+      this.baseZones.push(volume, floor);
     });
+  }
+
+  /** The bases only matter in Capture the Flag: hidden in King of the Hill stages. */
+  setBasesVisible(visible: boolean): void {
+    if (visible === this.basesVisible) return;
+    this.basesVisible = visible;
+    for (const zone of this.baseZones) zone.visible = visible;
   }
 
   /** Your shot hit an enemy: hit marker and tick. */

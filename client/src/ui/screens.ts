@@ -1,4 +1,14 @@
-import { CONFIG, LOBBY_CODE_LENGTH, parseLobbyCode, type Look } from '@paint-rush/shared';
+import {
+  CONFIG,
+  GAME_MODE_NAMES,
+  GAME_MODES,
+  LOBBY_CODE_LENGTH,
+  parseLobbyCode,
+  STAGE_MODE_NAMES,
+  type GameMode,
+  type Look,
+  type StageMode,
+} from '@paint-rush/shared';
 import { TEAM_COLORS } from '../render/palette';
 import { createLookPicker } from './lookPicker';
 import { createRoleCards } from './roleCards';
@@ -23,8 +33,9 @@ export interface LobbyView {
   bots: number;
   maxBots: number;
   matchMinutes: number;
-  /** Captures to win (3, 5 or 7). */
+  /** Stages (rounds) to win (3, 5 or 7). */
   capturesToWin: number;
+  gameMode: GameMode;
   /** SVG markup of the join QR code (host only), or null while it's being made. */
   qrSvg: string | null;
   joinLink: string;
@@ -35,6 +46,7 @@ export interface LobbyActions {
   kick: (id: string) => void;
   setMinutes: (minutes: number) => void;
   setCaptureGoal: (captures: number) => void;
+  setGameMode: (mode: GameMode) => void;
   setBots: (count: number) => void;
   editLook: () => void;
   leave: () => void;
@@ -254,15 +266,25 @@ export class Screens {
       minutes.addEventListener('change', () => actions.setMinutes(Number(minutes.value)));
       const length = element('label', 'screen-label', 'Match length');
       length.append(minutes);
+      const mode = element('select', 'screen-select');
+      for (const option of GAME_MODES) {
+        const el = element('option', undefined, GAME_MODE_NAMES[option]);
+        el.value = option;
+        el.selected = option === view.gameMode;
+        mode.append(el);
+      }
+      mode.addEventListener('change', () => actions.setGameMode(mode.value as GameMode));
+      const modeLabel = element('label', 'screen-label', 'Game mode');
+      modeLabel.append(mode);
       const goal = element('select', 'screen-select');
       for (const option of CONFIG.lobby.captureGoalOptions) {
-        const el = element('option', undefined, `First to ${option} captures`);
+        const el = element('option', undefined, `First to ${option} rounds`);
         el.value = String(option);
         el.selected = option === view.capturesToWin;
         goal.append(el);
       }
       goal.addEventListener('change', () => actions.setCaptureGoal(Number(goal.value)));
-      const goalLabel = element('label', 'screen-label', 'To win');
+      const goalLabel = element('label', 'screen-label', 'Rounds to win');
       goalLabel.append(goal);
       const enough = view.players.length >= CONFIG.lobby.minPlayersToStart;
       const start = button(
@@ -271,13 +293,14 @@ export class Screens {
         actions.start,
       );
       start.disabled = !enough;
-      parts.push(length, goalLabel, this.botStepper(view, actions), start);
+      parts.push(modeLabel, length, goalLabel, this.botStepper(view, actions), start);
     } else {
       parts.push(
         element(
           'p',
           'screen-waiting',
-          `Waiting for the host… (${view.matchMinutes} min, first to ${view.capturesToWin} captures)`,
+          `Waiting for the host… (${GAME_MODE_NAMES[view.gameMode]}, ${view.matchMinutes} min, ` +
+            `first to ${view.capturesToWin} rounds)`,
         ),
       );
     }
@@ -337,7 +360,7 @@ export class Screens {
     const summary = element(
       'p',
       'results-summary',
-      `Captures ${view.scores[0]} – ${view.scores[1]} · Paint ${view.turf[0]} – ${view.turf[1]}` +
+      `Rounds ${view.scores[0]} – ${view.scores[1]} · Paint ${view.turf[0]} – ${view.turf[1]}` +
         (view.reason === 'turf' ? ' (decided by paint)' : ''),
     );
     const next = view.isHost
@@ -421,9 +444,13 @@ export class MatchBanner {
     this.root.replaceChildren(columns, element('p', 'banner-sub', `Starting in ${secondsLeft}…`));
   }
 
-  showCountdown(secondsLeft: number): void {
-    if (this.update(`count|${secondsLeft}`)) {
-      this.root.replaceChildren(element('p', 'banner-big', String(Math.max(1, secondsLeft))));
+  /** 3 · 2 · 1, with which stage this is and what it's played as. */
+  showCountdown(secondsLeft: number, stage: number, mode: StageMode): void {
+    if (this.update(`count|${secondsLeft}|${stage}|${mode}`)) {
+      this.root.replaceChildren(
+        element('p', 'banner-sub banner-stage', `Round ${stage} · ${STAGE_MODE_NAMES[mode]}`),
+        element('p', 'banner-big', String(Math.max(1, secondsLeft))),
+      );
     }
   }
 
@@ -445,17 +472,19 @@ export class MatchBanner {
     if (winner >= 0) big.style.color = cssColor(TEAM_COLORS[winner]);
     const how =
       reason === 'captures'
-        ? `${scores[0]} – ${scores[1]} · first to ${goal} captures`
+        ? `${scores[0]} – ${scores[1]} · first to ${goal} rounds`
         : reason === 'time'
           ? `Time's up! ${scores[0]} – ${scores[1]}`
           : `Time's up! ${scores[0]} – ${scores[1]}, decided by paint: ${turf[0]} vs ${turf[1]}`;
     this.root.replaceChildren(big, element('p', 'banner-sub', how));
   }
 
-  /** After a capture: who scored, and that a new arena is coming. */
-  showScored(team: number, scores: [number, number], goal: number): void {
-    if (!this.update(`scored|${team}|${scores.join()}`)) return;
-    const big = element('p', 'banner-big banner-end', `${team === 0 ? 'Pink' : 'Cyan'} scores!`);
+  /** After a stage is won (a capture, or the hill): who won it, and that a new arena is coming. */
+  showScored(team: number, scores: [number, number], goal: number, mode: StageMode): void {
+    if (!this.update(`scored|${team}|${scores.join()}|${mode}`)) return;
+    const name = team === 0 ? 'Pink' : 'Cyan';
+    const title = mode === 'koth' ? `${name} takes the hill!` : `${name} scores!`;
+    const big = element('p', 'banner-big banner-end', title);
     big.style.color = cssColor(TEAM_COLORS[team] ?? TEAM_COLORS[0]);
     this.root.replaceChildren(
       big,

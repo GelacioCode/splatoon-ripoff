@@ -37,6 +37,18 @@ describe('botViewOf', () => {
     expect(view?.base).toEqual(ARENA.bases[1].center);
   });
 
+  it('sees the hill and no flag in a King of the Hill stage', () => {
+    const state = new MatchState();
+    addPlayer(state, 'bot-1', 0, 0, -10);
+    state.stageMode = 'koth';
+    state.hillX = 4;
+    const view = botViewOf(state, 'bot-1', ARENA);
+    expect(view?.flag).toBeNull();
+    expect(view?.hill).toMatchObject({ x: 4, z: 0 });
+    state.stageMode = 'ctf';
+    expect(botViewOf(state, 'bot-1', ARENA)?.hill).toBeNull();
+  });
+
   it('is null for a player who is not in the match', () => {
     expect(botViewOf(new MatchState(), 'nobody', ARENA)).toBeNull();
   });

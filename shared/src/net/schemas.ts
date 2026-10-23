@@ -115,8 +115,20 @@ export const MatchState = schema(
     /** Each team's paint points over the whole match (paint is wiped every round). */
     turf0: t.uint32().default(0),
     turf1: t.uint32().default(0),
-    /** Captures to win, set by the host in the lobby (3, 5 or 7). */
+    /** Stages (rounds) to win, set by the host in the lobby (3, 5 or 7). */
     capturesToWin: t.uint8().default(3),
+    /** The host's GameMode ('ctf', 'koth' or 'random'); read it with parseGameMode. */
+    gameMode: t.string().default('ctf'),
+    /** What this stage is played as: a StageMode ('ctf' or 'koth'); read it with parseStageMode. */
+    stageMode: t.string().default('ctf'),
+    // King of the Hill (koth stages): the circle, and the tug-of-war bar (see Hill).
+    hillX: t.float32().default(0),
+    hillY: t.float32().default(0),
+    hillZ: t.float32().default(0),
+    /** −100 … 100: team 0 wins the stage at +100, team 1 at −100. */
+    hillBalance: t.float32().default(0),
+    /** Who's in the hill: a team, −1 (nobody) or 2 (both: contested). */
+    hillHolder: t.int8().default(-1),
     /**
      * The current round's layout: 0 is Drip Yard, anything else a random layout every screen
      * builds the same way (see arenaFor). It changes after every capture.

@@ -1,7 +1,7 @@
 import type { Look } from './lobby/look';
 
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 export const DEFAULT_SERVER_PORT = 2567;
 
@@ -43,8 +43,8 @@ export const MSG_HIT = 'hit';
 export const MSG_SPLAT = 'splat';
 
 /**
- * Server → everyone: flag news ('taken', 'dropped', 'captured', 'returned' or 'reset'), for the
- * announcements. Payload: a FlagEvent.
+ * Server → everyone: objective news for the announcements. Payload: a FlagEvent ('taken',
+ * 'dropped', 'captured', 'returned' or 'reset') or a HillEvent ('hillHeld', 'hillWon').
  */
 export const MSG_FLAG = 'flag';
 
@@ -74,8 +74,11 @@ export const MSG_KICKED = 'kicked';
  */
 export const MSG_PLAY_AGAIN = 'playAgain';
 
-/** Host → server: captures to win. Payload: one of CONFIG.lobby.captureGoalOptions. */
+/** Host → server: stages (rounds) to win. Payload: one of CONFIG.lobby.captureGoalOptions. */
 export const MSG_CAPTURE_GOAL = 'captureGoal';
+
+/** Host → server, in the lobby only: the game mode. Payload: a GameMode. */
+export const MSG_GAME_MODE = 'gameMode';
 
 /** Host → server: match length. Payload: minutes, one of CONFIG.lobby.matchMinuteOptions. */
 export const MSG_MATCH_LENGTH = 'matchLength';

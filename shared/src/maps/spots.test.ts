@@ -32,6 +32,16 @@ describe('randomMiddleSpot', () => {
     }
   });
 
+  it('can keep a whole circle level (the hill never hangs over the platform edge)', () => {
+    const random = createRng(3);
+    const around = 3.5;
+    for (let i = 0; i < 50; i++) {
+      const spot = randomMiddleSpot(ARENA, random, around);
+      expect(groundAt(ARENA, spot.x - around, 0)).toBe(spot.y);
+      expect(groundAt(ARENA, spot.x + around, 0)).toBe(spot.y);
+    }
+  });
+
   it('moves around from round to round, in random layouts and bigger arenas too', () => {
     const random = createRng(11);
     const xs = new Set<number>();

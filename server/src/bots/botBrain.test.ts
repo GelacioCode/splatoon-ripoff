@@ -11,6 +11,7 @@ function view(overrides: Partial<BotView> = {}): BotView {
     flag: { x: 0, y: 1.5, z: 0, holder: 'none' },
     base: { x: 0, y: 1.5, z: -24.5 },
     enemyBase: { x: 0, y: 1.5, z: 24.5 },
+    hill: null,
     halfWidth: 18,
     halfLength: 32,
     ...overrides,
@@ -98,6 +99,34 @@ describe('bot thinking', () => {
       // Its own base is toward −Z.
       expect(walk.z).toBeLessThan(0);
     }
+  });
+
+  it('heads into the hill in King of the Hill, and stops walking once there', () => {
+    const random = createRng(6);
+    const mind = createBotMind(random);
+    const hill = { x: 0, y: 0, z: 0, radius: 4.5 };
+    const far = view({
+      hill,
+      me: { x: 0, y: 0, z: -20, team: 0, carrying: false, splatted: false },
+    });
+    const input = think(far, mind, DT, random);
+    const walk = walkDirection(input.aimYaw, input.moveX - mind.strafe, input.moveY);
+    expect(walk.z).toBeGreaterThan(0);
+
+    // Standing on its own spot in the hill: no walking on (only the little strafe shuffle).
+    const r = hill.radius * mind.hillSpot.reach;
+    const spot = {
+      x: Math.cos(mind.hillSpot.angle) * r,
+      y: 0,
+      z: Math.sin(mind.hillSpot.angle) * r,
+    };
+    const there = think(
+      view({ hill, me: { ...spot, team: 0, carrying: false, splatted: false } }),
+      mind,
+      DT,
+      random,
+    );
+    expect(there.moveY).toBe(0);
   });
 
   it('does nothing while splatted', () => {

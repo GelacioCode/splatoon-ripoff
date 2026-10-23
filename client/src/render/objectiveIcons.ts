@@ -93,11 +93,36 @@ function wait(ctx: CanvasRenderingContext2D, r: number): void {
   ctx.fill();
 }
 
+/** A three-point crown: King of the Hill. */
+function crown(ctx: CanvasRenderingContext2D, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.56, r * 0.38);
+  ctx.lineTo(-r * 0.62, -r * 0.34);
+  ctx.lineTo(-r * 0.28, -r * 0.04);
+  ctx.lineTo(0, -r * 0.52);
+  ctx.lineTo(r * 0.28, -r * 0.04);
+  ctx.lineTo(r * 0.62, -r * 0.34);
+  ctx.lineTo(r * 0.56, r * 0.38);
+  ctx.closePath();
+  ctx.fill();
+  const tips: [number, number][] = [
+    [-r * 0.62, -r * 0.42],
+    [0, -r * 0.6],
+    [r * 0.62, -r * 0.42],
+  ];
+  for (const [x, y] of tips) {
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 const GLYPHS: Record<ObjectiveIcon, (ctx: CanvasRenderingContext2D, r: number) => void> = {
   flag,
   attack,
   defend,
   wait,
+  crown,
 };
 
 /**

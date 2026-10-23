@@ -1,5 +1,6 @@
 import type { Objective } from '../game/objective';
 import { TEAM_COLORS } from '../render/palette';
+import { HillBar } from './hillBar';
 import { OrderLine } from './orders';
 
 function cssColor(hex: number): string {
@@ -13,14 +14,15 @@ function clock(seconds: number): string {
 }
 
 /**
- * Top-center match info: pink captures · time left · cyan captures, with your order under it
- * ("ATTACK! Escort your carrier to the enemy base").
+ * Top-center match info: pink stages won · time left · cyan stages won, the hill's
+ * tug-of-war bar in King of the Hill, and your order under it ("ATTACK! Escort your carrier").
  */
 export class Scoreboard {
   private readonly root = document.createElement('div');
   private readonly scores: [HTMLSpanElement, HTMLSpanElement];
   private readonly timer = document.createElement('span');
   private readonly order = new OrderLine();
+  private readonly hillBar = new HillBar();
   private shown = '';
 
   constructor() {
@@ -35,7 +37,7 @@ export class Scoreboard {
     });
     this.timer.className = 'scoreboard-timer';
     row.append(this.scores[0], this.timer, this.scores[1]);
-    this.root.append(row, this.order.root);
+    this.root.append(row, this.hillBar.root, this.order.root);
     document.body.append(this.root);
   }
 
@@ -43,7 +45,12 @@ export class Scoreboard {
     this.root.hidden = !visible;
   }
 
-  /** `goal`: captures to win, shown under the clock. */
+  /** King of the Hill's bar (`balance` −100 … 100), or null to hide it (Capture the Flag). */
+  setHill(dt: number, balance: number | null, holder: number): void {
+    this.hillBar.update(dt, balance, holder);
+  }
+
+  /** `goal`: stages to win, shown under the clock. */
   update(score0: number, score1: number, secondsLeft: number, goal: number): void {
     const key = `${score0}|${score1}|${secondsLeft}|${goal}`;
     if (key === this.shown) return;

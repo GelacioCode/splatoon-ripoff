@@ -1,4 +1,10 @@
-import type { MapDef, MatchState, NetPlayer } from '@paint-rush/shared';
+import {
+  CONFIG,
+  parseStageMode,
+  type MapDef,
+  type MatchState,
+  type NetPlayer,
+} from '@paint-rush/shared';
 import type { BotView } from './botBrain';
 
 /** Whether the bot `me` can see `enemy` (e.g. no wall in between); everyone, if not given. */
@@ -24,8 +30,11 @@ export function botViewOf(
     enemies.push({ x: p.x, y: p.y, z: p.z });
   }
   const carrierTeam = state.players.get(state.flagCarrier)?.team;
+  // King of the Hill stages have the hill, and no flag.
+  const koth = parseStageMode(state.stageMode) === 'koth';
   const flagVisible =
-    state.flagState === 'home' || state.flagState === 'dropped' || state.flagState === 'carried';
+    !koth &&
+    (state.flagState === 'home' || state.flagState === 'dropped' || state.flagState === 'carried');
   const team = me.team === 1 ? 1 : 0;
   const enemyTeam = team === 1 ? 0 : 1;
   return {
@@ -48,6 +57,9 @@ export function botViewOf(
       : null,
     base: map.bases[team].center,
     enemyBase: map.bases[enemyTeam].center,
+    hill: koth
+      ? { x: state.hillX, y: state.hillY, z: state.hillZ, radius: CONFIG.koth.hillRadius }
+      : null,
     halfWidth: map.bounds.maxX,
     halfLength: map.bounds.maxZ,
   };

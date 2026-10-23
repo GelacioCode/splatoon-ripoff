@@ -21,6 +21,8 @@ export interface BotView {
   base: Point;
   /** The enemy team's base (where a carrier scores). */
   enemyBase: Point;
+  /** King of the Hill stages: the circle to stand in (null in Capture the Flag). */
+  hill: (Point & { radius: number }) | null;
   /** The arena's half extents, for picking spots to wander to. */
   halfWidth: number;
   halfLength: number;
@@ -45,12 +47,18 @@ export interface BotMind {
   /** How far off its aim is right now (rad), and when that changes. */
   aimError: { yaw: number; pitch: number };
   nextAimError: number;
+  /** Where in the hill it likes to stand: a direction and a share of the radius, so bots spread out. */
+  hillSpot: { angle: number; reach: number };
+  /** The way it faced last tick. */
+  yaw: number;
 }
 
 /** Enemies closer than this get shot at (m). */
 const SHOOT_RANGE = 18;
 /** Close enough to a spot to pick a new one (m). */
 const ARRIVED = 2;
+/** Closer than this to where it's going, it stops walking on (m). */
+const HOLD_SPOT = 0.8;
 /** Delay before the first shot at an enemy that came into range (s): this, plus up to SPREAD. */
 const REACTION_SECONDS = 0.35;
 const REACTION_SPREAD = 0.35;
@@ -78,6 +86,8 @@ export function createBotMind(random: Random): BotMind {
     reaction: newReaction(random),
     aimError: { yaw: 0, pitch: 0 },
     nextAimError: 0,
+    hillSpot: { angle: random() * Math.PI * 2, reach: random() * 0.6 },
+    yaw: 0,
   };
 }
 
@@ -114,12 +124,20 @@ function nearest(from: Point, points: readonly Point[]): Point | null {
 }
 
 /**
- * Where to head: the enemy base with the flag; otherwise chasers go after the flag (or escort
- * our carrier to the enemy base), and the others roam, or fall back to defend our base while
- * an enemy has the flag.
+ * Where to head. King of the Hill: into the hill. Capture the Flag: the enemy base with the
+ * flag; otherwise chasers go after the flag (or escort our carrier to the enemy base), and
+ * the others roam, or fall back to defend our base while an enemy has the flag.
  */
 function goalFor(view: BotView, mind: BotMind): { x: number; z: number } {
-  const { me, flag } = view;
+  const { me, flag, hill } = view;
+  // King of the Hill: everyone heads into the circle, each to their own spot in it.
+  if (hill) {
+    const r = hill.radius * mind.hillSpot.reach;
+    return {
+      x: hill.x + Math.cos(mind.hillSpot.angle) * r,
+      z: hill.z + Math.sin(mind.hillSpot.angle) * r,
+    };
+  }
   if (me.carrying) return view.enemyBase;
   if (flag && mind.chaser) return flag.holder === 'mine' ? view.enemyBase : flag;
   if (flag?.holder === 'theirs') return view.base;
@@ -178,9 +196,13 @@ export function think(view: BotView, mind: BotMind, dt: number, random: Random):
     mind.nextAimError = 0.3 + random() * 0.4;
   }
 
-  // Face the enemy while fighting (and shoot); otherwise face where we're going.
+  // Face the enemy while fighting (and shoot); otherwise face where we're going (or keep
+  // facing the same way once there, e.g. on its spot in the hill).
+  const toGoal = Math.hypot(goal.x - me.x, goal.z - me.z);
+  const there = toGoal < HOLD_SPOT;
   const aimAt = fighting && target ? target : goal;
-  input.aimYaw = yawToward(me, aimAt);
+  input.aimYaw = fighting || !there ? yawToward(me, aimAt) : mind.yaw;
+  mind.yaw = input.aimYaw;
   if (fighting && target) {
     input.aimYaw += mind.aimError.yaw;
     input.aimPitch =
@@ -188,7 +210,10 @@ export function think(view: BotView, mind: BotMind, dt: number, random: Random):
     input.fire = mind.seenFor >= mind.reaction;
   }
 
-  const move = moveInput(input.aimYaw, goal.x - me.x, goal.z - me.z);
+  // There: no walking on, just the strafe shuffle.
+  const move = there
+    ? { moveX: 0, moveY: 0 }
+    : moveInput(input.aimYaw, goal.x - me.x, goal.z - me.z);
   input.moveX = Math.max(-1, Math.min(1, move.moveX + mind.strafe));
   input.moveY = move.moveY;
 

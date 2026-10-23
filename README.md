@@ -61,6 +61,33 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
   - **Data:** KB/s down and up. Only shown in `pnpm dev`, or with `?debug` in the link.
 - `?debug` also opens the Colyseus netcode panel, which has a latency simulator for testing lag.
 
+## Game modes
+
+The host picks one in the lobby:
+
+| Game mode | Every round (stage) is… |
+| --- | --- |
+| All Capture the Flag | Capture the Flag |
+| All King of the Hill | King of the Hill |
+| All random | a coin flip: Capture the Flag or King of the Hill |
+
+- A match is a series of rounds, each on a brand-new random arena. Winning a round (a capture, or taking the hill) scores 1 point.
+- The first team to the host's **Rounds to win** (3, 5 or 7) wins the match.
+- When the match time runs out, the team with more rounds wins; on a tie, the team that painted more over the whole match wins. An exact tie is a draw.
+- The countdown before each round says which round it is and its mode ("Round 2 · King of the Hill").
+
+## King of the Hill
+
+- A glowing circle with a crown and a light beam appears at a **random spot on the middle line** (on the platform, or on the floor beside it, always lying level).
+- A **tug-of-war bar** under the scores: 200 points, your team's 100 on its side and theirs on the other, with a marker starting in the middle.
+  - While **only your team** is in the circle, the marker pushes into their side.
+  - While only they are in it, it comes back.
+  - While **both** are in it, it's **contested** and doesn't move.
+- Pushing the marker all the way (a net **1 minute** of holding) wins the round.
+- The circle (and the minimap) shows white while free, the holder's colour while held, and flashes while contested.
+- Orders: 👑 TAKE THE HILL! · 🛡 HOLD THE HILL! (you're in it) · 🛡 DEFEND THE HILL! (your team holds it) · ⚔ PUSH THEM OUT! (contested). The yellow arrow always points to the hill.
+- There's no flag in a King of the Hill round, and the bases are hidden.
+
 ## Capture the Flag
 
 - One neutral flag, with a light beam above it, appears at a **random spot on the middle line** every round (the same distance from both teams): on the raised centre platform or the floor beside it. A dropped flag returns to that round's spot.
@@ -82,8 +109,8 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
   - "Pink scores!" shows, then everyone goes back to their spawn, the paint is wiped, and the arena gets a **brand-new random layout**, followed by 3 · 2 · 1 · GO.
   - The first round is always the hand-made Drip Yard.
   - The match clock pauses between rounds.
-- **Winning:** the first team to reach the host's goal (**3, 5 or 7 captures**, set in the lobby) wins. When the host's match time runs out, the team with more captures wins; on a tie, the team that painted more over the whole match wins. An exact tie is a draw.
-- The scoreboard at top centre shows captures, time left, and your order.
+- **Winning:** each capture wins the round (see Game modes above for winning the match).
+- The scoreboard at top centre shows rounds won, time left, and your order.
 
 ## Stats, minimap and results
 

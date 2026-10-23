@@ -1,10 +1,10 @@
-import type { FlagState } from '@paint-rush/shared';
+import { HILL_CONTESTED, type FlagState } from '@paint-rush/shared';
 
 /** The icon on the arrow over your head and next to the order at the top. */
-export type ObjectiveIcon = 'flag' | 'attack' | 'defend' | 'wait';
+export type ObjectiveIcon = 'flag' | 'attack' | 'defend' | 'wait' | 'crown';
 
 /** Where the arrow over your head points. */
-export type ObjectiveTarget = 'flag' | 'enemyBase' | 'ownBase' | 'middle';
+export type ObjectiveTarget = 'flag' | 'enemyBase' | 'ownBase' | 'middle' | 'hill';
 
 /** What you should be doing right now: the order at the top, and where the arrow points. */
 export interface Objective {
@@ -74,4 +74,47 @@ export function flagObjective(s: FlagSituation): Objective {
     };
   }
   return { icon: 'flag', target: 'flag', title: 'GET THE FLAG!', detail: "It's in the middle" };
+}
+
+/** What the order depends on in King of the Hill. */
+export interface HillSituation {
+  /** Who's in the hill: a team, −1 (nobody) or HILL_CONTESTED. */
+  holder: number;
+  myTeam: number;
+  /** Whether you're standing in it. */
+  inside: boolean;
+}
+
+/**
+ * Your order in King of the Hill (the arrow always points at the hill): take it while it's
+ * free or theirs, push them out while it's contested, hold or defend it while it's yours.
+ */
+export function hillObjective(s: HillSituation): Objective {
+  if (s.holder === HILL_CONTESTED) {
+    return {
+      icon: 'attack',
+      target: 'hill',
+      title: 'PUSH THEM OUT!',
+      detail: 'Both teams are in the hill: the bar is stuck',
+    };
+  }
+  if (s.holder === s.myTeam) {
+    return s.inside
+      ? { icon: 'defend', target: 'hill', title: 'HOLD THE HILL!', detail: 'Stay in the circle' }
+      : {
+          icon: 'defend',
+          target: 'hill',
+          title: 'DEFEND THE HILL!',
+          detail: 'Your team holds it: keep them out',
+        };
+  }
+  return {
+    icon: 'crown',
+    target: 'hill',
+    title: 'TAKE THE HILL!',
+    detail:
+      s.holder === -1
+        ? 'Stand in the circle to push the bar'
+        : 'They hold it: get in and push them out',
+  };
 }

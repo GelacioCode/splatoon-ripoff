@@ -452,9 +452,93 @@ select {
   }
 }
 
+/* King of the Hill: the tug-of-war bar (team 0's side left, team 1's right). */
+.hill-bar {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.hill-bar[hidden] {
+  display: none;
+}
+
+.hill-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hill-bar-track {
+  position: relative;
+  width: min(260px, 52vw);
+  height: 16px;
+  border: var(--outline);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: var(--drop-small);
+}
+
+.hill-bar-left {
+  position: absolute;
+  inset: 0 auto 0 0;
+}
+
+/* The middle line the marker starts on. */
+.hill-bar-track::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  translate: -1px 0;
+  background: rgb(29 17 53 / 45%);
+}
+
+.hill-bar-marker {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  z-index: 1;
+  width: 10px;
+  translate: -5px 0;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.hill-bar.contested .hill-bar-marker {
+  animation: contested 0.4s steps(2) infinite;
+}
+
+@keyframes contested {
+  50% {
+    background: var(--gold);
+  }
+}
+
+.hill-bar-count {
+  min-width: 3ch;
+  font: 400 18px var(--font-display);
+  text-align: center;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 4px var(--ink);
+}
+
+.hill-bar-status {
+  min-height: 13px;
+  font: 700 11px var(--font-body);
+  text-shadow: 0 1px 0 var(--ink);
+}
+
+.hill-bar.contested .hill-bar-status {
+  color: var(--gold);
+}
+
 .announcer {
   position: fixed;
-  top: calc(max(10px, env(safe-area-inset-top)) + 104px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 138px);
   left: 50%;
   z-index: 5;
   translate: -50% 0;

@@ -7,10 +7,12 @@ import {
   decodePaintEvents,
   decodePaintSnapshot,
   decodeShotEvents,
+  inHill,
   MatchState,
   MSG_CAPTURE_GOAL,
   MSG_CHOOSE_WEAPON,
   MSG_FLAG,
+  MSG_GAME_MODE,
   MSG_HIT,
   MSG_KICK,
   MSG_KICKED,
@@ -30,8 +32,10 @@ import {
   MSG_START,
   NetInput,
   parseFlagState,
+  parseGameMode,
   parseLook,
   parsePhase,
+  parseStageMode,
   ROOM_MATCH,
   seedFromString,
   wrapAngle,
@@ -61,6 +65,7 @@ import { isLocalPage, joinPath, joinUrl, type Route } from '../net/route';
 import { meterRoomTraffic, TrafficMeter } from '../net/trafficMeter';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
 import { FlagView } from '../render/FlagView';
+import { HillView } from '../render/HillView';
 import { LookPreview } from '../render/LookPreview';
 import { ObjectiveArrow } from '../render/ObjectiveArrow';
 import { TEAM_COLORS } from '../render/palette';
@@ -75,7 +80,7 @@ import { StatsOverlay } from '../ui/statsOverlay';
 import type { StatsRow } from '../ui/statsTable';
 import { FixedStep } from './fixedStep';
 import { NewShotFilter } from './newShotFilter';
-import { flagObjective, type Objective } from './objective';
+import { flagObjective, hillObjective, type Objective } from './objective';
 import { snapshotOf, World, type PlayerSnapshot } from './World';
 
 /** How often the dev overlay's connection line refreshes (s). */
@@ -452,6 +457,9 @@ class NetSession {
   private readonly statsOverlay: StatsOverlay;
   /** Where the flag is on the minimap this frame. */
   private flagOnMap: MinimapFrame['flag'] = null;
+  /** King of the Hill: the circle in the arena, and on the minimap this frame. */
+  private readonly hillView = new HillView();
+  private hillOnMap: MinimapFrame['hill'] = null;
   private paintRefreshTimer = 0;
   /** When the match ended (ms), and whether the results screen is up yet. */
   private endedAt = 0;
@@ -475,6 +483,7 @@ class NetSession {
     this.banner = banner;
     this.seed = seedFromString(room.sessionId);
     this.flagView = new FlagView(world.toonRamp);
+    world.scene.add(this.hillView.root);
     world.scene.add(this.flagView.root);
     this.arrow = new ObjectiveArrow(world.toonRamp);
     world.scene.add(this.arrow.root);
@@ -536,6 +545,9 @@ class NetSession {
     this.world.killFeed.clear();
     this.world.setSplatted(null);
     this.world.scene.remove(this.flagView.root);
+    this.world.scene.remove(this.hillView.root);
+    this.hillView.dispose();
+    this.world.setBasesVisible(true);
     this.world.scene.remove(this.arrow.root);
     this.arrow.dispose();
     this.scoreboard.dispose();
@@ -649,7 +661,7 @@ class NetSession {
         (shot, from, direction, distance) => this.shotHitsTarget(shot, from, direction, distance),
       );
     }
-    this.updateFlag(dt, phase);
+    this.updateObjective(dt, phase);
     this.updateMinimap(dt, timeMs, phase);
     this.statsOverlay.setEnabled(phase === 'countdown' || phase === 'playing');
     this.statsOverlay.update(this.statsRows());
@@ -747,8 +759,13 @@ class NetSession {
     const secondsLeft = state.countdown;
     this.scoreboard.setVisible(phase !== 'reveal');
     if (phase === 'reveal') this.banner.showReveal(this.teamNames(), secondsLeft);
-    else if (phase === 'countdown') this.banner.showCountdown(secondsLeft);
-    else if (phase === 'ended') {
+    else if (phase === 'countdown') {
+      this.banner.showCountdown(
+        secondsLeft,
+        state.score0 + state.score1 + 1,
+        parseStageMode(state.stageMode),
+      );
+    } else if (phase === 'ended') {
       if (this.resultsShown) return;
       this.banner.showEnd(
         state.winner,
@@ -762,21 +779,81 @@ class NetSession {
         this.lastScoringTeam,
         [state.score0, state.score1],
         state.capturesToWin,
+        parseStageMode(state.stageMode),
       );
     } else if (previous === 'countdown') this.banner.showGo();
     else if (previous !== 'playing') this.banner.hide();
   }
 
   /**
-   * The flag (at its spot, or on its carrier's back), our order under the scoreboard, and the
-   * arrow over our head pointing where the order says to go.
+   * This stage's objective on screen: the flag (Capture the Flag) or the hill and its bar
+   * (King of the Hill), our order under the scoreboard, and the arrow over our head pointing
+   * where the order says to go.
    */
-  private updateFlag(dt: number, phase: MatchPhase): void {
+  private updateObjective(dt: number, phase: MatchPhase): void {
+    const state = this.room.state;
+    const koth = parseStageMode(state.stageMode) === 'koth';
+    const myTeam = state.players.get(this.room.sessionId)?.team ?? 0;
+    const onField = phase === 'countdown' || phase === 'playing';
+    // The bases only matter for the flag.
+    this.world.setBasesVisible(!koth);
+    const flag = this.updateFlag(dt, phase, !koth);
+    const hill = this.updateHill(dt, phase, koth);
+
+    let objective: Objective | null = null;
+    if (onField && koth) {
+      const inside = inHill(
+        { ...hill, radius: CONFIG.koth.hillRadius, balance: 0, holder: state.hillHolder },
+        this.feet.x,
+        this.feet.y,
+        this.feet.z,
+      );
+      objective = hillObjective({ holder: state.hillHolder, myTeam, inside });
+    } else if (onField) {
+      const carried = state.flagState === 'carried';
+      objective = flagObjective({
+        flagState: parseFlagState(state.flagState),
+        carrierTeam: carried ? (state.players.get(state.flagCarrier)?.team ?? null) : null,
+        carrierIsMe: carried && state.flagCarrier === this.room.sessionId,
+        myTeam,
+        flagTimer: state.flagTimer,
+      });
+    }
+    this.scoreboard.setOrder(objective);
+    const me = this.me?.state;
+    const alive = me !== undefined && me.respawnTimer <= 0;
+    const target = objective && alive ? this.objectiveSpot(objective, flag, hill, myTeam) : null;
+    this.arrow.update(dt, this.feet, target, objective?.icon ?? 'flag', me?.aiming ?? false);
+    this.scoreboard.update(state.score0, state.score1, state.timeLeft, state.capturesToWin);
+  }
+
+  /**
+   * King of the Hill: the circle in the arena, on the minimap, and the bar under the scores
+   * (`shown` false hides them all). Returns where the hill is.
+   */
+  private updateHill(dt: number, phase: MatchPhase, shown: boolean): Vec3 {
+    const state = this.room.state;
+    const at = { x: state.hillX, y: state.hillY, z: state.hillZ };
+    const visible = shown && phase !== 'lobby';
+    const holder = state.hillHolder;
+    this.hillView.update(dt, visible, at.x, at.y, at.z, holder);
+    this.scoreboard.setHill(dt, visible ? state.hillBalance : null, holder);
+    const color = holder === 0 || holder === 1 ? TEAM_COLORS[holder] : 0xffffff;
+    this.hillOnMap = visible
+      ? { x: at.x, z: at.z, radius: CONFIG.koth.hillRadius, color: cssColor(color) }
+      : null;
+    return at;
+  }
+
+  /**
+   * Capture the Flag: the flag at its spot or on its carrier's back, and on the minimap
+   * (`shown` false hides it). Returns where it is, if it's in play.
+   */
+  private updateFlag(dt: number, phase: MatchPhase, shown: boolean): Vec3 | null {
     const state = this.room.state;
     const flagState = state.flagState;
     const carrierId = state.flagCarrier;
     const myId = this.room.sessionId;
-    const myTeam = state.players.get(myId)?.team ?? 0;
     let at: Vec3 | null = null;
     let yaw = 0;
     let color: number | null = null;
@@ -800,34 +877,23 @@ class NetSession {
     } else if (flagState === 'home' || flagState === 'dropped') {
       at = { x: state.flagX, y: state.flagY, z: state.flagZ };
     }
-    const active = phase !== 'lobby' && at !== null;
+    const active = shown && phase !== 'lobby' && at !== null;
     this.flagOnMap =
       active && at ? { x: at.x, z: at.z, color: cssColor(color ?? 0xffffff), carried } : null;
     this.flagView.update(dt, active, at?.x ?? 0, at?.y ?? 0, at?.z ?? 0, carried, yaw, color);
-
-    // Our order, and the arrow over our head pointing where it says to go.
-    const onField = phase === 'countdown' || phase === 'playing';
-    const objective = onField
-      ? flagObjective({
-          flagState: parseFlagState(flagState),
-          carrierTeam: carried ? (state.players.get(carrierId)?.team ?? null) : null,
-          carrierIsMe: carried && carrierId === myId,
-          myTeam,
-          flagTimer: state.flagTimer,
-        })
-      : null;
-    this.scoreboard.setOrder(objective);
-    const me = this.me?.state;
-    const alive = me !== undefined && me.respawnTimer <= 0;
-    const target = objective && alive ? this.objectiveSpot(objective, at, myTeam) : null;
-    this.arrow.update(dt, this.feet, target, objective?.icon ?? 'flag', me?.aiming ?? false);
-    this.scoreboard.update(state.score0, state.score1, state.timeLeft, state.capturesToWin);
+    return active ? at : null;
   }
 
-  /** Where an objective's arrow points: the flag, a base (its floor), or the middle. */
-  private objectiveSpot(objective: Objective, flagAt: Vec3 | null, myTeam: number): Vec3 | null {
+  /** Where an objective's arrow points: the flag, the hill, a base (its floor), or the middle. */
+  private objectiveSpot(
+    objective: Objective,
+    flagAt: Vec3 | null,
+    hillAt: Vec3,
+    myTeam: number,
+  ): Vec3 | null {
     const map = this.world.map;
     if (objective.target === 'flag') return flagAt;
+    if (objective.target === 'hill') return hillAt;
     if (objective.target === 'middle') return map.flagSpawn;
     const team = objective.target === 'ownBase' ? myTeam : 1 - myTeam;
     const base = map.bases[team === 1 ? 1 : 0];
@@ -860,6 +926,7 @@ class NetSession {
         me: alive ? { x: this.feet.x, z: this.feet.z, yaw: this.world.view.yaw } : null,
         mates,
         flag: this.flagOnMap,
+        hill: this.hillOnMap,
       },
       timeMs,
     );
@@ -910,7 +977,7 @@ class NetSession {
     });
   }
 
-  /** Flag news from the server, announced to everyone. */
+  /** Objective news from the server (the flag, or the hill), announced to everyone. */
   private receiveFlag(payload: unknown): void {
     if (!payload || typeof payload !== 'object') return;
     const event = payload as Partial<{ kind: string; by: string; team: number }>;
@@ -925,6 +992,13 @@ class NetSession {
     } else if (event.kind === 'captured') {
       if (team === 0 || team === 1) this.lastScoringTeam = team;
       this.announcer.show(`${name} scored for ${teamName}!`, color);
+      this.world.sfx.fanfare(1);
+    } else if (event.kind === 'hillHeld') {
+      this.announcer.show(`${teamName} has the hill!`, color);
+      this.world.sfx.fanfare(0.5);
+    } else if (event.kind === 'hillWon') {
+      if (team === 0 || team === 1) this.lastScoringTeam = team;
+      this.announcer.show(`${teamName} took the hill!`, color);
       this.world.sfx.fanfare(1);
     } else if (event.kind === 'dropped') {
       this.announcer.show(`${name} dropped the flag!`, color);
@@ -960,7 +1034,15 @@ class NetSession {
     const link = joinUrl(window.location, this.room.roomId, this.lanAddresses);
     if (isHost && this.qr?.url !== link) this.qr = { url: link, svg: qrCodeSvg(link) };
 
-    const key = JSON.stringify([players, isHost, state.matchMinutes, state.capturesToWin, link]);
+    const gameMode = parseGameMode(state.gameMode);
+    const key = JSON.stringify([
+      players,
+      isHost,
+      state.matchMinutes,
+      state.capturesToWin,
+      gameMode,
+      link,
+    ]);
     if (key === this.lobbyKey) return;
     this.lobbyKey = key;
     this.screens.showLobby(
@@ -973,6 +1055,7 @@ class NetSession {
         maxBots: CONFIG.lobby.maxPlayers - (players.length - bots),
         matchMinutes: state.matchMinutes,
         capturesToWin: state.capturesToWin,
+        gameMode,
         qrSvg: isHost ? (this.qr?.svg ?? null) : null,
         joinLink: link,
       },
@@ -981,6 +1064,7 @@ class NetSession {
         kick: (id) => this.room.send(MSG_KICK, id),
         setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
         setCaptureGoal: (captures) => this.room.send(MSG_CAPTURE_GOAL, captures),
+        setGameMode: (mode) => this.room.send(MSG_GAME_MODE, mode),
         setBots: (count) => this.room.send(MSG_SET_BOTS, count),
         editLook: () => this.openLookEditor(),
         leave: () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { flagObjective, type FlagSituation } from './objective';
+import { HILL_CONTESTED, HILL_FREE } from '@paint-rush/shared';
+import { flagObjective, hillObjective, type FlagSituation } from './objective';
 
 function situation(overrides: Partial<FlagSituation> = {}): FlagSituation {
   return {
@@ -33,6 +34,18 @@ describe('flagObjective', () => {
   it('has the other team defend its own spawn', () => {
     const o = flagObjective(situation({ flagState: 'carried', carrierTeam: 1 }));
     expect(o).toMatchObject({ icon: 'defend', target: 'ownBase', title: 'DEFEND YOUR SPAWN!' });
+  });
+
+  it('King of the Hill: take it, hold or defend it, push them out', () => {
+    const free = hillObjective({ holder: HILL_FREE, myTeam: 0, inside: false });
+    expect(free).toMatchObject({ icon: 'crown', target: 'hill', title: 'TAKE THE HILL!' });
+    expect(hillObjective({ holder: 1, myTeam: 0, inside: false }).title).toBe('TAKE THE HILL!');
+    expect(hillObjective({ holder: 0, myTeam: 0, inside: true }).title).toBe('HOLD THE HILL!');
+    expect(hillObjective({ holder: 0, myTeam: 0, inside: false }).title).toBe('DEFEND THE HILL!');
+    expect(hillObjective({ holder: HILL_CONTESTED, myTeam: 1, inside: true })).toMatchObject({
+      icon: 'attack',
+      title: 'PUSH THEM OUT!',
+    });
   });
 
   it('waits while the flag is away after a capture', () => {

@@ -19,6 +19,8 @@ export interface MinimapFrame {
   mates: MinimapPoint[];
   /** The flag, its color (CSS), and whether someone is carrying it. */
   flag: (MinimapPoint & { color: string; carried: boolean }) | null;
+  /** King of the Hill: the circle (m) and its color (CSS: white, or the holder's). */
+  hill: (MinimapPoint & { radius: number; color: string }) | null;
 }
 
 function rgb(hex: number): [number, number, number] {
@@ -44,7 +46,8 @@ function roundRect(
 
 /**
  * A top view of the arena in the corner: the layout, live team paint (fading in as it
- * changes), you as an arrow, your teammates as dots and the flag as a pulsing marker. It's
+ * changes), you as an arrow, your teammates as dots, and the flag (or the hill) as a pulsing
+ * marker. It's
  * turned so your team always attacks upward. Tap it or press M to open a big version.
  */
 export class Minimap {
@@ -171,6 +174,20 @@ export class Minimap {
     ctx.globalAlpha = fade;
     ctx.drawImage(this.paintNew, 0, 0, width, height);
     ctx.globalAlpha = 1;
+
+    if (frame.hill) {
+      const p = this.toPixel(frame.hill.x, frame.hill.z);
+      const pulse = 1 + Math.sin(timeMs / 250) * 0.05;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, frame.hill.radius * PIXELS_PER_METER * pulse, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = frame.hill.color;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = frame.hill.color;
+      ctx.stroke();
+    }
 
     const color = cssColor(TEAM_COLORS[this.team] ?? TEAM_COLORS[0]);
     for (const mate of frame.mates) {
