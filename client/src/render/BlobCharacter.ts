@@ -11,7 +11,18 @@ import {
   type Material,
   type Object3D,
 } from 'three';
-import { clamp, CONFIG, damp, dampAngle, lerp } from '@paint-rush/shared';
+import { clamp, CONFIG, damp, dampAngle, DEFAULT_LOOK, lerp, type Look } from '@paint-rush/shared';
+import {
+  BODY_CENTER_Y,
+  BODY_RADIUS,
+  BODY_SHAPES,
+  EYE_PARTS,
+  GOGGLE_PARTS,
+  HAT_PARTS,
+  SHOE_PARTS,
+  type PartMaterials,
+} from './lookParts';
+import { NameLabel } from './NameLabel';
 import { OUTLINE_COLOR } from './palette';
 
 /** The parts of a player's state the animation needs, already interpolated for this frame. */
@@ -32,27 +43,53 @@ export interface CharacterPose {
   climbing: boolean;
 }
 
-const BODY_RADIUS = 0.45;
-const BODY_CENTER_Y = 0.56;
+/** Height of the name label above the feet (clears the tallest hat on the tallest body). */
+const LABEL_HEIGHT = 1.62;
 /** Puddle shape: height and width relative to the standing body. */
 const PUDDLE_HEIGHT = 0.28;
 const SUBMERGED_HEIGHT = 0.1;
 const PUDDLE_WIDTH = 1.45;
 
+/** All options of one part; only the chosen one is visible. */
+interface PartSlot {
+  group: Group;
+  options: (Object3D | null)[];
+}
+
+function createSlot(options: (Object3D | null)[]): PartSlot {
+  const group = new Group();
+  for (const option of options) if (option) group.add(option);
+  return { group, options };
+}
+
+function showOption(slot: PartSlot, index: number): void {
+  const shown = slot.options[index] !== undefined ? index : 0;
+  slot.options.forEach((option, i) => {
+    if (option) option.visible = i === shown;
+  });
+}
+
 /**
  * The paint-blob creature: a round gummy body with stubby hands and feet, googly eyes and a
- * little blaster, all built from simple meshes. It faces −Z, and melts into a puddle to swim.
+ * little blaster, all built from simple meshes, plus the player's chosen eyes, hat, goggles,
+ * shoes and body shape. It faces −Z, and melts into a puddle to swim.
  */
 export class BlobCharacter {
   readonly root = new Group();
   /** Squashes, stretches and leans from the feet up. */
   private readonly body = new Group();
-  private readonly leftFoot: Mesh;
-  private readonly rightFoot: Mesh;
+  private readonly leftFoot: Group;
+  private readonly rightFoot: Group;
   private readonly skin: MeshToonMaterial;
-  /** Eyes, hands, blaster and feet: hidden while melted. */
+  /** Eyes, hands, blaster, hat, goggles and feet: hidden while melted. */
   private readonly details: Object3D[] = [];
   private readonly blasters: Object3D[];
+  private readonly eyes: PartSlot;
+  private readonly hat: PartSlot;
+  private readonly goggles: PartSlot;
+  private readonly shoes: [PartSlot, PartSlot];
+  private shape = BODY_SHAPES[0];
+  private label: NameLabel | null = null;
   private walkPhase = 0;
   private squash = 0;
   private squashVelocity = 0;
@@ -62,11 +99,12 @@ export class BlobCharacter {
   private puddleHeight = PUDDLE_HEIGHT;
   private climbTilt = 0;
 
-  constructor(color: number, toonRamp: DataTexture, weapon = 0) {
+  constructor(color: number, toonRamp: DataTexture, weapon = 0, look: Look = DEFAULT_LOOK) {
     const skin = new MeshToonMaterial({ color, gradientMap: toonRamp });
     this.skin = skin;
     const ink = new MeshBasicMaterial({ color: OUTLINE_COLOR });
     const white = new MeshBasicMaterial({ color: 0xffffff });
+    const parts: PartMaterials = { skin, ink, white, toonRamp };
 
     const bodyGeometry = new IcosahedronGeometry(BODY_RADIUS, 4);
     const bodyMesh = new Mesh(bodyGeometry, skin);
@@ -79,16 +117,13 @@ export class BlobCharacter {
     outline.position.y = BODY_CENTER_Y;
     this.body.add(bodyMesh, outline);
 
-    const eyeGeometry = new SphereGeometry(0.1, 14, 10);
-    const pupilGeometry = new SphereGeometry(0.05, 10, 8);
-    for (const side of [-1, 1]) {
-      const eye = new Mesh(eyeGeometry, white);
-      eye.position.set(0.16 * side, BODY_CENTER_Y + 0.14, -0.37);
-      const pupil = new Mesh(pupilGeometry, ink);
-      pupil.position.z = -0.07;
-      eye.add(pupil);
-      this.body.add(eye);
-      this.details.push(eye);
+    // Look parts sit on the body, so they squash, stretch and lean with it.
+    this.eyes = createSlot(EYE_PARTS.map((build) => build(parts)));
+    this.hat = createSlot(HAT_PARTS.map((build) => build(parts)));
+    this.goggles = createSlot(GOGGLE_PARTS.map((build) => build(parts)));
+    for (const slot of [this.eyes, this.hat, this.goggles]) {
+      this.body.add(slot.group);
+      this.details.push(slot.group);
     }
 
     const handGeometry = new SphereGeometry(0.1, 12, 8);
@@ -107,13 +142,46 @@ export class BlobCharacter {
     this.details.push(blaster);
     this.setWeapon(weapon);
 
-    const footGeometry = new SphereGeometry(0.12, 12, 8);
-    this.leftFoot = new Mesh(footGeometry, skin);
-    this.rightFoot = new Mesh(footGeometry, skin);
-    for (const foot of [this.leftFoot, this.rightFoot]) foot.scale.set(1, 0.6, 1.3);
+    this.shoes = [
+      createSlot(SHOE_PARTS.map((build) => build(parts))),
+      createSlot(SHOE_PARTS.map((build) => build(parts))),
+    ];
+    this.leftFoot = this.shoes[0].group;
+    this.rightFoot = this.shoes[1].group;
     this.details.push(this.leftFoot, this.rightFoot);
 
     this.root.add(this.body, this.leftFoot, this.rightFoot);
+    this.setLook(look);
+  }
+
+  /** Shows the chosen eyes, hat, goggles, shoes and body shape (see LOOK_OPTIONS). */
+  setLook(look: Look): void {
+    showOption(this.eyes, look.eyes);
+    showOption(this.hat, look.hat);
+    showOption(this.goggles, look.goggles);
+    for (const shoe of this.shoes) showOption(shoe, look.shoes);
+    this.shape = BODY_SHAPES[look.body] ?? BODY_SHAPES[0];
+  }
+
+  /** Floats a name over the head, in the given color (e.g. the team's). Empty removes it. */
+  setName(name: string, color: number): void {
+    this.removeLabel();
+    if (!name) return;
+    this.label = new NameLabel(name, color);
+    this.label.sprite.position.y = LABEL_HEIGHT;
+    this.root.add(this.label.sprite);
+  }
+
+  /** Frees the GPU resources that aren't shared (call when removing the character). */
+  dispose(): void {
+    this.removeLabel();
+  }
+
+  private removeLabel(): void {
+    if (!this.label) return;
+    this.root.remove(this.label.sprite);
+    this.label.dispose();
+    this.label = null;
   }
 
   /** Repaints the body, hands and feet (e.g. after switching team). */
@@ -156,10 +224,13 @@ export class BlobCharacter {
       t,
     );
     const melt = pose.swimBlend;
-    const scaleY = lerp(standY, this.puddleHeight, melt);
-    const scaleXZ = lerp(standXZ, PUDDLE_WIDTH, melt);
+    // The chosen body shape (tall, wide) applies standing; every puddle looks the same.
+    const scaleY = lerp(standY * this.shape.height, this.puddleHeight, melt);
+    const scaleXZ = lerp(standXZ * this.shape.width, PUDDLE_WIDTH, melt);
     this.body.scale.set(scaleXZ, scaleY, scaleXZ);
     for (const part of this.details) part.visible = melt < 0.5;
+    // No name over a puddle: hiding in paint has to actually hide you.
+    if (this.label) this.label.sprite.visible = melt < 0.5;
 
     // Velocity in the character's own frame (−Z is forward) drives the walk cycle and lean.
     const sin = Math.sin(this.yaw);
@@ -175,8 +246,9 @@ export class BlobCharacter {
     const step = Math.cos(this.walkPhase) * 0.1 * stride;
     const leftLift = pose.grounded ? Math.max(0, step) : 0.05;
     const rightLift = pose.grounded ? Math.max(0, -step) : 0.05;
-    this.leftFoot.position.set(-0.2, 0.07 + leftLift, swing);
-    this.rightFoot.position.set(0.2, 0.07 + rightLift, -swing);
+    const footX = 0.2 * this.shape.width;
+    this.leftFoot.position.set(-footX, 0.07 + leftLift, swing);
+    this.rightFoot.position.set(footX, 0.07 + rightLift, -swing);
     const bob = pose.grounded ? Math.abs(Math.sin(this.walkPhase)) * 0.05 * stride : 0;
 
     // Climbing: the puddle stands up flat against the wall in front.

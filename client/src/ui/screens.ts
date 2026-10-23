@@ -1,5 +1,6 @@
-import { CONFIG, LOBBY_CODE_LENGTH, parseLobbyCode } from '@paint-rush/shared';
+import { CONFIG, LOBBY_CODE_LENGTH, parseLobbyCode, type Look } from '@paint-rush/shared';
 import { TEAM_COLORS } from '../render/palette';
+import { createLookPicker } from './lookPicker';
 import { createRoleCards } from './roleCards';
 
 /** One row of the lobby's player list. */
@@ -25,7 +26,16 @@ export interface LobbyActions {
   start: () => void;
   kick: (id: string) => void;
   setMinutes: (minutes: number) => void;
+  editLook: () => void;
   leave: () => void;
+}
+
+/** The look editor: a box for the 3D preview next to the part pickers. */
+function customizeSection(look: Look, changeLook: (look: Look) => void) {
+  const section = element('div', 'look-section');
+  const preview = element('div', 'look-preview');
+  section.append(preview, createLookPicker(look, changeLook));
+  return { section, preview };
 }
 
 function cssColor(hex: number): string {
@@ -57,6 +67,8 @@ function button(label: string, className: string, onClick: () => void): HTMLButt
 export class Screens {
   private readonly root = element('div', 'screen');
   private readonly card = element('div', 'menu-card screen-card');
+  /** Runs when the current screen goes away (e.g. to free its 3D preview). */
+  private cleanup: (() => void) | null = null;
 
   constructor() {
     this.root.append(this.card);
@@ -65,7 +77,13 @@ export class Screens {
   }
 
   hide(): void {
+    this.runCleanup();
     this.root.hidden = true;
+  }
+
+  /** Something to undo when the current screen is replaced or hidden. */
+  onClose(cleanup: () => void): void {
+    this.cleanup = cleanup;
   }
 
   /** Start screen: create a lobby, or type a code to join one. */
@@ -105,15 +123,17 @@ export class Screens {
   }
 
   /**
-   * Name and role, then Join (or Create, when `code` is null). Returns a way to show progress
-   * and errors while connecting.
+   * Name, look and role, then Join (or Create, when `code` is null). Returns the box for the
+   * 3D preview, and a way to show progress and errors while connecting.
    */
   showJoin(options: {
     code: string | null;
     name: string;
     weapon: number;
+    look: Look;
     submit: (name: string) => void;
     pickWeapon: (weapon: number) => void;
+    changeLook: (look: Look) => void;
     back: () => void;
   }) {
     const nameInput = element('input', 'screen-name-input');
@@ -134,17 +154,23 @@ export class Screens {
       if (event.key === 'Enter' && !go.disabled) go.click();
     });
 
+    const customize = customizeSection(options.look, options.changeLook);
+
     this.show(
       element('h1', undefined, options.code ? `Join lobby ${options.code}` : 'New lobby'),
       label,
+      element('p', 'menu-heading', 'Customize'),
+      customize.section,
       element('p', 'menu-heading', 'Choose your role'),
       roles.element,
       go,
       status,
       button('Back', 'screen-link-button', options.back),
     );
-    nameInput.focus();
+    // On phones, popping up the keyboard straight away would hide the screen.
+    if (!window.matchMedia('(pointer: coarse)').matches) nameInput.focus();
     return {
+      preview: customize.preview,
       busy(text: string): void {
         go.disabled = true;
         status.textContent = text;
@@ -214,8 +240,23 @@ export class Screens {
         element('p', 'screen-waiting', `Waiting for the host… (${view.matchMinutes} min match)`),
       );
     }
-    parts.push(button('Leave lobby', 'screen-link-button', actions.leave));
+    parts.push(
+      button('Edit look', 'screen-button', actions.editLook),
+      button('Leave lobby', 'screen-link-button', actions.leave),
+    );
     this.show(...parts);
+  }
+
+  /** Change your look while waiting in the lobby. Returns the box for the 3D preview. */
+  showLookEditor(look: Look, changeLook: (look: Look) => void, done: () => void): HTMLElement {
+    const customize = customizeSection(look, changeLook);
+    this.show(
+      element('h1', undefined, 'Your look'),
+      customize.section,
+      element('p', 'screen-waiting', 'Everyone in the lobby sees changes right away.'),
+      button('Done', 'menu-play', done),
+    );
+    return customize.preview;
   }
 
   /** A message with one button, e.g. "You were removed by the host". */
@@ -228,8 +269,15 @@ export class Screens {
   }
 
   private show(...children: HTMLElement[]): void {
+    this.runCleanup();
     this.card.replaceChildren(...children);
     this.root.hidden = false;
+  }
+
+  private runCleanup(): void {
+    const cleanup = this.cleanup;
+    this.cleanup = null;
+    cleanup?.();
   }
 }
 

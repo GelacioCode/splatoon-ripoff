@@ -27,12 +27,14 @@ import {
   MSG_PONG,
   MSG_REQUEST_LAN,
   MSG_REQUEST_PAINT,
+  MSG_SET_LOOK,
   MSG_SHOTS,
   MSG_START,
   NetInput,
   NetPlayer,
   nextPhase,
   PaintGrid,
+  parseLook,
   parsePhase,
   parseWeaponChoice,
   phaseSeconds,
@@ -139,6 +141,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       target.send(MSG_KICKED);
       target.leave();
     },
+    // Looks can change while waiting in the lobby; everyone sees it straight away.
+    [MSG_SET_LOOK]: (client: Client, payload: unknown) => {
+      const player = this.state.players.get(client.sessionId);
+      if (player && this.phase === 'lobby') Object.assign(player, parseLook(payload));
+    },
     [MSG_MATCH_LENGTH]: (client: Client, payload: unknown) => {
       if (this.isHost(client) && this.phase === 'lobby' && isMatchLength(payload)) {
         this.state.matchMinutes = payload;
@@ -155,6 +162,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       createPlayerState(this.spawnFor(team), spawnYaw(team), team, weapon),
     );
     player.name = cleanName(options?.name);
+    Object.assign(player, parseLook(options?.look));
     this.state.players.set(client.sessionId, player);
     this.joinOrder.push(client.sessionId);
     if (!this.state.hostId) this.state.hostId = client.sessionId;

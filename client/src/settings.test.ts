@@ -17,6 +17,15 @@ describe('parseSettings', () => {
     expect(settings.invertY).toBe(true);
   });
 
+  it('remembers the name and look, repairing a damaged look', () => {
+    const look = { eyes: 2, hat: 3, goggles: 1, shoes: 2, body: 1 };
+    const settings = parseSettings(JSON.stringify({ name: 'Sam', look }));
+    expect(settings.name).toBe('Sam');
+    expect(settings.look).toEqual(look);
+    const damaged = parseSettings(JSON.stringify({ look: { ...look, hat: 99 } }));
+    expect(damaged.look).toEqual({ ...look, hat: DEFAULT_SETTINGS.look.hat });
+  });
+
   it('remembers the chosen role, falling back to assault for an unknown one', () => {
     expect(parseSettings(JSON.stringify({ weapon: 2 })).weapon).toBe(2);
     expect(parseSettings(JSON.stringify({ weapon: 9 })).weapon).toBe(DEFAULT_SETTINGS.weapon);

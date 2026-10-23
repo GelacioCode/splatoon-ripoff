@@ -16,9 +16,11 @@ import {
   clamp,
   CONFIG,
   damp,
+  DEFAULT_LOOK,
   lerp,
   PaintGrid,
   weaponStats,
+  type Look,
   type PaintEvent,
   type Vec3,
 } from '@paint-rush/shared';
@@ -232,14 +234,15 @@ export class World {
     this.renderer.setAnimationLoop(frame);
   }
 
-  createCharacter(team: number, weapon: number): BlobCharacter {
-    const character = new BlobCharacter(TEAM_COLORS[team], this.toonRamp, weapon);
+  createCharacter(team: number, weapon: number, look: Look = DEFAULT_LOOK): BlobCharacter {
+    const character = new BlobCharacter(TEAM_COLORS[team], this.toonRamp, weapon, look);
     this.scene.add(character.root);
     return character;
   }
 
   removeCharacter(character: BlobCharacter): void {
     this.scene.remove(character.root);
+    character.dispose();
   }
 
   /**

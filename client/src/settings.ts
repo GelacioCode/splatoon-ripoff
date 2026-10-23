@@ -1,4 +1,11 @@
-import { CONFIG, DEFAULT_WEAPON, parseWeaponChoice } from '@paint-rush/shared';
+import {
+  CONFIG,
+  DEFAULT_LOOK,
+  DEFAULT_WEAPON,
+  parseLook,
+  parseWeaponChoice,
+  type Look,
+} from '@paint-rush/shared';
 
 export type Quality = 'auto' | 'low' | 'medium' | 'high';
 
@@ -19,6 +26,8 @@ export interface Settings {
   weapon: number;
   /** Name shown in lobbies, as typed (the server cleans it up). Empty until first set. */
   name: string;
+  /** The blob's eyes, hat, goggles, shoes and body shape. */
+  look: Look;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -31,6 +40,7 @@ export const DEFAULT_SETTINGS: Settings = {
   gyroSensitivity: 1,
   weapon: DEFAULT_WEAPON,
   name: '',
+  look: { ...DEFAULT_LOOK },
 };
 
 const STORAGE_KEY = 'paint-rush.settings';
@@ -65,6 +75,7 @@ export function parseSettings(raw: string | null): Settings {
       typeof saved.name === 'string'
         ? Array.from(saved.name).slice(0, CONFIG.lobby.maxNameLength).join('')
         : d.name,
+    look: parseLook(saved.look),
   };
 }
 

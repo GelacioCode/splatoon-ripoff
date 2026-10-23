@@ -78,7 +78,7 @@ class SandboxGame {
       },
     );
     const weapon = this.world.settings.weapon;
-    this.character = this.world.createCharacter(START_TEAM, weapon);
+    this.character = this.world.createCharacter(START_TEAM, weapon, this.world.settings.look);
     this.player = createPlayerState(this.spawnPoint(), SPAWN_YAW, START_TEAM, weapon);
     this.body = this.world.physics.createCharacter(this.player);
     this.world.view.yaw = SPAWN_YAW;

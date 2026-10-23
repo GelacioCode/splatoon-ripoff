@@ -1,5 +1,7 @@
+import type { Look } from './lobby/look';
+
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 export const DEFAULT_SERVER_PORT = 2567;
 
@@ -14,7 +16,12 @@ export interface MatchJoinOptions {
   name?: string;
   /** Starting role (index in WEAPON_KINDS); invalid values mean assault. */
   weapon?: number;
+  /** The blob's look (see LOOK_OPTIONS); invalid parts get the default. */
+  look?: Look;
 }
+
+/** Client → server, in the lobby only: a new look. Payload: a Look. */
+export const MSG_SET_LOOK = 'setLook';
 
 /** Client → server: switch to another role. Payload: the role's index in WEAPON_KINDS. */
 export const MSG_CHOOSE_WEAPON = 'chooseWeapon';

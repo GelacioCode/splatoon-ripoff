@@ -17,10 +17,11 @@ A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming throu
 ## Lobbies
 
 1. The host clicks **Create Lobby**, enters a name and picks a role. The lobby shows a big **QR code** and a 4-character **code**.
-2. Players scan the QR code (or open the site and type the code), enter a name, pick a role and join. Names are remembered on each device.
+2. Players scan the QR code (or open the site and type the code), enter a name, design their blob (eyes, hat, goggles, shoes, body shape, with a turning 3D preview), pick a role and join. Name, look and role are remembered on each device. **Edit look** in the lobby changes it for everyone at once.
 3. The host sees everyone in the list. They can remove a player (✕), set the match length, and press **Start**, which needs 2 players. The host plays too.
 4. On Start, players are shuffled into two even teams. A **team reveal** shows, then **3 · 2 · 1 · GO!** while everyone waits on their spawn pad. Then click or tap to play.
 5. Players who join while a match is on go straight in, on the smaller team.
+6. In the arena, other players' names float over their heads in their team's colour. Names hide behind walls and disappear while a player is a puddle, so hiding in paint still works.
 
 When you run `pnpm dev` and open the host page as `localhost`, the QR code uses your PC's network address instead, so phones on the same Wi-Fi can open it. If Windows asks, allow Node.js on private networks.
 

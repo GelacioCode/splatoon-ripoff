@@ -62,6 +62,12 @@ export const NetPlayer = schema(
     // Not simulation state: shown in the lobby. Has a default, so a NetPlayer can still be
     // built from a plain PlayerState (fields without one must be passed in).
     name: t.string().default(''),
+    // The look (see LOOK_OPTIONS): one small number per part, only resent when it changes.
+    eyes: t.uint8().default(0),
+    hat: t.uint8().default(0),
+    goggles: t.uint8().default(0),
+    shoes: t.uint8().default(0),
+    body: t.uint8().default(0),
   },
   'NetPlayer',
 );

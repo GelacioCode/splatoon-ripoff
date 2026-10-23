@@ -111,8 +111,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 2B shoot and paint together: user confirmed working on mobile and desktop and pushed, 2026-10-23.
   - [x] 2C rejoin on refresh, input catch-up, ping / input delay / data in the overlay: user confirmed all working and pushed, 2026-10-23.
 - [ ] Phase 3: lobby, QR join, customization, auto-balance (plan approved 2026-10-23, with the `uqr` dependency and a `?quick` dev shortcut; milestones 3A lobby/QR/host controls/balance/reveal/countdown, 3B customization)
-  - [ ] 3A: written 2026-10-23, awaiting the user's test.
-  - [ ] 3B customization: eyes, hat, goggles, shoes, body shape; live 3D preview; saved locally
+  - [x] 3A: user confirmed and committed, 2026-10-23.
+  - [ ] 3B customization (eyes, hat, goggles, shoes, body shape; live 3D preview; saved locally) plus names over players (user request): written 2026-10-23, awaiting the user's test.
 - [ ] Phase 4: Capture the Flag
 - [ ] Phase 5: 30-bot load test
 - [ ] Phase 6: deployment
@@ -178,4 +178,10 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - Late joiners go straight into the arena on `smallerTeam`.
   - Client: `parseRoute` (`/`, `/join/CODE`, `?quick`), `Screens` (DOM; names always via textContent), `MatchBanner` (reveal / countdown / GO, `pointer-events: none`). `World(menuAtStart=false)` plus `setMenuVisible`; the pause menu appears from the reveal on, for the Play click.
   - QR: `uqr` `encode()` rendered to our own SVG (`ui/qrCode.ts`). On a `localhost` page the host asks `MSG_REQUEST_LAN`; the server answers with its IPv4 addresses (not in production), and `joinUrl` prefers 192.168.x.
+- Looks (3B):
+  - `shared/src/lobby/look.ts` holds `LOOK_OPTIONS` (eyes 4, hat 5, goggles 3, shoes 4, body 3); `parseLook` repairs part by part.
+  - `NetPlayer` has uint8 `eyes/hat/goggles/shoes/body` with defaults. Looks are set from join options, or via `MSG_SET_LOOK` (lobby only).
+  - Client meshes are in `render/lookParts.ts`: one builder per option, in the same order (tested). `BlobCharacter` keeps every option in slots and toggles visibility. Body shape scales the standing body only (collision unchanged).
+  - `LookPreview` is a separate small WebGLRenderer, disposed via `Screens.onClose` (with `forceContextLoss`).
+  - Name tags: `NameLabel` (canvas-texture sprite, `sizeAttenuation: false`, depth-tested). Shown for remote players only, and hidden while melted.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

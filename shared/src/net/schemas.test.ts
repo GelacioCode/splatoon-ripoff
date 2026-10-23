@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LOOK_PARTS } from '../lobby/look';
 import { createInput } from '../sim/input';
 import { createPlayerState } from '../sim/playerState';
 import { NetInput, NetPlayer } from './schemas';
@@ -10,6 +11,11 @@ describe('network schemas', () => {
       (key) => !(key in player),
     );
     expect(missing).toEqual([]);
+  });
+
+  it('carry every part of the look', () => {
+    const player = new NetPlayer();
+    expect(LOOK_PARTS.filter((part) => !(part in player))).toEqual([]);
   });
 
   it('carry every field of the player input', () => {

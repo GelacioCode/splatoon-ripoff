@@ -1,5 +1,6 @@
 export * from './config';
 export * from './lobby/lobbyCode';
+export * from './lobby/look';
 export * from './lobby/names';
 export * from './lobby/phases';
 export * from './lobby/teams';

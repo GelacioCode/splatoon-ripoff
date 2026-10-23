@@ -18,9 +18,11 @@ import {
   MSG_PONG,
   MSG_REQUEST_LAN,
   MSG_REQUEST_PAINT,
+  MSG_SET_LOOK,
   MSG_SHOTS,
   MSG_START,
   NetInput,
+  parseLook,
   parsePhase,
   ROOM_MATCH,
   seedFromString,
@@ -46,6 +48,8 @@ import { clearReconnectToken, loadReconnectToken, saveReconnectToken } from '../
 import { isLocalPage, joinPath, joinUrl, type Route } from '../net/route';
 import { meterRoomTraffic, TrafficMeter } from '../net/trafficMeter';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
+import { LookPreview } from '../render/LookPreview';
+import { TEAM_COLORS } from '../render/palette';
 import { saveSettings } from '../settings';
 import type { DevOverlay } from '../ui/devOverlay';
 import { qrCodeSvg } from '../ui/qrCode';
@@ -212,20 +216,28 @@ class OnlineGame {
   /** Name and role, then join the lobby `code`, or create a new one when `code` is null. */
   private showJoin(code: string | null): void {
     const settings = this.world.settings;
+    let preview: LookPreview | null = null;
     const form = this.screens.showJoin({
       code,
       name: settings.name,
       weapon: settings.weapon,
+      look: settings.look,
       pickWeapon: (weapon) => {
         settings.weapon = weapon;
         saveSettings(settings);
+        preview?.setWeapon(weapon);
+      },
+      changeLook: (look) => {
+        settings.look = look;
+        saveSettings(settings);
+        preview?.setLook(look);
       },
       back: () => this.showHome(),
       submit: (name) => {
         settings.name = name.trim();
         saveSettings(settings);
         form.busy(code ? 'Joining…' : 'Creating lobby…');
-        const options = { name: settings.name, weapon: settings.weapon };
+        const options = { name: settings.name, weapon: settings.weapon, look: settings.look };
         const joining = code
           ? joinLobby(this.serverUrl, code, options)
           : createLobby(this.serverUrl, options);
@@ -242,6 +254,9 @@ class OnlineGame {
         );
       },
     });
+    const shown = new LookPreview(form.preview, settings.look, settings.weapon);
+    preview = shown;
+    this.screens.onClose(() => shown.dispose());
   }
 
   /** Dev shortcut (`?quick`): make a lobby with the saved name and start it straight away. */
@@ -250,6 +265,7 @@ class OnlineGame {
     createLobby(this.serverUrl, {
       name: settings.name || QUICK_NAME,
       weapon: settings.weapon,
+      look: settings.look,
     }).then(
       (room) => {
         this.enter(room);
@@ -351,6 +367,8 @@ class NetSession {
   private qr: { url: string; svg: string } | null = null;
   private kicked = false;
   private leaving = false;
+  /** The look editor is open over the lobby. */
+  private editingLook = false;
   private readonly saveToken = () => saveReconnectToken(this.room.reconnectionToken);
 
   constructor(
@@ -502,6 +520,7 @@ class NetSession {
       // The match is on: menus away, and the pause menu's Play button to capture the mouse.
       this.screens.hide();
       this.lobbyKey = '';
+      this.editingLook = false;
       this.world.setMenuVisible(true);
     }
     const secondsLeft = this.room.state.countdown;
@@ -512,6 +531,8 @@ class NetSession {
   }
 
   private updateLobby(): void {
+    // The look editor stays up until Done, even if the player list changes meanwhile.
+    if (this.editingLook) return;
     const state = this.room.state;
     const isHost = state.hostId === this.room.sessionId;
     if (isHost && !this.askedForLan && isLocalPage(window.location.hostname)) {
@@ -547,12 +568,37 @@ class NetSession {
         start: () => this.room.send(MSG_START),
         kick: (id) => this.room.send(MSG_KICK, id),
         setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
+        editLook: () => this.openLookEditor(),
         leave: () => {
           this.leaving = true;
           this.room.leave().catch((error: unknown) => console.warn(error));
         },
       },
     );
+  }
+
+  /** The look editor, over the lobby: every change goes to the server (and everyone) at once. */
+  private openLookEditor(): void {
+    const settings = this.world.settings;
+    this.editingLook = true;
+    let preview: LookPreview | null = null;
+    const host = this.screens.showLookEditor(
+      settings.look,
+      (look) => {
+        settings.look = look;
+        saveSettings(settings);
+        preview?.setLook(look);
+        this.room.send(MSG_SET_LOOK, look);
+      },
+      () => {
+        this.editingLook = false;
+        // Rebuild the lobby screen on the next frame.
+        this.lobbyKey = '';
+      },
+    );
+    const shown = new LookPreview(host, settings.look, settings.weapon);
+    preview = shown;
+    this.screens.onClose(() => shown.dispose());
   }
 
   /** Names on each team, for the reveal. */
@@ -664,12 +710,14 @@ class NetSession {
   private addPlayer(player: NetPlayer, sessionId: string): void {
     const world = this.world;
     if (sessionId !== this.room.sessionId) {
-      const character = world.createCharacter(player.team, player.weapon);
+      const character = world.createCharacter(player.team, player.weapon, parseLook(player));
+      // Other players get their name overhead, in their team's color.
+      character.setName(player.name, TEAM_COLORS[player.team] ?? TEAM_COLORS[0]);
       this.remotes.set(sessionId, { player, character });
       return;
     }
     // Our own player: predicted locally with the same rules the server runs.
-    this.character = world.createCharacter(player.team, player.weapon);
+    this.character = world.createCharacter(player.team, player.weapon, parseLook(player));
     // The role may have been changed in the menu while we were still joining.
     if (player.weapon !== world.settings.weapon) this.chooseWeapon(world.settings.weapon);
     const body = world.physics.createCharacter(player);
