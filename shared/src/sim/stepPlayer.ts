@@ -26,6 +26,13 @@ export function stepPlayer(
   const sw = CONFIG.swim;
   const h = CONFIG.health;
   s.yaw = input.aimYaw;
+  // Splatted: nothing to move until the respawn.
+  if (s.respawnTimer > 0) {
+    s.vx = 0;
+    s.vy = 0;
+    s.vz = 0;
+    return;
+  }
 
   // Melt into a puddle while swim is held; pop back out when it's released.
   const blendStep = dt / Math.max(sw.transformTime, 1e-3);

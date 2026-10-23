@@ -110,10 +110,11 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] Roles (user request, inserted before 2B): Sniper / Assault / Machine gun, picked on the start/pause menu. User confirmed working and pushed, 2026-10-23.
   - [x] 2B shoot and paint together: user confirmed working on mobile and desktop and pushed, 2026-10-23.
   - [x] 2C rejoin on refresh, input catch-up, ping / input delay / data in the overlay: user confirmed all working and pushed, 2026-10-23.
-- [ ] Phase 3: lobby, QR join, customization, auto-balance (plan approved 2026-10-23, with the `uqr` dependency and a `?quick` dev shortcut; milestones 3A lobby/QR/host controls/balance/reveal/countdown, 3B customization)
+- [x] Phase 3: lobby, QR join, customization, auto-balance, done 2026-10-23 (plan approved 2026-10-23, with the `uqr` dependency and a `?quick` dev shortcut; milestones 3A lobby/QR/host controls/balance/reveal/countdown, 3B customization)
   - [x] 3A: user confirmed and committed, 2026-10-23.
-  - [ ] 3B customization (eyes, hat, goggles, shoes, body shape; live 3D preview; saved locally) plus names over players (user request): written 2026-10-23, awaiting the user's test.
-- [ ] Phase 4: Capture the Flag
+  - [x] 3B customization (eyes, hat, goggles, shoes, body shape; live 3D preview; saved locally) plus names over players (user request): user confirmed, 2026-10-23.
+- [ ] Phase 4: Capture the Flag (plan approved 2026-10-23: 4A health/splat/respawn, 4B flag + timer + HUD, 4C minimap + end screen + Play Again)
+  - [ ] 4A: written 2026-10-23, awaiting the user's test.
 - [ ] Phase 5: 30-bot load test
 - [ ] Phase 6: deployment
 
@@ -142,7 +143,10 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - No shooting unless `swimBlend` is 0.
   - Enemy paint: slow, lower jump, damage down to the 40 HP floor; regen after `regenDelay`.
 - Phones (1D):
-  - `(pointer: coarse)` → touch controls (`TouchControls`, Pointer Events).
+  - Touch vs mouse is decided by `chooseTouchControls` (`input/controlsMode.ts`): the `?touch`/`?desktop` link options, then `Settings.controls` (auto/touch/mouse, in the pause menu), then `(pointer: coarse)` (the main input only).
+    - Bug found 2026-10-23: a Galaxy Fold 7 also reports `(any-pointer: fine)`, so the old "coarse and no fine pointer" rule gave it mouse mode and pointer lock. That rule is gone.
+    - In mouse mode on auto, the first finger tap before playing switches to touch, saves the choice and reloads.
+  - Touch controls use `TouchControls` (Pointer Events).
   - `InputManager.playing` gates all input. Desktop plays while the mouse is captured; touch plays after "Tap to play" until II.
   - Settings live in localStorage (`client/src/settings.ts`).
   - Quality presets in `render/quality.ts`; changing quality reloads the page.
@@ -184,4 +188,12 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - Client meshes are in `render/lookParts.ts`: one builder per option, in the same order (tested). `BlobCharacter` keeps every option in slots and toggles visibility. Body shape scales the standing body only (collision unchanged).
   - `LookPreview` is a separate small WebGLRenderer, disposed via `Screens.onClose` (with `forceContextLoss`).
   - Name tags: `NameLabel` (canvas-texture sprite, `sizeAttenuation: false`, depth-tested). Shown for remote players only, and hidden while melted.
+- Health (4A, user decisions 2026-10-23):
+  - Damage per role: sniper 100 (one-hit splat, user decision), assault 25, machine gun 12 (`CONFIG.weapons[*].damage`). No friendly fire.
+  - Spawn protection 2 s. Submerged swimmers are hittable (puddle hit sphere: lower and wider).
+  - Shared `sim/health.ts`: `playerHitSphere`, `segmentHitsSphere`, `applyShotDamage` ('ignored' | 'hit' | 'splatted') and `stepLife` (server only).
+  - `PlayerState` has `respawnTimer` (>0 = splatted, so `stepPlayer`/`stepWeapon` do nothing) and `protectTimer`.
+  - `stepProjectiles` takes an optional `ShotTargetCheck` (players are hit before the map, up to the map-hit distance).
+  - Server: `allowRewindState` + `attachAll(players, x/y/z/swimBlend)`; shots are tested against `rewind.lastSeenBy(shooter)`. A `WeakMap` holds each projectile's shooter. Messages: `MSG_HIT` → shooter, `MSG_SPLAT` → everyone (plus a `splatPaintRadius` burst of the attacker's paint). `placeOnSpawn` sets protection.
+  - Client: drawn shots stop at visible enemies (cosmetic only); a splatted remote is hidden until 300 ms after respawn; spawn protection blinks.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

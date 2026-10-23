@@ -35,6 +35,14 @@ export const CONFIG = {
   player: {
     maxHp: 100,
     respawnSeconds: 5,
+    /** After respawning, shots can't hurt you for this long (no spawn camping). */
+    spawnProtectSeconds: 2,
+    /** Shots hit a player inside this ball around their body (m). */
+    hitRadius: 0.55,
+    /** As a puddle the ball is a little wider and sits low. */
+    puddleHitRadius: 0.6,
+    /** A splatted player bursts into a splat of the attacker's paint this big (m). */
+    splatPaintRadius: 2.2,
   },
   match: {
     durationSeconds: 5 * 60,
@@ -176,6 +184,7 @@ export const CONFIG = {
    * - projectileSpeed (m/s); straightTime / aimStraightTime: flight before dropping (s)
    * - splatRadius: paint left on a hit (m); dripEvery / dripRadius: the paint trail (m)
    * - moveSpeedMultiplier: walking and swimming speed (heavier guns are slower)
+   * - damage: HP taken from an enemy per hit (players have CONFIG.player.maxHp)
    */
   weapons: {
     /** Balanced all-rounder. */
@@ -192,6 +201,7 @@ export const CONFIG = {
       dripEvery: 1.5,
       dripRadius: 0.3,
       moveSpeedMultiplier: 1,
+      damage: 25,
     },
     /** Few, slow, pinpoint long-range shots with a long paint trail. Fastest on foot. */
     sniper: {
@@ -207,6 +217,8 @@ export const CONFIG = {
       dripEvery: 0.9,
       dripRadius: 0.32,
       moveSpeedMultiplier: 1.1,
+      // One hit splats (user decision).
+      damage: 100,
     },
     /** A short-range spray of small splats. Heaviest, so the slowest on foot. */
     machineGun: {
@@ -222,6 +234,7 @@ export const CONFIG = {
       dripEvery: 2,
       dripRadius: 0.25,
       moveSpeedMultiplier: 0.8,
+      damage: 12,
     },
   },
 };

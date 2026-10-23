@@ -1,3 +1,4 @@
+import type { ControlsSetting } from '../input/controlsMode';
 import type { Quality, Settings } from '../settings';
 import { createRoleCards } from './roleCards';
 
@@ -47,6 +48,13 @@ export function createPauseMenu(
             <option value="high">High</option>
           </select>
         </label>
+        <label>Controls (reloads the page)
+          <select name="controls">
+            <option value="auto">Auto</option>
+            <option value="touch">Touch</option>
+            <option value="mouse">Mouse &amp; keyboard</option>
+          </select>
+        </label>
         <label class="menu-check menu-gyro"><input name="gyro" type="checkbox" /> Gyro aim (turn the phone)</label>
         <label class="menu-gyro">Gyro sensitivity
           <input name="gyroSensitivity" type="range" min="0.2" max="3" step="0.05" />
@@ -66,6 +74,7 @@ export function createPauseMenu(
   const invertY = field<HTMLInputElement>('invertY');
   const volume = field<HTMLInputElement>('volume');
   const quality = field<HTMLSelectElement>('quality');
+  const controls = field<HTMLSelectElement>('controls');
   const gyro = field<HTMLInputElement>('gyro');
   const gyroSensitivity = field<HTMLInputElement>('gyroSensitivity');
   const note = menu.querySelector<HTMLParagraphElement>('.menu-note');
@@ -75,6 +84,7 @@ export function createPauseMenu(
   invertY.checked = settings.invertY;
   volume.value = String(settings.volume);
   quality.value = settings.quality;
+  controls.value = settings.controls;
   gyro.checked = settings.gyro;
   gyroSensitivity.value = String(settings.gyroSensitivity);
   for (const element of menu.querySelectorAll<HTMLElement>('.menu-gyro')) {
@@ -108,6 +118,10 @@ export function createPauseMenu(
   quality.addEventListener('change', () => {
     settings.quality = quality.value as Quality;
     actions.settingsChanged(settings, 'quality');
+  });
+  controls.addEventListener('change', () => {
+    settings.controls = controls.value as ControlsSetting;
+    actions.settingsChanged(settings, 'controls');
   });
   gyroSensitivity.addEventListener('input', () => {
     settings.gyroSensitivity = Number(gyroSensitivity.value);

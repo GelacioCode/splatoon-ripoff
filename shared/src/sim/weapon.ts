@@ -37,6 +37,8 @@ export function stepWeapon(
 ): number {
   const w = CONFIG.weapon;
   const role = weaponStats(s.weapon);
+  // Splatted players can't shoot (the respawn brings a full tank).
+  if (s.respawnTimer > 0) return 0;
   s.fireCooldown -= dt;
   let fired = 0;
 

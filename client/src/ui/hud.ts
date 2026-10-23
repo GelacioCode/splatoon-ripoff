@@ -15,16 +15,54 @@ export function createHud() {
         stroke-dasharray="${RING_LENGTH}" stroke-dashoffset="0" />
     </svg>
     <div class="crosshair"></div>
+    <div class="hit-marker"></div>
     <div class="reload-label">RELOADING</div>`;
   document.body.appendChild(hud);
   const fill = hud.querySelector<SVGCircleElement>('.ink-fill');
+  const hitMarker = hud.querySelector<HTMLDivElement>('.hit-marker');
 
   // Screen edges tint toward the enemy's color as health drops.
   const vignette = document.createElement('div');
   vignette.className = 'damage-vignette';
   document.body.appendChild(vignette);
 
+  // A quick red flash when a shot hits you.
+  const flash = document.createElement('div');
+  flash.className = 'hurt-flash';
+  document.body.appendChild(flash);
+
+  // "Splatted by …" while waiting to respawn.
+  const splatted = document.createElement('div');
+  splatted.className = 'splatted';
+  splatted.hidden = true;
+  document.body.appendChild(splatted);
+  let splattedText = '';
+
+  /** Restarts a CSS animation by toggling its class. */
+  const replay = (element: HTMLElement | null, className: string) => {
+    if (!element) return;
+    element.classList.remove(className);
+    void element.offsetWidth;
+    element.classList.add(className);
+  };
+
   return {
+    /** Your shot hit someone (bigger and red when it splatted them). */
+    showHit(splat: boolean): void {
+      hitMarker?.classList.toggle('splat', splat);
+      replay(hitMarker, 'show');
+    },
+    /** You were hit by a shot. */
+    flashHurt(): void {
+      replay(flash, 'show');
+    },
+    /** Shows "Splatted by NAME · back in N" (or hides it with null). */
+    setSplatted(text: string | null): void {
+      if ((text ?? '') === splattedText) return;
+      splattedText = text ?? '';
+      splatted.hidden = text === null;
+      splatted.textContent = splattedText;
+    },
     /** Aim mode tightens the crosshair. */
     setAiming(aiming: boolean): void {
       hud.classList.toggle('aiming', aiming);

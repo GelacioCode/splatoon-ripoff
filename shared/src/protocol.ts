@@ -23,6 +23,20 @@ export interface MatchJoinOptions {
 /** Client → server, in the lobby only: a new look. Payload: a Look. */
 export const MSG_SET_LOOK = 'setLook';
 
+/** Server → a shooter whose shot hit an enemy. Payload: true if it splatted them. */
+export const MSG_HIT = 'hit';
+
+/** Server → everyone: someone was splatted. Payload: a SplatEvent. */
+export const MSG_SPLAT = 'splat';
+
+export interface SplatEvent {
+  /** Session ids; `by` is empty if the attacker already left. */
+  victim: string;
+  by: string;
+  /** The attacker's team (its color for the burst and the kill feed). */
+  team: number;
+}
+
 /** Client → server: switch to another role. Payload: the role's index in WEAPON_KINDS. */
 export const MSG_CHOOSE_WEAPON = 'chooseWeapon';
 

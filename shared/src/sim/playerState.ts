@@ -53,6 +53,10 @@ export interface PlayerState {
   groundTeam: number;
   /** In aim mode (aim held, not swimming). */
   aiming: boolean;
+  /** Seconds until a splatted player is back; 0 while alive. Splatted players can't act. */
+  respawnTimer: number;
+  /** Seconds of spawn protection left (shots don't hurt). */
+  protectTimer: number;
 }
 
 export function createPlayerState(
@@ -88,5 +92,7 @@ export function createPlayerState(
     climbing: false,
     groundTeam: -1,
     aiming: false,
+    respawnTimer: 0,
+    protectTimer: 0,
   };
 }

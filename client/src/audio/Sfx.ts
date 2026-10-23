@@ -46,6 +46,24 @@ export class Sfx {
     this.tone(ctx, t, 'sine', 170, 70, 0.1, 0.35 * volume);
   }
 
+  /** Your shot hit an enemy: a short bright tick (a two-note ping for a splat). */
+  hit(splat: boolean): void {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.tone(ctx, t, 'square', 1800, 1500, 0.04, 0.1);
+    if (splat) this.tone(ctx, t + 0.06, 'triangle', 1200, 1900, 0.12, 0.18);
+  }
+
+  /** Someone bursting into paint. `volume` 0–1 (quieter far away). */
+  splatBurst(volume: number): void {
+    const ctx = this.ready();
+    if (!ctx || volume <= 0.02) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(ctx, t, 0.3, 'lowpass', 2400, 200, 0.7 * volume);
+    this.tone(ctx, t, 'sine', 320, 60, 0.25, 0.4 * volume);
+  }
+
   /** Dry click when the ink tank is empty. */
   empty(): void {
     const ctx = this.ready();

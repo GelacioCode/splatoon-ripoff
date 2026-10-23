@@ -111,6 +111,8 @@ function addRoleFolder(gui: GUI, kind: WeaponKind): void {
   role.add(r, 'reloadSeconds', 0.2, 6, 0.1).name('reload time (s)');
   role.add(r, 'fireInterval', 0.04, 1.5, 0.005).name('seconds between shots');
   role.add(r, 'moveSpeedMultiplier', 0.5, 1.5, 0.05).name('walk speed ×');
+  // The server decides damage from its own config.ts; copy the value there to keep it.
+  role.add(r, 'damage', 1, 100, 1).name('damage per hit (copy to config)');
   role.add(r, 'spreadDeg', 0, 15, 0.1).name('spread (°)');
   role.add(r, 'aimSpreadDeg', 0, 5, 0.1).name('aimed spread (°)');
   role.add(r, 'projectileSpeed', 5, 80, 0.5).name('shot speed (m/s)');
@@ -132,6 +134,7 @@ function copyTuning(button: Controller): void {
       weapons: CONFIG.weapons,
       swim: CONFIG.swim,
       health: CONFIG.health,
+      player: CONFIG.player,
       net: { tickRate: CONFIG.net.tickRate },
     },
     null,

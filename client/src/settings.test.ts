@@ -26,6 +26,11 @@ describe('parseSettings', () => {
     expect(damaged.look).toEqual({ ...look, hat: DEFAULT_SETTINGS.look.hat });
   });
 
+  it('remembers the controls choice, falling back to auto for an unknown one', () => {
+    expect(parseSettings(JSON.stringify({ controls: 'touch' })).controls).toBe('touch');
+    expect(parseSettings(JSON.stringify({ controls: 'joystick' })).controls).toBe('auto');
+  });
+
   it('remembers the chosen role, falling back to assault for an unknown one', () => {
     expect(parseSettings(JSON.stringify({ weapon: 2 })).weapon).toBe(2);
     expect(parseSettings(JSON.stringify({ weapon: 9 })).weapon).toBe(DEFAULT_SETTINGS.weapon);

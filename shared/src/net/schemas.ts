@@ -47,6 +47,8 @@ export const NetPlayer = schema(
     climbing: t.boolean(),
     aiming: t.boolean(),
     hp: t.float32(),
+    respawnTimer: t.float32(),
+    protectTimer: t.float32(),
     // Owner only: what prediction needs on top of that.
     airTime: t.float32().view(),
     jumped: t.boolean().view(),

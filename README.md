@@ -49,15 +49,24 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
   - **Data:** KB/s down and up. Only shown in `pnpm dev`, or with `?debug` in the link.
 - `?debug` also opens the Colyseus netcode panel, which has a latency simulator for testing lag.
 
+## Health and splatting
+
+- Everyone has 100 HP. Hits from the other team hurt; your own team's shots pass through you.
+- At 0 HP you're **splatted**: you burst into the attacker's paint, see "Splatted by …", and respawn on your team's pad after 5 seconds. For 2 seconds after respawning you blink and can't be hurt.
+- A small marker on the crosshair (red for a splat) and a tick sound tell you your shot hit. A red flash means you got hit.
+- The kill feed at top right shows who splatted whom.
+- Hits are checked against where the shooter saw the target, so what you hit on your screen counts even with some lag.
+- Health still regenerates after a few seconds out of combat, as long as you're not standing in enemy paint.
+
 ## Roles
 
 Pick a role on the start screen. Your pick is remembered on this device, and you can switch any time from the pause menu (switching refills your tank).
 
-| Role | Shots per reload | Range | Walking speed |
-| --- | --- | --- | --- |
-| Sniper | 5 | Long, fast shots with a long trail | Fastest |
-| Assault | 20 | Medium (all-rounder) | Normal |
-| Machine gun | 40 | Short, wide spray | Slowest |
+| Role | Shots per reload | Damage per hit | Range | Walking speed |
+| --- | --- | --- | --- | --- |
+| Sniper | 5 | 100 (one hit splats) | Long, fast shots with a long trail | Fastest |
+| Assault | 20 | 25 (4 hits) | Medium (all-rounder) | Normal |
+| Machine gun | 40 | 12 (9 hits) | Short, wide spray | Slowest |
 
 Each role has its own blaster shape. All role values live in `CONFIG.weapons` in `shared/src/config.ts`, and the tuning panel has a folder per role.
 
@@ -81,6 +90,9 @@ Each role has its own blaster shape. All role values live in `CONFIG.weapons` in
 - **Left thumb:** touch anywhere on the left half and drag to move (the joystick appears where you touch).
 - **Right thumb:** drag on the right half to aim. You can also drag the **SHOOT** button to aim while shooting.
 - **Buttons:** SHOOT (hold), SWIM (hold), JUMP, R (reload), AIM (tap to toggle zoom), II (pause).
+- **Which controls you get:** phones, tablets and foldables (like the Galaxy Fold) get touch controls; computers, including touchscreen laptops, get mouse and keyboard.
+  - If a device guesses wrong, tapping the screen with a finger before playing switches to touch controls.
+  - You can also choose in the pause menu (**Controls: Auto / Touch / Mouse & keyboard**), or add `?touch` / `?desktop` to the link.
 - **Optional gyro aim:** turn it on in the pause menu. It needs an `https://` page (see the Cloudflare tunnel tip below), and iPhones ask for permission.
 
 The pause menu (Esc on desktop, II on touch) has the role picker, sensitivity, invert up/down, volume, gyro and **graphics quality** (Auto / Low / Medium / High). Changing quality reloads the page. Resolution also drops automatically when the frame rate does, shown as `res …%` in the dev overlay.

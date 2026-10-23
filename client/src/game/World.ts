@@ -35,6 +35,7 @@ import {
 } from '@paint-rush/shared/sim';
 import { Sfx } from '../audio/Sfx';
 import { ThirdPersonCamera } from '../camera/ThirdPersonCamera';
+import { chooseTouchControls } from '../input/controlsMode';
 import { InputManager } from '../input/InputManager';
 import { BlobCharacter } from '../render/BlobCharacter';
 import { DynamicResolution } from '../render/DynamicResolution';
@@ -49,6 +50,7 @@ import { createToonRamp } from '../render/toon';
 import { loadSettings, saveSettings, type Settings } from '../settings';
 import type { DevOverlay } from '../ui/devOverlay';
 import { createHud } from '../ui/hud';
+import { KillFeed } from '../ui/killFeed';
 import { createPauseMenu } from '../ui/pauseMenu';
 import { preventBrowserZoom } from '../ui/preventBrowserZoom';
 import { toggleTuningPanel, type TuningActions } from '../ui/tuningPanel';
@@ -77,16 +79,13 @@ function cssColor(hex: number): string {
   return `#${hex.toString(16).padStart(6, '0')}`;
 }
 
-/**
- * Phones and tablets get touch controls; anything with a mouse or trackpad (including
- * touchscreen laptops) gets mouse and keyboard. `?touch` / `?desktop` force one or the other.
- */
-function isTouchDevice(): boolean {
-  const params = new URLSearchParams(window.location.search);
-  if (params.has('touch')) return true;
-  if (params.has('desktop')) return false;
-  const hasFinePointer = window.matchMedia('(any-pointer: fine)').matches;
-  return window.matchMedia('(pointer: coarse)').matches && !hasFinePointer;
+/** Touch controls or mouse and keyboard (see chooseTouchControls for the rules). */
+function isTouchDevice(settings: Settings): boolean {
+  return chooseTouchControls(
+    settings.controls,
+    window.location.search,
+    window.matchMedia('(pointer: coarse)').matches,
+  );
 }
 
 /**
@@ -96,7 +95,7 @@ function isTouchDevice(): boolean {
  */
 export class World {
   readonly settings: Settings = loadSettings();
-  readonly touchDevice = isTouchDevice();
+  readonly touchDevice = isTouchDevice(this.settings);
   readonly quality: QualityLevel;
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
@@ -109,6 +108,7 @@ export class World {
   readonly particles: Particles;
   readonly projectileView = new ProjectileView(TEAM_COLORS);
   readonly sfx = new Sfx();
+  readonly killFeed = new KillFeed();
   readonly overlay: DevOverlay;
   private readonly roleChanged: (weapon: number) => void;
   private readonly toonRamp = createToonRamp();
@@ -210,7 +210,29 @@ export class World {
       if (document.pointerLockElement) document.exitPointerLock();
       toggleTuningPanel(tuning);
     });
+    if (!this.touchDevice) this.switchToTouchOnFingerTap();
     this.overlay.update({ renderer: `three r${REVISION} · WebGL2 · ${this.quality} quality` });
+  }
+
+  /**
+   * The device was guessed to have a mouse, but a finger touched the screen before playing
+   * (some foldables and tablets report both): remember touch controls and reload into them.
+   * A choice made on purpose (the Controls setting or `?desktop`) is left alone.
+   */
+  private switchToTouchOnFingerTap(): void {
+    if (this.settings.controls !== 'auto') return;
+    if (new URLSearchParams(window.location.search).has('desktop')) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch' || this.input.playing) return;
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      event.preventDefault();
+      event.stopPropagation();
+      this.settings.controls = 'touch';
+      saveSettings(this.settings);
+      window.location.reload();
+    };
+    // Capture phase: before the tap can press a button (e.g. "Click to play").
+    window.addEventListener('pointerdown', onPointerDown, true);
   }
 
   /**
@@ -227,6 +249,22 @@ export class World {
     this.input.touch?.setVisible(false);
     if (document.pointerLockElement) document.exitPointerLock();
     this.menu.setVisible(false);
+  }
+
+  /** Your shot hit an enemy: hit marker and tick. */
+  showHit(splat: boolean): void {
+    this.hud.showHit(splat);
+    this.sfx.hit(splat);
+  }
+
+  /** A shot hit you. */
+  flashHurt(): void {
+    this.hud.flashHurt();
+  }
+
+  /** "Splatted by …" while waiting to respawn; null hides it. */
+  setSplatted(text: string | null): void {
+    this.hud.setSplatted(text);
   }
 
   /** Starts calling `frame` once per display refresh. */
@@ -420,8 +458,9 @@ export class World {
     if (changed === 'volume') this.sfx.setVolume(settings.volume);
     if (changed === 'weapon') this.roleChanged(settings.weapon);
     if (changed === 'gyro' && !settings.gyro) this.input.gyro.disable();
-    // Paint texture size and anti-aliasing are fixed when the renderer starts.
-    if (changed === 'quality') window.location.reload();
+    // Paint texture size and anti-aliasing are fixed when the renderer starts, and the
+    // controls are set up once at start too.
+    if (changed === 'quality' || changed === 'controls') window.location.reload();
   }
 
   /** Renders at the quality preset's pixel ratio times the dynamic-resolution scale. */

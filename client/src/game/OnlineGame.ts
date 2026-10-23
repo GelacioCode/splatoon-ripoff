@@ -8,6 +8,7 @@ import {
   decodeShotEvents,
   MatchState,
   MSG_CHOOSE_WEAPON,
+  MSG_HIT,
   MSG_KICK,
   MSG_KICKED,
   MSG_LAN_ADDRESSES,
@@ -20,6 +21,7 @@ import {
   MSG_REQUEST_PAINT,
   MSG_SET_LOOK,
   MSG_SHOTS,
+  MSG_SPLAT,
   MSG_START,
   NetInput,
   parseLook,
@@ -30,12 +32,16 @@ import {
   type MatchJoinOptions,
   type MatchPhase,
   type NetPlayer,
+  type SplatEvent,
+  type Vec3,
 } from '@paint-rush/shared';
 import {
   createPlayerState,
   createProjectile,
   frozenInput,
   initPhysics,
+  playerHitSphere,
+  segmentHitsSphere,
   stepPlayer,
   stepProjectiles,
   stepWeapon,
@@ -66,6 +72,11 @@ const SMOOTHED_FIELDS = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'swimBlend'] as const;
 const REMOTE_SHOT_VOLUME = 0.5;
 /** Name used by the `?quick` dev shortcut when none was ever entered. */
 const QUICK_NAME = 'Tester';
+/** A respawned player stays hidden this long, while their drawn position catches up (ms). */
+const RESPAWN_HIDE_MS = 300;
+/** Losing at least this much HP at once (a shot, not enemy paint) flashes the screen. */
+const HURT_FLASH_HP = 5;
+const UP = { x: 0, y: 1, z: 0 };
 
 /** Byte messages arrive as Uint8Array; anything else means a server/client version mismatch. */
 function asBytes(payload: unknown): Uint8Array | null {
@@ -324,6 +335,22 @@ class OnlineGame {
 interface RemotePlayer {
   player: NetPlayer;
   character: BlobCharacter;
+  /** Kept hidden until this time (ms), just after a respawn. */
+  hiddenUntil: number;
+}
+
+/** Someone drawn on screen, where shots can stop. */
+interface ShotTarget {
+  x: number;
+  y: number;
+  z: number;
+  swimBlend: number;
+  team: number;
+}
+
+/** Spawn protection shows as blinking. */
+function blinking(protectTimer: number, timeMs: number): boolean {
+  return protectTimer > 0 && Math.floor(timeMs / 100) % 2 === 0;
 }
 
 /**
@@ -369,6 +396,11 @@ class NetSession {
   private leaving = false;
   /** The look editor is open over the lobby. */
   private editingLook = false;
+  /** Everyone drawn this frame who could stop a shot on screen. */
+  private readonly targets: ShotTarget[] = [];
+  private splattedBy = 'someone';
+  private wasSplatted = false;
+  private lastHp: number = CONFIG.player.maxHp;
   private readonly saveToken = () => saveReconnectToken(this.room.reconnectionToken);
 
   constructor(
@@ -395,6 +427,8 @@ class NetSession {
     room.onMessage(MSG_SHOTS, (payload: unknown) => this.receiveShots(payload));
     room.onMessage(MSG_PAINT_SNAPSHOT, (payload: unknown) => this.receiveSnapshot(payload));
     room.onMessage(MSG_PONG, (sentAt: unknown) => this.receivePong(sentAt));
+    room.onMessage(MSG_HIT, (splat: unknown) => this.world.showHit(splat === true));
+    room.onMessage(MSG_SPLAT, (payload: unknown) => this.receiveSplat(payload));
     room.onMessage(MSG_KICKED, () => {
       this.kicked = true;
     });
@@ -435,6 +469,8 @@ class NetSession {
     this.shots.length = 0;
     this.world.paint.clear();
     this.world.atlas.clear();
+    this.world.killFeed.clear();
+    this.world.setSplatted(null);
   }
 
   frame(timeMs: number): void {
@@ -480,23 +516,101 @@ class NetSession {
       this.character.setWeapon(s.weapon);
       world.weaponSounds(this.wasReloading, s, this.firing, dt);
       this.wasReloading = s.reloadTimer > 0;
+      this.character.root.visible = s.respawnTimer <= 0 && !blinking(s.protectTimer, timeMs);
+      this.updateLife(s);
     } else {
       this.feet.set(WAITING_STATE.x, WAITING_STATE.y, WAITING_STATE.z);
     }
+
+    // Who on screen can stop a shot: everyone visible (shots only stop at enemies).
+    this.targets.length = 0;
+    if (me && me.state.respawnTimer <= 0) {
+      const s = me.state;
+      this.targets.push({
+        x: this.feet.x,
+        y: this.feet.y,
+        z: this.feet.z,
+        swimBlend: s.swimBlend,
+        team: s.team,
+      });
+    }
     for (const remote of this.remotes.values()) {
-      remote.character.update(dt, this.remotePose(remote.player));
+      const pose = this.remotePose(remote.player);
+      remote.character.update(dt, pose);
       remote.character.setWeapon(remote.player.weapon);
+      // Hidden while splatted, and a moment longer so the jump back to spawn isn't seen.
+      const splatted = remote.player.respawnTimer > 0;
+      if (splatted) remote.hiddenUntil = timeMs + RESPAWN_HIDE_MS;
+      const visible = !splatted && timeMs >= remote.hiddenUntil;
+      remote.character.root.visible = visible && !blinking(remote.player.protectTimer, timeMs);
+      if (visible) this.targets.push({ ...pose, team: remote.player.team });
     }
 
     // Shots fly at the game's tick rate (like on the server) and are drawn in between.
+    // They stop at players here too, but only the server decides real hits and damage.
     const shotSteps = this.shotLoop.advance(dt);
     for (let i = 0; i < shotSteps; i++) {
-      stepProjectiles(world.physics, this.shots, this.shotLoop.stepSeconds, (hit) =>
-        world.splash(hit, this.feet),
+      stepProjectiles(
+        world.physics,
+        this.shots,
+        this.shotLoop.stepSeconds,
+        (hit) => world.splash(hit, this.feet),
+        (shot, from, direction, distance) => this.shotHitsTarget(shot, from, direction, distance),
       );
     }
     world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, this.shots, this.shotLoop.alpha);
     this.updateStatus(dt);
+  }
+
+  /** For drawn shots: stops one at the first enemy it touches, with a little splash. */
+  private shotHitsTarget(shot: Projectile, from: Vec3, direction: Vec3, distance: number): boolean {
+    for (const target of this.targets) {
+      if (target.team === shot.team) continue;
+      const { center, radius } = playerHitSphere(target.x, target.y, target.z, target.swimBlend);
+      if (!segmentHitsSphere(from, direction, distance, center, radius)) continue;
+      const back = { x: -direction.x, y: -direction.y, z: -direction.z };
+      this.world.particles.burst(center, back, TEAM_COLORS[shot.team] ?? TEAM_COLORS[0], 6);
+      return true;
+    }
+    return false;
+  }
+
+  /** Our own splat and respawn: the "Splatted by" message, the hurt flash, the camera. */
+  private updateLife(s: PlayerState): void {
+    const splatted = s.respawnTimer > 0;
+    this.world.setSplatted(
+      splatted ? `Splatted by ${this.splattedBy} · back in ${Math.ceil(s.respawnTimer)}…` : null,
+    );
+    // Back on the spawn pad: look the way the spawn faces (toward the middle).
+    if (this.wasSplatted && !splatted) this.world.view.yaw = s.yaw;
+    this.wasSplatted = splatted;
+    if (this.lastHp - s.hp >= HURT_FLASH_HP) this.world.flashHurt();
+    this.lastHp = s.hp;
+  }
+
+  /** Someone was splatted: the burst, the sound, and a line in the kill feed. */
+  private receiveSplat(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const { victim, by, team } = payload as Partial<SplatEvent>;
+    if (typeof victim !== 'string' || typeof team !== 'number') return;
+    const players = this.room.state.players;
+    const victimPlayer = players.get(victim);
+    const attacker = (typeof by === 'string' && players.get(by)?.name) || 'someone';
+    const victimName = victimPlayer?.name ?? 'someone';
+    this.world.killFeed.add(attacker, team, victimName, victimPlayer?.team ?? 1 - team);
+    if (victim === this.room.sessionId) this.splattedBy = attacker;
+
+    const at =
+      victim === this.room.sessionId || !victimPlayer
+        ? { x: this.feet.x, y: this.feet.y, z: this.feet.z }
+        : {
+            x: this.predict.value(victimPlayer, 'x'),
+            y: this.predict.value(victimPlayer, 'y'),
+            z: this.predict.value(victimPlayer, 'z'),
+          };
+    const color = TEAM_COLORS[team] ?? TEAM_COLORS[0];
+    this.world.particles.burst({ x: at.x, y: at.y + 0.6, z: at.z }, UP, color, 28, 6);
+    this.world.sfx.splatBurst(this.world.loudnessAt(at, this.feet));
   }
 
   /** Asks the server for another role (it checks the choice and refills the tank). */
@@ -713,7 +827,7 @@ class NetSession {
       const character = world.createCharacter(player.team, player.weapon, parseLook(player));
       // Other players get their name overhead, in their team's color.
       character.setName(player.name, TEAM_COLORS[player.team] ?? TEAM_COLORS[0]);
-      this.remotes.set(sessionId, { player, character });
+      this.remotes.set(sessionId, { player, character, hiddenUntil: 0 });
       return;
     }
     // Our own player: predicted locally with the same rules the server runs.

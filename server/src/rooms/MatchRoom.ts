@@ -1,5 +1,5 @@
 import { networkInterfaces } from 'node:os';
-import { Room, type Client, type StepContext } from '@colyseus/core';
+import { Room, type Client, type Rewind, type StepContext } from '@colyseus/core';
 import { StateView } from '@colyseus/schema';
 import {
   ARENA,
@@ -17,6 +17,7 @@ import {
   isMatchLength,
   MatchState,
   MSG_CHOOSE_WEAPON,
+  MSG_HIT,
   MSG_KICK,
   MSG_KICKED,
   MSG_LAN_ADDRESSES,
@@ -29,6 +30,7 @@ import {
   MSG_REQUEST_PAINT,
   MSG_SET_LOOK,
   MSG_SHOTS,
+  MSG_SPLAT,
   MSG_START,
   NetInput,
   NetPlayer,
@@ -45,13 +47,20 @@ import {
   type MatchJoinOptions,
   type MatchPhase,
   type PaintEvent,
+  type SplatEvent,
   type TeamBalancer,
+  type Vec3,
 } from '@paint-rush/shared';
 import {
+  applyShotDamage,
   createPlayerState,
   frozenInput,
+  isVulnerable,
   PhysicsWorld,
+  playerHitSphere,
+  segmentHitsSphere,
   setWeapon,
+  stepLife,
   stepPlayer,
   stepProjectiles,
   stepWeapon,
@@ -94,6 +103,15 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   /** Seconds left in the current timed phase. */
   private phaseTimer = 0;
   private readonly balanceTeams: TeamBalancer = shuffleTeams;
+  /** Who fired each shot in flight (for hit checks from their point of view, and credit). */
+  private readonly shooters = new WeakMap<Projectile, string>();
+  /** Paint landing this tick, sent to everyone at the end of it. */
+  private readonly landed: PaintEvent[] = [];
+  /**
+   * Lag compensation: recent player positions, so a shot is checked against where the
+   * shooter saw everyone (other players are drawn ~100 ms in the past, plus the ping).
+   */
+  private rewind!: Rewind;
 
   onCreate() {
     this.roomId = generateLobbyCode(Math.random, (code) => codesInUse.has(code));
@@ -102,6 +120,9 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.hostId = '';
     this.state.matchMinutes = defaultMatchMinutes();
     this.state.countdown = 0;
+    // Created before the fixed timestep, so it records after every tick.
+    this.rewind = this.allowRewindState({ maxRewindMs: 500 });
+    this.rewind.attachAll(this.state.players, { fields: ['x', 'y', 'z', 'swimBlend'] });
     this.setFixedTimestep((ctx) => this.step(ctx), CONFIG.net.tickRate);
     console.log(`[match] lobby ${this.roomId} created`);
   }
@@ -250,6 +271,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         inputs.clear();
         continue;
       }
+      // Back from a splat (with a moment of spawn protection)?
+      if (stepLife(player, ctx.dt)) this.placeOnSpawn(player);
       // Usually one input; more when a backlog built up, so it doesn't add delay for good.
       const runs = inputsToRun(inputs.size);
       for (let i = 0; i < runs; i++) {
@@ -259,18 +282,66 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       }
     }
 
-    const landed: PaintEvent[] = [];
-    stepProjectiles(this.physics, this.projectiles, ctx.dt, (hit) =>
-      landed.push({
-        point: hit.point,
-        radius: hit.radius,
-        team: hit.team,
-        drip: hit.drip,
-        direction: hit.direction,
-      }),
+    stepProjectiles(
+      this.physics,
+      this.projectiles,
+      ctx.dt,
+      (hit) =>
+        this.landed.push({
+          point: hit.point,
+          radius: hit.radius,
+          team: hit.team,
+          drip: hit.drip,
+          direction: hit.direction,
+        }),
+      (shot, from, direction, distance) => this.hitPlayer(shot, from, direction, distance),
     );
     this.physics.step();
-    if (landed.length > 0) this.applyPaint(landed);
+    if (this.landed.length > 0) {
+      this.applyPaint(this.landed);
+      this.landed.length = 0;
+    }
+  }
+
+  /**
+   * Does this piece of a shot's flight hit an enemy? Checked against where the shooter saw
+   * everyone (lag compensation), so what you hit on your screen is what counts.
+   */
+  private hitPlayer(shot: Projectile, from: Vec3, direction: Vec3, distance: number): boolean {
+    const shooterId = this.shooters.get(shot) ?? '';
+    const seen = shooterId ? this.rewind.lastSeenBy(shooterId) : null;
+    for (const [id, target] of this.state.players) {
+      // Shots pass through teammates (no friendly fire) and anyone who can't be hurt.
+      if (target.team === shot.team || !this.bodies.has(id) || !isVulnerable(target)) continue;
+      const sphere = playerHitSphere(
+        seen ? seen.value(target, 'x') : target.x,
+        seen ? seen.value(target, 'y') : target.y,
+        seen ? seen.value(target, 'z') : target.z,
+        seen ? seen.value(target, 'swimBlend') : target.swimBlend,
+      );
+      if (!segmentHitsSphere(from, direction, distance, sphere.center, sphere.radius)) continue;
+      const result = applyShotDamage(target, shot.team, shot.damage);
+      if (result === 'ignored') continue;
+      this.clients.getById(shooterId)?.send(MSG_HIT, result === 'splatted');
+      if (result === 'splatted') this.onSplatted(id, target, shooterId, shot.team);
+      return true;
+    }
+    return false;
+  }
+
+  /** A burst of the attacker's paint where the player was, and the news for everyone. */
+  private onSplatted(victimId: string, victim: NetPlayer, byId: string, team: number): void {
+    this.landed.push({
+      point: { x: victim.x, y: victim.y + 0.3, z: victim.z },
+      radius: CONFIG.player.splatPaintRadius,
+      team,
+      drip: false,
+      direction: { x: 0, y: -1, z: 0 },
+    });
+    const event: SplatEvent = { victim: victimId, by: byId, team };
+    this.broadcast(MSG_SPLAT, event);
+    const by = this.state.players.get(byId)?.name ?? 'someone';
+    console.log(`[match] ${this.roomId}: ${by} splatted ${victim.name}`);
   }
 
   /** One input's worth of the shared rules for one player: movement, then their weapon. */
@@ -286,12 +357,19 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     const firstNew = this.projectiles.length;
     // Seeded by session id: the shooter's screen predicts exactly the same spread.
     const fired = stepWeapon(player, input, dt, seedFromString(sessionId), this.projectiles);
-    if (fired > 0) this.sendShots(sessionId, this.projectiles.slice(firstNew));
+    if (fired > 0) {
+      const shots = this.projectiles.slice(firstNew);
+      for (const shot of shots) this.shooters.set(shot, sessionId);
+      this.sendShots(sessionId, shots);
+    }
 
     if (player.y < RESPAWN_BELOW_Y) this.placeOnSpawn(player);
   }
 
-  /** Back on a spawn pad of their team with fresh state, keeping who they are. */
+  /**
+   * Back on a spawn pad of their team with fresh state, keeping who they are, and briefly
+   * protected from shots so nobody can be spawn-camped.
+   */
   private placeOnSpawn(player: NetPlayer): void {
     // Shot numbers keep counting, so the player's screen never mistakes new shots for old.
     const { shotCount } = player;
@@ -305,6 +383,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       ),
     );
     player.shotCount = shotCount;
+    player.protectTimer = CONFIG.player.spawnProtectSeconds;
   }
 
   /** Tells everyone but the shooter about new shots, so their screens can fly them too. */

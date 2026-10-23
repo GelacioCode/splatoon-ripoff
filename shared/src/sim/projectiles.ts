@@ -31,7 +31,21 @@ export interface Projectile {
   /** The role that fired it (index in WEAPON_KINDS) and whether it was aimed. */
   weapon: number;
   aimed: boolean;
+  /** HP it takes from an enemy it hits. */
+  damage: number;
 }
+
+/**
+ * Checks one tick of a shot's flight against players: the straight piece from `from` along
+ * `direction`, `distance` long (cut short where it would hit the map). Return true if it hit
+ * someone; the shot is then used up and leaves no paint.
+ */
+export type ShotTargetCheck = (
+  shot: Projectile,
+  from: Vec3,
+  direction: Vec3,
+  distance: number,
+) => boolean;
 
 /** Paint landing somewhere: a shot hitting the map, or a drip falling from a shot. */
 export interface ProjectileHit {
@@ -92,6 +106,7 @@ export function createProjectile(
     team,
     weapon,
     aimed,
+    damage: role.damage,
   };
   return projectile;
 }
@@ -99,13 +114,15 @@ export function createProjectile(
 /**
  * Moves every shot one tick: straight at first, then dropping. A shot that reaches the map is
  * reported through `onHit` and removed from the list. Along the way, shots drip small paint
- * spots onto the floor below them, also reported through `onHit` (with `drip` set).
+ * spots onto the floor below them, also reported through `onHit` (with `drip` set). With
+ * `hitsTarget`, shots can also hit players before they reach the map.
  */
 export function stepProjectiles(
   physics: PhysicsWorld,
   projectiles: Projectile[],
   dt: number,
   onHit: (hit: ProjectileHit) => void,
+  hitsTarget?: ShotTargetCheck,
 ): void {
   const w = CONFIG.weapon;
   let kept = 0;
@@ -123,6 +140,11 @@ export function stepProjectiles(
     const direction =
       length > 0 ? { x: dx / length, y: dy / length, z: dz / length } : { x: 0, y: -1, z: 0 };
     const hit = length > 0 ? physics.raycast(p, direction, length) : null;
+    // A player in the way is hit first (only up to where the shot would meet the map).
+    const reach = hit ? hit.distance : length;
+    if (hitsTarget && reach > 0 && hitsTarget(p, { x: p.x, y: p.y, z: p.z }, direction, reach)) {
+      continue;
+    }
     if (hit) {
       onHit({
         point: hit.point,

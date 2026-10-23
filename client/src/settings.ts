@@ -6,6 +6,7 @@ import {
   parseWeaponChoice,
   type Look,
 } from '@paint-rush/shared';
+import { CONTROLS_SETTINGS, type ControlsSetting } from './input/controlsMode';
 
 export type Quality = 'auto' | 'low' | 'medium' | 'high';
 
@@ -28,6 +29,8 @@ export interface Settings {
   name: string;
   /** The blob's eyes, hat, goggles, shoes and body shape. */
   look: Look;
+  /** Touch controls, mouse and keyboard, or let the device decide. */
+  controls: ControlsSetting;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -41,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   weapon: DEFAULT_WEAPON,
   name: '',
   look: { ...DEFAULT_LOOK },
+  controls: 'auto',
 };
 
 const STORAGE_KEY = 'paint-rush.settings';
@@ -76,6 +80,9 @@ export function parseSettings(raw: string | null): Settings {
         ? Array.from(saved.name).slice(0, CONFIG.lobby.maxNameLength).join('')
         : d.name,
     look: parseLook(saved.look),
+    controls: CONTROLS_SETTINGS.includes(saved.controls as ControlsSetting)
+      ? (saved.controls as ControlsSetting)
+      : d.controls,
   };
 }
 
