@@ -1,9 +1,14 @@
 import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
 import { DEFAULT_WEAPON, weaponStats } from '../weapons';
-import type { PhysicsWorld } from './physicsWorld';
+import type { PhysicsWorld, RayHit } from './physicsWorld';
 
 const DOWN: Vec3 = { x: 0, y: -1, z: 0 };
+/** Two floor spots this close in height are on the same floor, so a trail line joins them (m). */
+const SAME_FLOOR = 0.05;
+/** Trail lines are at least this long (shorter: a dot), and at most this long (m). */
+const MIN_TRAIL = 0.05;
+const MAX_TRAIL = 12;
 
 /** A paint shot in flight. */
 export interface Projectile {
@@ -21,6 +26,12 @@ export interface Projectile {
   age: number;
   /** Meters flown since the last drip. */
   sinceDrip: number;
+  /**
+   * Where its paint trail on the floor got to: the next trail line starts here (the floor
+   * under where it was fired, then the end of the last line). Null over a drop or before the
+   * first tick.
+   */
+  trailFrom: Vec3 | null;
   /** Seconds it flies straight before it starts to drop (depends on the role, longer aimed). */
   straightTime: number;
   /** Paint it leaves: the splat on a hit, and the drip trail along the way (m). */
@@ -56,10 +67,15 @@ export interface ProjectileHit {
   team: number;
   /** Radius of the paint splat to leave (m). */
   radius: number;
-  /** True for the small drops shots leave along their path. */
+  /** True for the paint trail shots leave on the floor along their path. */
   drip: boolean;
-  /** Unit direction the shot was flying (drips are drawn as streaks along it). */
+  /**
+   * Unit direction the shot was flying. For a trail line, the flat direction it runs in (it
+   * ends at `point`, `trail` meters from its start).
+   */
   direction: Vec3;
+  /** Length of the trail line ending at `point` (m); 0 for a splat or a lone dot. */
+  trail: number;
 }
 
 /** Unit direction for a yaw/pitch aim (yaw 0 looks toward −Z, positive pitch looks up). */
@@ -99,6 +115,7 @@ export function createProjectile(
     vz: direction.z * speed,
     age: 0,
     sinceDrip: 0,
+    trailFrom: null,
     straightTime: aimed ? role.aimStraightTime : role.straightTime,
     splatRadius: role.splatRadius,
     dripEvery: role.dripEvery,
@@ -111,11 +128,46 @@ export function createProjectile(
   return projectile;
 }
 
+/** The floor right under a point, if there is one close enough below (not a wall). */
+function floorUnder(physics: PhysicsWorld, at: Vec3): RayHit | null {
+  const floor = physics.raycast(at, DOWN, CONFIG.weapon.dripMaxHeight);
+  return floor && floor.normal.y > 0.5 ? floor : null;
+}
+
+/**
+ * The next piece of a shot's paint trail, ending at `floor`: a straight line back to where
+ * the trail got to, when that's on the same floor; otherwise a lone dot, starting a new line.
+ */
+function trailPiece(p: Projectile, floor: RayHit, direction: Vec3): ProjectileHit {
+  const piece: ProjectileHit = {
+    point: floor.point,
+    normal: floor.normal,
+    blockIndex: floor.blockIndex,
+    team: p.team,
+    radius: p.dripRadius,
+    drip: true,
+    direction,
+    trail: 0,
+  };
+  const from = p.trailFrom;
+  if (from && Math.abs(from.y - floor.point.y) < SAME_FLOOR) {
+    const dx = floor.point.x - from.x;
+    const dz = floor.point.z - from.z;
+    const length = Math.hypot(dx, dz);
+    if (length >= MIN_TRAIL && length <= MAX_TRAIL) {
+      piece.trail = length;
+      piece.direction = { x: dx / length, y: 0, z: dz / length };
+    }
+  }
+  return piece;
+}
+
 /**
  * Moves every shot one tick: straight at first, then dropping. A shot that reaches the map is
- * reported through `onHit` and removed from the list. Along the way, shots drip small paint
- * spots onto the floor below them, also reported through `onHit` (with `drip` set). With
- * `hitsTarget`, shots can also hit players before they reach the map.
+ * reported through `onHit` and removed from the list. Along the way, shots leave a straight,
+ * unbroken paint trail on the floor below them: pieces of line, each joining the last,
+ * reported through `onHit` (with `drip` set). With `hitsTarget`, shots can also hit players
+ * before they reach the map.
  */
 export function stepProjectiles(
   physics: PhysicsWorld,
@@ -130,6 +182,8 @@ export function stepProjectiles(
     p.px = p.x;
     p.py = p.y;
     p.pz = p.z;
+    // A new shot's trail starts on the floor under where it was fired.
+    if (p.age === 0) p.trailFrom = floorUnder(physics, p)?.point ?? null;
     if (p.age >= p.straightTime) p.vy -= w.projectileGravity * dt;
     p.age += dt;
 
@@ -146,6 +200,11 @@ export function stepProjectiles(
       continue;
     }
     if (hit) {
+      // Landing on the floor: the trail runs all the way to the splat.
+      if (hit.normal.y > 0.5) {
+        const last = trailPiece(p, hit, direction);
+        if (last.trail > 0) onHit(last, p);
+      }
       onHit(
         {
           point: hit.point,
@@ -155,6 +214,7 @@ export function stepProjectiles(
           radius: p.splatRadius,
           drip: false,
           direction,
+          trail: 0,
         },
         p,
       );
@@ -167,20 +227,13 @@ export function stepProjectiles(
     p.sinceDrip += length;
     if (p.sinceDrip >= p.dripEvery) {
       p.sinceDrip -= p.dripEvery;
-      const floor = physics.raycast(p, DOWN, w.dripMaxHeight);
-      if (floor && floor.normal.y > 0.5) {
-        onHit(
-          {
-            point: floor.point,
-            normal: floor.normal,
-            blockIndex: floor.blockIndex,
-            team: p.team,
-            radius: p.dripRadius,
-            drip: true,
-            direction,
-          },
-          p,
-        );
+      const floor = floorUnder(physics, p);
+      if (floor) {
+        onHit(trailPiece(p, floor, direction), p);
+        p.trailFrom = floor.point;
+      } else {
+        // Over a drop: the next line starts fresh on the far side.
+        p.trailFrom = null;
       }
     }
 

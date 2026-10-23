@@ -61,6 +61,7 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   weapon.add(w, 'aimProjectileSpeedMultiplier', 1, 2.5, 0.05).name('aimed shot speed ×');
   weapon.add(w, 'inkPerShot', 0, 10, 0.1).name('ink per shot');
   weapon.add(w, 'autoReloadAfterSeconds', 1, 30, 0.5).name('auto-reload after idle (s)');
+  weapon.add(w, 'trailWidth', 0.05, 1, 0.01).name('trail line width, drawn (m)');
   for (const kind of WEAPON_KINDS) addRoleFolder(gui, kind);
 
   const sw = CONFIG.swim;
@@ -119,8 +120,8 @@ function addRoleFolder(gui: GUI, kind: WeaponKind): void {
   role.add(r, 'straightTime', 0, 1.5, 0.01).name('straight flight (s)');
   role.add(r, 'aimStraightTime', 0, 2, 0.01).name('aimed straight flight (s)');
   role.add(r, 'splatRadius', 0.2, 3, 0.05).name('splat radius (m)');
-  role.add(r, 'dripEvery', 0.3, 6, 0.1).name('drip every (m)');
-  role.add(r, 'dripRadius', 0, 1.5, 0.05).name('drip radius (m)');
+  role.add(r, 'dripEvery', 0.3, 6, 0.1).name('trail piece length (m)');
+  role.add(r, 'dripRadius', 0, 1.5, 0.01).name('trail swim width (m, ≥ 0.36)');
   role.close();
 }
 

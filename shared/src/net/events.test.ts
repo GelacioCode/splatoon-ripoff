@@ -7,6 +7,7 @@ import {
   encodeShotEvents,
   PAINT_EVENT_BYTES,
   shotEventOf,
+  trailStart,
   type PaintEvent,
 } from './events';
 
@@ -21,13 +22,15 @@ describe('paint events', () => {
         team: 1,
         drip: false,
         direction: { x: 0, y: -1, z: 0 },
+        trail: 0,
       },
       {
         point: { x: 3.3333, y: 2.25, z: -0.001 },
         radius: 0.3,
         team: 0,
         drip: true,
-        direction: { x: 0.6, y: -0.48, z: -0.64 },
+        direction: { x: 0.6, y: 0, z: -0.8 },
+        trail: 1.537,
       },
     ];
     const bytes = encodePaintEvents(events);
@@ -44,7 +47,21 @@ describe('paint events', () => {
       expect(Math.abs(d.radius - e.radius)).toBeLessThanOrEqual(0.01 + 1e-9);
       expect(d.team).toBe(e.team);
       expect(d.drip).toBe(e.drip);
+      // Trail length is stored in 5 cm steps.
+      expect(Math.abs(d.trail - e.trail)).toBeLessThanOrEqual(0.025 + 1e-9);
     });
+  });
+
+  it('give a trail line that starts `trail` meters back along its direction', () => {
+    const start = trailStart({
+      point: { x: 2, y: 1.5, z: -4 },
+      radius: 0.36,
+      team: 0,
+      drip: true,
+      direction: { x: 0, y: 0, z: -1 },
+      trail: 1.5,
+    });
+    expect(start).toEqual({ x: 2, y: 1.5, z: -2.5 });
   });
 
   it('read correctly from the middle of a larger buffer', () => {
@@ -54,6 +71,7 @@ describe('paint events', () => {
       team: 1,
       drip: false,
       direction: { x: 1, y: 0, z: 0 },
+      trail: 0,
     };
     const packed = encodePaintEvents([event]);
     const buffer = new Uint8Array(packed.byteLength + 5);

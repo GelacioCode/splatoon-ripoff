@@ -14,16 +14,13 @@ import {
   type Texture,
   type WebGLRenderer,
 } from 'three';
-import type { Surface, SurfaceSplat, Vec3 } from '@paint-rush/shared';
+import type { Surface, SurfaceSplat, SurfaceStroke } from '@paint-rush/shared';
 import type { AtlasLayout } from './atlasPacker';
 
 /** Splats drawn per batch; more just means another batch. */
 const MAX_SPLATS = 512;
 /** The splat quad extends this far past the splat radius, to leave room for droplets. */
 const QUAD_REACH = 1.6;
-/** Drip streaks: width relative to the drip's paint radius, and length relative to width. */
-const STREAK_WIDTH = 0.6;
-const STREAK_LENGTH = 3.2;
 
 const VERTEX_SHADER = /* glsl */ `
 attribute vec2 aCenter;
@@ -31,8 +28,9 @@ attribute float aRadius;
 attribute float aTeam;
 attribute float aSeed;
 attribute vec4 aClip;
-// x = stretch along the angle, y = angle (radians), z = 1 for a splat with droplets.
-attribute vec3 aStyle;
+// x = stretch along the angle, y = angle (radians), z = 1 for a splat with droplets,
+// w = half the length of a straight line's middle (in radii; 0 for a round mark).
+attribute vec4 aStyle;
 uniform float uSize;
 varying vec2 vLocal;
 varying vec2 vPixel;
@@ -40,10 +38,12 @@ varying float vTeam;
 varying float vSeed;
 varying vec4 vClip;
 varying float vDroplets;
+varying float vStretch;
+varying float vLine;
 
 void main() {
   vLocal = position.xy * ${QUAD_REACH.toFixed(1)};
-  // Stretch the shape along its angle (drips become streaks), then place it.
+  // Stretch the quad along its angle (long enough for a line), then place it.
   vec2 stretched = vec2(vLocal.x * aStyle.x, vLocal.y);
   float c = cos(aStyle.y);
   float s = sin(aStyle.y);
@@ -52,12 +52,15 @@ void main() {
   vSeed = aSeed;
   vClip = aClip;
   vDroplets = aStyle.z;
+  vStretch = aStyle.x;
+  vLine = aStyle.w;
   gl_Position = vec4(vPixel / uSize * 2.0 - 1.0, 0.0, 1.0);
 }
 `;
 
-// Draws an irregular blob with a few droplets around it. The output stores coverage in red
-// and the team (0 or 1) in green; the map shader turns that into glossy paint.
+// Draws an irregular blob with a few droplets around it, or a smooth straight line (a shot's
+// trail). The output stores coverage in red and the team (0 or 1) in green; the map shader
+// turns that into glossy paint.
 const FRAGMENT_SHADER = /* glsl */ `
 varying vec2 vLocal;
 varying vec2 vPixel;
@@ -65,13 +68,25 @@ varying float vTeam;
 varying float vSeed;
 varying vec4 vClip;
 varying float vDroplets;
+varying float vStretch;
+varying float vLine;
 
 void main() {
   // Stay inside this surface's region of the texture.
   if (vPixel.x < vClip.x || vPixel.y < vClip.y || vPixel.x > vClip.z || vPixel.y > vClip.w) discard;
 
+  if (vLine > 0.0) {
+    // A trail line: round-ended, with a clean edge, so pieces join into one straight line.
+    vec2 q = vec2(vLocal.x * vStretch, vLocal.y);
+    float d = length(vec2(max(abs(q.x) - vLine, 0.0), q.y));
+    float line = 1.0 - smoothstep(0.7, 1.0, d);
+    if (line <= 0.001) discard;
+    gl_FragColor = vec4(1.0, vTeam, 0.0, line);
+    return;
+  }
+
   float angle = atan(vLocal.y, vLocal.x);
-  // Full splats get a wobbly edge; drip streaks stay smooth.
+  // Full splats get a wobbly edge; small trail dots stay smooth.
   float wobble = mix(0.3, 1.0, vDroplets);
   float edge = 0.9 + (0.12 * sin(angle * 5.0 + vSeed * 6.283) + 0.06 * sin(angle * 11.0 + vSeed * 17.0)) * wobble;
   float blob = 1.0 - smoothstep(edge - 0.15, edge, length(vLocal));
@@ -106,7 +121,7 @@ export class PaintAtlas {
   private readonly teams = new Float32Array(MAX_SPLATS);
   private readonly seeds = new Float32Array(MAX_SPLATS);
   private readonly clips = new Float32Array(MAX_SPLATS * 4);
-  private readonly styles = new Float32Array(MAX_SPLATS * 3);
+  private readonly styles = new Float32Array(MAX_SPLATS * 4);
   private readonly savedClearColor = new Color();
   private queued = 0;
 
@@ -129,7 +144,7 @@ export class PaintAtlas {
     this.addInstanceAttribute('aTeam', this.teams, 1);
     this.addInstanceAttribute('aSeed', this.seeds, 1);
     this.addInstanceAttribute('aClip', this.clips, 4);
-    this.addInstanceAttribute('aStyle', this.styles, 3);
+    this.addInstanceAttribute('aStyle', this.styles, 4);
 
     const material = new ShaderMaterial({
       vertexShader: VERTEX_SHADER,
@@ -162,26 +177,53 @@ export class PaintAtlas {
   }
 
   /**
-   * Queues the circles from one splat for drawing on the next flush. With `streak` (the
-   * direction a shot was flying), they're drawn as thin streaks along it instead of blobs.
+   * Queues the circles from one splat for drawing on the next flush. With `dotRadius` (m),
+   * they're small smooth trail dots of at most that size instead of splats with droplets.
    */
-  add(splats: readonly SurfaceSplat[], team: number, streak?: Vec3): void {
+  add(splats: readonly SurfaceSplat[], team: number, dotRadius?: number): void {
     const { pixelsPerMeter } = this.layout;
     for (const splat of splats) {
       const i = this.queue(splat, team);
       if (i < 0) continue;
-      if (streak) {
-        // The shot's direction as seen on this surface (its u/v axes).
-        const s = this.surfaces[splat.surfaceId];
-        const du = streak.x * s.uAxis.x + streak.y * s.uAxis.y + streak.z * s.uAxis.z;
-        const dv = streak.x * s.vAxis.x + streak.y * s.vAxis.y + streak.z * s.vAxis.z;
-        const along = Math.hypot(du, dv);
-        this.radii[i] = splat.radius * STREAK_WIDTH * pixelsPerMeter;
-        this.styles.set([along > 0.2 ? STREAK_LENGTH : 1.4, Math.atan2(dv, du), 0], i * 3);
+      if (dotRadius !== undefined) {
+        this.radii[i] = Math.min(splat.radius, dotRadius) * pixelsPerMeter;
+        this.styles.set([1, 0, 0, 0], i * 4);
       } else {
         this.radii[i] = splat.radius * pixelsPerMeter;
-        this.styles.set([1, 0, 1], i * 3);
+        this.styles.set([1, 0, 1, 0], i * 4);
       }
+    }
+  }
+
+  /**
+   * Queues straight trail lines `halfWidth` (m) either side, drawn with round ends so pieces
+   * that meet join into one line.
+   */
+  addStrokes(strokes: readonly SurfaceStroke[], team: number, halfWidth: number): void {
+    const radius = halfWidth * this.layout.pixelsPerMeter;
+    if (radius <= 0) return;
+    for (const stroke of strokes) {
+      const rect = this.layout.rects[stroke.surfaceId];
+      const s = this.surfaces[stroke.surfaceId];
+      if (!rect || !s) continue;
+      const i = this.queue(
+        {
+          surfaceId: stroke.surfaceId,
+          u: (stroke.u0 + stroke.u1) / 2,
+          v: (stroke.v0 + stroke.v1) / 2,
+          radius: halfWidth,
+        },
+        team,
+      );
+      if (i < 0) continue;
+      // The line in texture pixels, then its half length in radii.
+      const du = ((stroke.u1 - stroke.u0) * rect.width) / s.width;
+      const dv = ((stroke.v1 - stroke.v0) * rect.height) / s.height;
+      const halfLength = Math.hypot(du, dv) / 2 / radius;
+      // The quad has to reach past the round end of the line.
+      const stretch = Math.max(1, (halfLength + 1.05) / QUAD_REACH);
+      this.radii[i] = radius;
+      this.styles.set([stretch, Math.atan2(dv, du), 0, Math.max(halfLength, 1e-3)], i * 4);
     }
   }
 
@@ -190,7 +232,7 @@ export class PaintAtlas {
     const i = this.queue(splat, team);
     if (i < 0) return;
     this.radii[i] = splat.radius * this.layout.pixelsPerMeter;
-    this.styles.set([1, 0, 0], i * 3);
+    this.styles.set([1, 0, 0, 0], i * 4);
   }
 
   /** Reserves the next splat slot and fills in where it goes; returns −1 if it can't be painted. */

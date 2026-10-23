@@ -196,8 +196,13 @@ export const CONFIG = {
     maxLifetime: 1.5,
     /** Aimed shots fly this much faster. */
     aimProjectileSpeedMultiplier: 1.25,
-    /** Drips only land when the floor is at most this far below the shot (m). */
+    /** The trail only lands when the floor is at most this far below the shot (m). */
     dripMaxHeight: 2.5,
+    /**
+     * How wide a shot's trail line is drawn (m). The swimmable paint under it is wider: every
+     * cell within the role's dripRadius of the line, so swimming along it never breaks.
+     */
+    trailWidth: 0.24,
     /** Ink used per shot (the tank holds `magazine` shots). */
     inkPerShot: 1,
     /** A partly empty tank reloads by itself after this long without shooting (s). */
@@ -213,7 +218,10 @@ export const CONFIG = {
    * - fireInterval: seconds between shots while the trigger is held
    * - spreadDeg / aimSpreadDeg: random aim wobble per shot, normally / while aiming (degrees)
    * - projectileSpeed (m/s); straightTime / aimStraightTime: flight before dropping (s)
-   * - splatRadius: paint left on a hit (m); dripEvery / dripRadius: the paint trail (m)
+   * - splatRadius: paint left on a hit (m)
+   * - dripEvery: length of each piece of the straight paint trail (m); dripRadius: cells this
+   *   close to the trail line get painted (m). At least 0.36 (half a cell's diagonal), or the
+   *   swimmable line gets gaps.
    * - moveSpeedMultiplier: walking and swimming speed (heavier guns are slower)
    * - damage: HP taken from an enemy per hit (players have CONFIG.player.maxHp)
    */
@@ -230,7 +238,7 @@ export const CONFIG = {
       aimStraightTime: 0.4,
       splatRadius: 0.85,
       dripEvery: 1.5,
-      dripRadius: 0.3,
+      dripRadius: 0.36,
       moveSpeedMultiplier: 1,
       // 3 hits (user decision): same as the machine gun; they differ in range.
       damage: 34,
@@ -247,7 +255,7 @@ export const CONFIG = {
       aimStraightTime: 1,
       splatRadius: 1.1,
       dripEvery: 0.9,
-      dripRadius: 0.32,
+      dripRadius: 0.36,
       moveSpeedMultiplier: 1.1,
       // 2 hits (user decision).
       damage: 50,
@@ -264,7 +272,7 @@ export const CONFIG = {
       aimStraightTime: 0.2,
       splatRadius: 0.6,
       dripEvery: 2,
-      dripRadius: 0.25,
+      dripRadius: 0.36,
       moveSpeedMultiplier: 0.8,
       // 3 hits (user decision), but only up close: short range is its trade-off.
       damage: 34,

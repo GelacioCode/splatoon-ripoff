@@ -409,9 +409,11 @@ export class World {
 
   /** Paint landing on the map: the gameplay grid and the paint texture. */
   paintAt(paint: PaintEvent): void {
-    const splats = this.paint.splat(paint.point, paint.radius, paint.team);
-    // Drips are drawn as thin streaks along the shot's path; real hits as full splats.
-    this.atlas.add(splats, paint.team, paint.drip ? paint.direction : undefined);
+    const marks = this.paint.applyEvent(paint);
+    // A shot's trail is drawn as a thin straight line (pieces join end to end); hits as splats.
+    const halfWidth = CONFIG.weapon.trailWidth / 2;
+    this.atlas.addStrokes(marks.strokes, paint.team, halfWidth);
+    this.atlas.add(marks.splats, paint.team, paint.drip ? halfWidth : undefined);
   }
 
   /** A shot hitting the map: droplets and a splat sound, quieter further away. Drips make neither. */

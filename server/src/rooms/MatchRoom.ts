@@ -52,6 +52,7 @@ import {
   parseWeaponChoice,
   phaseSeconds,
   randomLook,
+  randomMiddleSpot,
   seedFromString,
   shotEventOf,
   shuffleTeams,
@@ -165,6 +166,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private rewind!: Rewind;
   /** The one neutral flag (mirrored into the synced state every tick). */
   private flag: Flag = createFlag(ARENA.flagSpawn);
+  /** Where this round's flag appears, and returns to when dropped (see placeFlag). */
+  private flagSpot: Vec3 = ARENA.flagSpawn;
   /** Seconds of match time left while playing. */
   private matchTimer = 0;
   /** Bots the room plays itself, by player id ("bot-1", …); they're in `state.players` too. */
@@ -395,8 +398,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.winReason = '';
     this.teamPaint = [0, 0];
     this.damageLog.clear();
-    this.flag = createFlag(this.map.flagSpawn);
-    this.syncFlag();
+    this.placeFlag();
     // The match clock runs for the whole match (it pauses between rounds).
     this.matchTimer = this.state.matchMinutes * 60;
     this.state.timeLeft = Math.ceil(this.matchTimer);
@@ -428,9 +430,16 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.arenaSize = size;
   }
 
+  /** This round's flag: at a fresh random spot on the middle line (it returns there when dropped). */
+  private placeFlag(): void {
+    this.flagSpot = randomMiddleSpot(this.map, Math.random);
+    this.flag = createFlag(this.flagSpot);
+    this.syncFlag();
+  }
+
   /**
    * After a capture: the next round on a brand-new random layout, everyone back on their
-   * spawn with fresh state, the flag in the middle, no paint. Then a fresh 3-2-1.
+   * spawn with fresh state, the flag on the middle line, no paint. Then a fresh 3-2-1.
    */
   private startRound(): void {
     this.loadMap(newLayoutSeed(Math.random), this.state.arenaSize);
@@ -438,8 +447,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     for (const [id, player] of this.state.players) {
       if (this.bodies.has(id)) this.placeOnSpawn(player);
     }
-    this.flag = createFlag(this.map.flagSpawn);
-    this.syncFlag();
+    this.placeFlag();
     console.log(`[match] ${this.roomId}: new round on ${this.map.name}`);
   }
 
@@ -494,7 +502,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         standing: p.swimBlend < 0.5,
       });
     }
-    const event = stepFlag(this.flag, inArena, dt, this.map.flagSpawn, this.map.bases);
+    const event = stepFlag(this.flag, inArena, dt, this.flagSpot, this.map.bases);
     if (event) this.onFlagEvent(event);
     this.syncFlag();
 
@@ -617,6 +625,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
           team: hit.team,
           drip: hit.drip,
           direction: hit.direction,
+          trail: hit.trail,
         });
         this.landedBy.push(this.shooters.get(shot) ?? '');
       },
@@ -692,6 +701,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       team,
       drip: false,
       direction: { x: 0, y: -1, z: 0 },
+      trail: 0,
     });
     this.landedBy.push(byId);
     victim.deaths++;
@@ -756,7 +766,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     if (player.y < RESPAWN_BELOW_Y) {
       // A carrier falling off the map doesn't get a free ride home: the flag goes back.
       if (this.flag.state === 'carried' && this.flag.carrier === sessionId) {
-        this.flag = createFlag(this.map.flagSpawn);
+        this.flag = createFlag(this.flagSpot);
         this.syncFlag();
         this.broadcast(MSG_FLAG, { kind: 'returned' } satisfies FlagEvent);
       }
@@ -798,7 +808,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private applyPaint(landed: PaintEvent[]): void {
     const bytes = encodePaintEvents(landed);
     decodePaintEvents(bytes).forEach((event, i) => {
-      const cells = this.paint.splatCounting(event.point, event.radius, event.team);
+      // A splat, or a straight piece of a shot's trail.
+      const cells = this.paint.applyEvent(event).changed;
       // Paint over the whole match decides a tie (each round's paint is wiped).
       if (event.team === 0 || event.team === 1) this.teamPaint[event.team] += cells;
       // Paint points for whoever's shot (or splat burst) it was.

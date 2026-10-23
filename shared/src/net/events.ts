@@ -1,18 +1,37 @@
 import type { Vec3 } from '../math3d';
 import type { Projectile } from '../sim/projectiles';
 
-// Paint and shot events go over the wire as packed bytes, 11 per event. Positions are stored
-// in centimeters (±327 m), so a decoded event is within 5 mm of the original.
+// Paint and shot events go over the wire as packed bytes: 12 per paint event, 11 per shot.
+// Positions are stored in centimeters (±327 m), so a decoded event is within 5 mm of the
+// original.
 
-/** Paint the server put on the map: a splat where a shot hit, or a drip along its path. */
+/** Paint the server put on the map: a splat where a shot hit, or its trail along the way. */
 export interface PaintEvent {
   point: Vec3;
-  /** Splat radius (m), stored in 2 cm steps up to 5.1 m. */
+  /** Splat radius (m), stored in 2 cm steps up to 5.1 m. For a trail: how wide it paints. */
   radius: number;
   team: number;
   drip: boolean;
-  /** Unit direction the shot was flying (drips are drawn as streaks along it). */
+  /**
+   * Unit direction the shot was flying. For a trail line, the flat direction it runs in:
+   * it ends at `point` and starts `trail` meters back along this.
+   */
   direction: Vec3;
+  /**
+   * Length of the straight paint line a shot's trail leaves on the floor (m, stored in 5 cm
+   * steps up to 12.75 m). 0 for a splat, or a lone trail dot.
+   */
+  trail: number;
+}
+
+/** Where a trail line starts (it runs from here to the event's point). */
+export function trailStart(e: PaintEvent): Vec3 {
+  const length = Math.hypot(e.direction.x, e.direction.z) || 1;
+  return {
+    x: e.point.x - (e.direction.x / length) * e.trail,
+    y: e.point.y,
+    z: e.point.z - (e.direction.z / length) * e.trail,
+  };
 }
 
 /** A shot someone fired, so other screens can fly it too. */
@@ -26,11 +45,12 @@ export interface ShotEvent {
   weapon: number;
 }
 
-export const PAINT_EVENT_BYTES = 11;
+export const PAINT_EVENT_BYTES = 12;
 export const SHOT_EVENT_BYTES = 11;
 
 const CENTIMETERS = 100;
 const RADIUS_STEP = 0.02;
+const TRAIL_STEP = 0.05;
 const YAW_STEPS = 65536 / (2 * Math.PI);
 const PITCH_STEPS = 10000;
 
@@ -71,6 +91,7 @@ export function encodePaintEvents(events: readonly PaintEvent[]): Uint8Array {
     view.setInt8(o + 8, int8(e.direction.x));
     view.setInt8(o + 9, int8(e.direction.y));
     view.setInt8(o + 10, int8(e.direction.z));
+    view.setUint8(o + 11, Math.max(0, Math.min(255, Math.round(e.trail / TRAIL_STEP))));
   });
   return bytes;
 }
@@ -90,6 +111,7 @@ export function decodePaintEvents(bytes: Uint8Array): PaintEvent[] {
         y: view.getInt8(o + 9) / 127,
         z: view.getInt8(o + 10) / 127,
       },
+      trail: view.getUint8(o + 11) * TRAIL_STEP,
     });
   }
   return events;

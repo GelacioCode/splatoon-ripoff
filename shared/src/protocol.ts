@@ -1,7 +1,7 @@
 import type { Look } from './lobby/look';
 
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 export const DEFAULT_SERVER_PORT = 2567;
 

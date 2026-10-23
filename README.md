@@ -63,7 +63,7 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 
 ## Capture the Flag
 
-- One neutral flag starts on the raised platform in the middle, with a light beam above it.
+- One neutral flag, with a light beam above it, appears at a **random spot on the middle line** every round (the same distance from both teams): on the raised centre platform or the floor beside it. A dropped flag returns to that round's spot.
 - **Take it** by touching it while standing (not as a puddle). It rides on your back in your team colour.
 - **Carrier rules:** you can't swim and you move at 80 % speed, so your team has to escort you and paint a path.
 - **Score** by carrying it into **the enemy base**, the glowing area in their colour in front of their spawn. The flag reappears in the middle 3 seconds later.
@@ -110,6 +110,8 @@ Pick a role on the start screen. Your pick is remembered on this device, and you
 | Sniper | 5 | 50 (2 hits) | Long, fast shots with a long trail | Fastest |
 | Assault | 20 | 34 (3 hits) | Medium (all-rounder) | Normal |
 | Machine gun | 40 | 34 (3 hits) | Short, wide spray | Slowest |
+
+Every shot leaves a **thin, straight, unbroken paint line** on the floor under its path, from in front of the shooter to where it lands, so a few shots make a lane you can swim along. The swimmable paint is a little wider than the drawn line, so it's easy to follow. The line breaks only where the floor changes height (over cover, a ledge or a ramp).
 
 Each role has its own blaster shape. All role values live in `CONFIG.weapons` in `shared/src/config.ts`, and the tuning panel has a folder per role.
 

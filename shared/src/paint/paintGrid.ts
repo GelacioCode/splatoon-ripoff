@@ -1,10 +1,32 @@
 import { CONFIG } from '../config';
 import type { Surface } from '../maps/surfaces';
 import type { Vec3 } from '../math3d';
+import { trailStart, type PaintEvent } from '../net/events';
 import { projectSplat, type SurfaceSplat } from './projectSplat';
 
 /** Returned by the team lookups for unpainted spots. */
 export const NO_TEAM = -1;
+
+/** A straight paint line on one surface, from (u0, v0) to (u1, v1), in its u/v coordinates (m). */
+export interface SurfaceStroke {
+  surfaceId: number;
+  u0: number;
+  v0: number;
+  u1: number;
+  v1: number;
+  /** Cells whose centers are this close to the line are painted (m). */
+  radius: number;
+}
+
+/** What one paint event left: round splats, or straight trail lines, and how many cells changed. */
+export interface PaintMarks {
+  splats: SurfaceSplat[];
+  strokes: SurfaceStroke[];
+  changed: number;
+}
+
+/** Trail lines lie on floors and tops: surfaces facing at least this much up. */
+const FLAT_UP = 0.9;
 
 /**
  * The gameplay side of paint: which team owns each square cell of every paintable surface.
@@ -57,6 +79,42 @@ export class PaintGrid {
     return changed;
   }
 
+  /**
+   * Paints a straight line on the floor from `from` to `to` (both at the same height): every
+   * cell whose center is within `radius` of it. With a radius of at least half a cell's
+   * diagonal, every cell the line crosses is painted, so it can be swum along without a break.
+   */
+  stroke(from: Vec3, to: Vec3, radius: number, team: number): PaintMarks {
+    const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2, z: (from.z + to.z) / 2 };
+    const strokes: SurfaceStroke[] = [];
+    let changed = 0;
+    for (const splat of projectSplat(this.surfaces, middle, radius)) {
+      const s = this.surfaces[splat.surfaceId];
+      if (s.normal.y < FLAT_UP) continue;
+      const [u0, v0] = uvOn(s, from);
+      const [u1, v1] = uvOn(s, to);
+      const stroke = { surfaceId: s.id, u0, v0, u1, v1, radius };
+      changed += this.paintLine(stroke, team);
+      strokes.push(stroke);
+    }
+    return { splats: [], strokes, changed };
+  }
+
+  /**
+   * Paints what a paint event describes: a trail line (a drip with a `trail` length) or a
+   * round splat. The server and every screen paint the same decoded events this way, so their
+   * grids match.
+   */
+  applyEvent(event: PaintEvent): PaintMarks {
+    if (event.drip && event.trail > 0) {
+      return this.stroke(trailStart(event), event.point, event.radius, event.team);
+    }
+    let changed = 0;
+    const splats = projectSplat(this.surfaces, event.point, event.radius);
+    for (const splat of splats) changed += this.paintCircle(splat, event.team);
+    return { splats, strokes: [], changed };
+  }
+
   /** Team owning the paint at (u, v) on a surface, or NO_TEAM. */
   teamAtUv(surfaceId: number, u: number, v: number): number {
     const grid = this.cells[surfaceId];
@@ -71,12 +129,7 @@ export class PaintGrid {
 
   /** Team owning the paint at a world point lying on a surface, or NO_TEAM. */
   teamAt(surfaceId: number, point: Vec3): number {
-    const s = this.surfaces[surfaceId];
-    const dx = point.x - s.origin.x;
-    const dy = point.y - s.origin.y;
-    const dz = point.z - s.origin.z;
-    const u = dx * s.uAxis.x + dy * s.uAxis.y + dz * s.uAxis.z;
-    const v = dx * s.vAxis.x + dy * s.vAxis.y + dz * s.vAxis.z;
+    const [u, v] = uvOn(this.surfaces[surfaceId], point);
     return this.teamAtUv(surfaceId, u, v);
   }
 
@@ -153,22 +206,37 @@ export class PaintGrid {
 
   /** Paints the cells inside a circle; returns how many changed to `team`. */
   private paintCircle({ surfaceId, u, v, radius }: SurfaceSplat, team: number): number {
+    // A circle is a line that starts and ends at the same spot.
+    return this.paintLine({ surfaceId, u0: u, v0: v, u1: u, v1: v, radius }, team);
+  }
+
+  /**
+   * Paints the cells whose centers are within `radius` of a line on one surface (a capsule);
+   * returns how many changed to `team`.
+   */
+  private paintLine({ surfaceId, u0, v0, u1, v1, radius }: SurfaceStroke, team: number): number {
     const grid = this.cells[surfaceId];
     if (!grid) return 0;
     let changed = 0;
     const size = this.cellSize;
     const columns = this.columns[surfaceId];
     const rows = grid.length / columns;
-    const firstColumn = Math.max(0, Math.floor((u - radius) / size));
-    const lastColumn = Math.min(columns - 1, Math.floor((u + radius) / size));
-    const firstRow = Math.max(0, Math.floor((v - radius) / size));
-    const lastRow = Math.min(rows - 1, Math.floor((v + radius) / size));
+    const firstColumn = Math.max(0, Math.floor((Math.min(u0, u1) - radius) / size));
+    const lastColumn = Math.min(columns - 1, Math.floor((Math.max(u0, u1) + radius) / size));
+    const firstRow = Math.max(0, Math.floor((Math.min(v0, v1) - radius) / size));
+    const lastRow = Math.min(rows - 1, Math.floor((Math.max(v0, v1) + radius) / size));
+    const lineU = u1 - u0;
+    const lineV = v1 - v0;
+    const lengthSq = lineU * lineU + lineV * lineV;
     const value = team + 1;
     for (let row = firstRow; row <= lastRow; row++) {
       for (let column = firstColumn; column <= lastColumn; column++) {
-        // A cell belongs to the splat when its center is inside the circle.
-        const du = (column + 0.5) * size - u;
-        const dv = (row + 0.5) * size - v;
+        // A cell is painted when its center is close enough to the line.
+        const cu = (column + 0.5) * size - u0;
+        const cv = (row + 0.5) * size - v0;
+        const t = lengthSq > 0 ? Math.max(0, Math.min(1, (cu * lineU + cv * lineV) / lengthSq)) : 0;
+        const du = cu - t * lineU;
+        const dv = cv - t * lineV;
         if (du * du + dv * dv > radius * radius) continue;
         const index = row * columns + column;
         const previous = grid[index];
@@ -181,4 +249,15 @@ export class PaintGrid {
     }
     return changed;
   }
+}
+
+/** A world point's u/v coordinates on a surface (m). */
+function uvOn(s: Surface, point: Vec3): [number, number] {
+  const dx = point.x - s.origin.x;
+  const dy = point.y - s.origin.y;
+  const dz = point.z - s.origin.z;
+  return [
+    dx * s.uAxis.x + dy * s.uAxis.y + dz * s.uAxis.z,
+    dx * s.vAxis.x + dy * s.vAxis.y + dz * s.vAxis.z,
+  ];
 }
