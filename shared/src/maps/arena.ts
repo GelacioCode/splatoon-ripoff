@@ -64,26 +64,56 @@ function turnBlock(block: BlockDef): BlockDef {
   };
 }
 
-/** Pieces on the center line that are already symmetric. */
-const CENTER: BlockDef[] = [
-  box('floor', [0, -0.5, 0], [36, 1, 64]),
-  // Raised platform where the flag appears.
-  box('block', [0, 0.75, 0], [10, 1.5, 10]),
-];
+/** Half the arena's width (x) and length (z) at scale 1 (m): 36 × 64. */
+export const ARENA_HALF_WIDTH = 18;
+export const ARENA_HALF_LENGTH = 32;
+const PAD_DEPTH = 5;
+/** The base starts this far in front of the spawn pad, and is this deep (m). */
+const BASE_GAP = 0.5;
+const BASE_DEPTH = 4;
 
 /**
- * Team 0's half (−Z side) that every layout shares: the boundary, the spawn pad, and the ramp
- * up to the center platform. Team 1 gets the same blocks turned 180°.
+ * The parts every layout shares, for an arena `scale` times the normal width and length
+ * (heights stay the same, so jumps and walls feel the same): the floor and the center
+ * platform, plus team 0's boundary, spawn pad and ramp up to the platform.
  */
-const FIXED_HALF: BlockDef[] = [
-  // Boundary: tall and unpaintable, so nobody can climb out.
-  box('boundary', [-18.5, 3, 0], [1, 6, 66], false),
-  box('boundary', [0, 3, -32.5], [38, 6, 1], false),
-  // Spawn pad at the back.
-  box('block', [0, 0.5, -29.5], [10, 1, 5]),
-  // Ramp up to the center platform.
-  ramp(0, 4, -9, -5, 0, 1.5),
-];
+function frame(scale: number) {
+  const halfWidth = ARENA_HALF_WIDTH * scale;
+  const halfLength = ARENA_HALF_LENGTH * scale;
+  const padZ = -halfLength + PAD_DEPTH / 2;
+  const center: BlockDef[] = [
+    box('floor', [0, -0.5, 0], [halfWidth * 2, 1, halfLength * 2]),
+    // Raised platform where the flag appears.
+    box('block', [0, 0.75, 0], [10, 1.5, 10]),
+  ];
+  const half: BlockDef[] = [
+    // Boundary: tall and unpaintable, so nobody can climb out.
+    box('boundary', [-(halfWidth + 0.5), 3, 0], [1, 6, halfLength * 2 + 2], false),
+    box('boundary', [0, 3, -(halfLength + 0.5)], [halfWidth * 2 + 2, 6, 1], false),
+    // Spawn pad at the back (wider in bigger arenas, for the bigger teams).
+    box('block', [0, 0.5, padZ], [10 * scale, 1, PAD_DEPTH]),
+    // Ramp up to the center platform.
+    ramp(0, 4, -9, -5, 0, 1.5),
+  ];
+  // On top of the spawn pad, front row first (more room for the camera behind you).
+  const spawns: Vec3[] = [
+    { x: 0, y: 1, z: padZ + 1 },
+    { x: -2.5 * scale, y: 1, z: padZ + 1 },
+    { x: 2.5 * scale, y: 1, z: padZ + 1 },
+    { x: -1.5 * scale, y: 1, z: padZ - 1 },
+    { x: 1.5 * scale, y: 1, z: padZ - 1 },
+  ];
+  const base: ZoneDef = {
+    center: { x: 0, y: 1.5, z: padZ + PAD_DEPTH / 2 + BASE_GAP + BASE_DEPTH / 2 },
+    size: { x: 8 * scale, y: 3, z: BASE_DEPTH },
+  };
+  return { halfWidth, halfLength, padZ, center, half, spawns, base };
+}
+
+/** The front edge of team 0's spawn pad (z) in an arena of this scale. */
+export function spawnPadFront(scale: number): number {
+  return -ARENA_HALF_LENGTH * scale + PAD_DEPTH;
+}
 
 /** The original "Drip Yard" cover for team 0's half, used for the first round. */
 const CLASSIC_COVER: BlockDef[] = [
@@ -102,30 +132,20 @@ const CLASSIC_COVER: BlockDef[] = [
   box('block', [8, 0.75, -6], [1.6, 1.5, 1.6]),
 ];
 
-/** On top of the spawn pad, front row first (more room for the camera behind you). */
-const SPAWNS: Vec3[] = [
-  { x: 0, y: 1, z: -28.5 },
-  { x: -2.5, y: 1, z: -28.5 },
-  { x: 2.5, y: 1, z: -28.5 },
-  { x: -1.5, y: 1, z: -30.5 },
-  { x: 1.5, y: 1, z: -30.5 },
-];
-
-const BASE: ZoneDef = { center: { x: 0, y: 1.5, z: -24.5 }, size: { x: 8, y: 3, z: 4 } };
-
 /**
  * An arena from team 0's cover (−Z half): the shared frame (floor, boundary, spawn pads,
  * center platform and its ramps) plus that cover, mirrored for team 1 so both sides play
- * alike. 36 × 64 m.
+ * alike. 36 × 64 m at scale 1; bigger scales are for more players (see arenaScaleFor).
  */
-export function composeArena(name: string, cover: readonly BlockDef[]): MapDef {
-  const half = [...FIXED_HALF, ...cover];
+export function composeArena(name: string, cover: readonly BlockDef[], scale = 1): MapDef {
+  const f = frame(scale);
+  const half = [...f.half, ...cover];
   return {
     name,
-    bounds: { minX: -18, maxX: 18, minZ: -32, maxZ: 32 },
-    blocks: [...CENTER, ...half, ...half.map(turnBlock)],
-    spawns: [SPAWNS, SPAWNS.map(turnPoint)],
-    bases: [BASE, { center: turnPoint(BASE.center), size: BASE.size }],
+    bounds: { minX: -f.halfWidth, maxX: f.halfWidth, minZ: -f.halfLength, maxZ: f.halfLength },
+    blocks: [...f.center, ...half, ...half.map(turnBlock)],
+    spawns: [f.spawns, f.spawns.map(turnPoint)],
+    bases: [f.base, { center: turnPoint(f.base.center), size: f.base.size }],
     flagSpawn: { x: 0, y: 1.5, z: 0 },
   };
 }

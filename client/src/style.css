@@ -1,11 +1,32 @@
+/*
+ * Paint Rush look: brand red (Pantone 186 C), thick ink outlines with hard drop shadows,
+ * warm paper cards, a chunky display font, and springy motion. An original paint-splat
+ * style (no other game's UI is copied).
+ */
+
 :root {
   color-scheme: light;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  /* Brand: Pantone 186 C. */
+  --brand: #c8102e;
+  --brand-light: #e63452;
+  --brand-dark: #8f0b21;
+  /* Ink: outlines, dark text, HUD backgrounds. */
+  --ink: #1d1135;
+  --ink-glass: rgb(29 17 53 / 78%);
+  --paper: #fff8ee;
+  --paper-dim: #f1e6d8;
+  --gold: #ffd166;
+  --pink: #fd3fb4;
+  --cyan: #22d3ee;
+  --outline: 3px solid var(--ink);
+  --drop: 0 5px 0 var(--ink);
+  --drop-small: 0 3px 0 var(--ink);
+  --pop: cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  --snap: cubic-bezier(0.3, 0.7, 0.4, 1);
+  --font-display: 'Lilita One', 'Fredoka', system-ui, sans-serif;
+  --font-body: 'Fredoka', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
+  font-weight: 600;
 }
 
 html,
@@ -22,6 +43,12 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+button,
+input,
+select {
+  font-family: inherit;
+}
+
 #app {
   position: fixed;
   inset: 0;
@@ -33,6 +60,20 @@ body {
   height: 100%;
 }
 
+/* Outlined display text: thick ink stroke behind the fill. */
+.menu-card h1,
+.banner-big,
+.announce-line,
+.screen-code,
+.splatted,
+.results-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 6px var(--ink);
+}
+
 .dev-overlay {
   position: fixed;
   /* Bottom left: the minimap has the top-left corner. */
@@ -42,7 +83,7 @@ body {
   margin: 0;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgb(29 17 53 / 72%);
+  background: var(--ink-glass);
   color: #fff;
   font:
     12px/1.5 ui-monospace,
@@ -53,6 +94,8 @@ body {
   z-index: 20;
 }
 
+/* --- Crosshair, hits and damage ----------------------------------------------------------- */
+
 .crosshair {
   position: fixed;
   left: 50%;
@@ -62,12 +105,11 @@ body {
   margin: -3px 0 0 -3px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 2px rgb(29 17 53 / 70%);
+  box-shadow: 0 0 0 2px var(--ink);
   pointer-events: none;
 }
 
 /* Hit marker: four little ticks around the crosshair when your shot connects */
-
 .hit-marker {
   position: fixed;
   left: 50%;
@@ -78,16 +120,17 @@ body {
   opacity: 0;
   pointer-events: none;
   background:
-    linear-gradient(45deg, transparent 44%, var(--hit, #fff) 44% 56%, transparent 56%),
-    linear-gradient(-45deg, transparent 44%, var(--hit, #fff) 44% 56%, transparent 56%);
+    linear-gradient(45deg, transparent 42%, var(--hit, #fff) 42% 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, var(--hit, #fff) 42% 58%, transparent 58%);
   mask: radial-gradient(circle, transparent 5px, #000 6px);
+  filter: drop-shadow(0 0 1px var(--ink));
 }
 
 .hit-marker.splat {
-  --hit: #ff3b6b;
-  width: 30px;
-  height: 30px;
-  margin: -15px 0 0 -15px;
+  --hit: var(--brand-light);
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
 }
 
 .hit-marker.show {
@@ -97,7 +140,7 @@ body {
 @keyframes hit-marker {
   from {
     opacity: 1;
-    transform: scale(1.3);
+    transform: scale(1.4) rotate(8deg);
   }
   to {
     opacity: 0;
@@ -105,14 +148,12 @@ body {
   }
 }
 
-/* A shot hit you */
-
 .hurt-flash {
   position: fixed;
   inset: 0;
   opacity: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse at center, transparent 40%, rgb(255 40 90 / 55%) 100%);
+  background: radial-gradient(ellipse at center, transparent 40%, rgb(200 16 46 / 55%) 100%);
 }
 
 .hurt-flash.show {
@@ -128,42 +169,131 @@ body {
   }
 }
 
-/* Splatted: waiting to respawn */
+.damage-vignette {
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    color-mix(in srgb, var(--damage-color, var(--cyan)) 70%, transparent) 100%
+  );
+  pointer-events: none;
+  transition: opacity 120ms linear;
+}
 
+/* Splatted: waiting to respawn */
 .splatted {
   position: fixed;
   left: 50%;
-  top: 38%;
+  top: 36%;
   z-index: 5;
-  transform: translateX(-50%);
-  padding: 10px 18px;
-  border-radius: 12px;
-  background: rgb(29 17 53 / 75%);
+  translate: -50% 0;
+  padding: 10px 22px 12px;
+  border: var(--outline);
+  border-radius: 999px;
+  background: var(--brand);
+  box-shadow: var(--drop);
   color: #fff;
-  font:
-    800 20px system-ui,
-    sans-serif;
+  font-size: 22px;
+  -webkit-text-stroke: 4px var(--ink);
   white-space: nowrap;
   pointer-events: none;
+  animation: pop-in 260ms var(--pop);
 }
 
 .splatted[hidden] {
   display: none;
 }
 
-/* Capture the Flag: scoreboard, announcements, flag marker */
+/* --- Ink gauge around the crosshair ------------------------------------------------------- */
+
+.hud {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  pointer-events: none;
+}
+
+.ink-ring {
+  width: 100%;
+  height: 100%;
+  /* Start the gauge at the top and drain it clockwise. */
+  transform: rotate(-90deg);
+  transition: transform 120ms ease-out;
+}
+
+.ink-track {
+  fill: none;
+  stroke: rgb(29 17 53 / 40%);
+  stroke-width: 4;
+}
+
+.ink-fill {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 80ms linear;
+}
+
+.reload-label {
+  position: absolute;
+  left: 50%;
+  top: 72px;
+  translate: -50% 0;
+  padding: 2px 10px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--ink);
+  font: 400 12px var(--font-display);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  visibility: hidden;
+}
+
+.hud.reloading .reload-label {
+  visibility: visible;
+  animation: pop-in 200ms var(--pop);
+}
+
+.hud.reloading .ink-fill {
+  opacity: 0.55;
+  transition: none;
+}
+
+.hud.aiming .ink-ring {
+  /* Keep the drain direction (rotate) while shrinking the ring around the crosshair. */
+  transform: rotate(-90deg) scale(0.7);
+}
+
+.hud.ink-low .ink-fill {
+  animation: ink-low 0.5s steps(2) infinite;
+}
+
+@keyframes ink-low {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* --- Capture the Flag: scoreboard, announcements, flag marker ------------------------------ */
 
 .scoreboard {
   position: fixed;
-  top: 10px;
+  top: max(10px, env(safe-area-inset-top));
   left: 50%;
   z-index: 5;
-  transform: translateX(-50%);
+  translate: -50% 0;
   display: grid;
   justify-items: center;
-  gap: 4px;
+  gap: 5px;
   color: #fff;
   pointer-events: none;
+  animation: drop-in 320ms var(--pop);
 }
 
 .scoreboard[hidden] {
@@ -175,41 +305,20 @@ body {
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
-  border-radius: 12px;
-  background: rgb(29 17 53 / 75%);
+  border: var(--outline);
+  border-radius: 16px;
+  background: var(--ink-glass);
+  box-shadow: var(--drop-small);
 }
 
 .scoreboard-score {
-  min-width: 34px;
-  padding: 2px 8px;
-  border-radius: 8px;
-  color: #1d1135;
-  font:
-    900 22px system-ui,
-    sans-serif;
+  min-width: 40px;
+  padding: 0 10px;
+  border: var(--outline);
+  border-radius: 12px;
+  color: var(--ink);
+  font: 400 26px/1.3 var(--font-display);
   text-align: center;
-}
-
-.scoreboard-timer {
-  min-width: 56px;
-  font:
-    800 20px ui-monospace,
-    monospace;
-  text-align: center;
-}
-
-.scoreboard-timer {
-  display: grid;
-  line-height: 1.1;
-}
-
-/* "first to 5" under the clock */
-.scoreboard-timer::after {
-  content: attr(data-goal);
-  font:
-    700 10px system-ui,
-    sans-serif;
-  opacity: 0.75;
 }
 
 .scoreboard-score.bump {
@@ -221,25 +330,48 @@ body {
     scale: 1;
   }
   35% {
-    scale: 1.5;
+    scale: 1.55;
   }
   100% {
     scale: 1;
   }
 }
 
+.scoreboard-timer {
+  display: grid;
+  min-width: 64px;
+  font: 400 22px/1.05 var(--font-display);
+  text-align: center;
+  transition: color 200ms;
+}
+
+/* "first to 5" under the clock */
+.scoreboard-timer::after {
+  content: attr(data-goal);
+  font: 700 10px var(--font-body);
+  opacity: 0.8;
+}
+
 .scoreboard-timer.urgent {
-  color: #ff5c7a;
+  color: #ff6b85;
+  animation: urgent 1s ease-in-out infinite;
+}
+
+@keyframes urgent {
+  50% {
+    scale: 1.08;
+  }
 }
 
 .scoreboard-objective {
-  padding: 2px 10px;
-  border-radius: 8px;
-  background: rgb(29 17 53 / 60%);
-  font:
-    700 13px system-ui,
-    sans-serif;
+  padding: 3px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 700 13px var(--font-body);
   white-space: nowrap;
+  box-shadow: var(--drop-small);
 }
 
 .scoreboard-objective[hidden] {
@@ -248,10 +380,10 @@ body {
 
 .announcer {
   position: fixed;
-  top: 86px;
+  top: calc(max(10px, env(safe-area-inset-top)) + 84px);
   left: 50%;
   z-index: 5;
-  transform: translateX(-50%);
+  translate: -50% 0;
   display: grid;
   justify-items: center;
   gap: 4px;
@@ -259,28 +391,28 @@ body {
 }
 
 .announce-line {
-  font:
-    900 22px system-ui,
-    sans-serif;
-  text-shadow:
-    0 2px 0 #1d1135,
-    0 0 10px rgb(29 17 53 / 70%);
+  font-size: 26px;
   white-space: nowrap;
-  animation: announce 3s ease-out forwards;
+  animation: announce 3s var(--snap) forwards;
 }
 
 @keyframes announce {
   0% {
     opacity: 0;
-    transform: scale(1.3);
+    transform: scale(1.6) rotate(-4deg);
   }
-  10%,
-  80% {
+  8% {
+    opacity: 1;
+    transform: scale(0.95) rotate(1deg);
+  }
+  14%,
+  82% {
     opacity: 1;
     transform: scale(1);
   }
   100% {
     opacity: 0;
+    transform: translateY(-8px);
   }
 }
 
@@ -300,16 +432,23 @@ body {
 
 .flag-marker-icon {
   position: absolute;
-  left: -14px;
-  top: -16px;
-  width: 28px;
-  height: 28px;
+  left: -16px;
+  top: -18px;
+  width: 32px;
+  height: 32px;
+  border: var(--outline);
   border-radius: 50%;
-  background: rgb(29 17 53 / 75%);
-  font:
-    900 18px/28px system-ui,
-    sans-serif;
+  background: var(--paper);
+  box-shadow: var(--drop-small);
+  font: 400 18px/27px var(--font-display);
   text-align: center;
+  animation: marker-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes marker-bob {
+  50% {
+    translate: 0 -3px;
+  }
 }
 
 .flag-marker-arrow {
@@ -319,22 +458,18 @@ body {
   width: 0;
   height: 0;
   display: none;
-  border-left: 10px solid currentcolor;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
+  border-left: 11px solid currentcolor;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
   transform-origin: 6px 8px;
+  filter: drop-shadow(0 0 1px var(--ink));
 }
 
 .flag-marker.off-screen .flag-marker-arrow {
   display: block;
 }
 
-.banner-end {
-  font-size: 56px;
-  text-shadow: 0 3px 0 #1d1135;
-}
-
-/* Minimap (top left); tap it or press M for the big map */
+/* --- Minimap (top left); tap it or press M for the big map -------------------------------- */
 
 .minimap {
   position: fixed;
@@ -343,20 +478,20 @@ body {
   z-index: 6;
   width: 96px;
   aspect-ratio: 36 / 64;
-  border: 3px solid #1d1135;
+  border: var(--outline);
   border-radius: 18px;
   overflow: hidden;
-  background: rgb(29 17 53 / 50%);
-  box-shadow: 0 4px 0 rgb(29 17 53 / 45%);
+  background: var(--ink-glass);
+  box-shadow: var(--drop-small);
   cursor: pointer;
   transform-origin: top left;
   transition:
-    width 260ms cubic-bezier(0.2, 0.9, 0.3, 1.25),
-    top 260ms cubic-bezier(0.2, 0.9, 0.3, 1.25),
-    left 260ms cubic-bezier(0.2, 0.9, 0.3, 1.25),
-    translate 260ms cubic-bezier(0.2, 0.9, 0.3, 1.25),
+    width 280ms var(--pop),
+    top 280ms var(--pop),
+    left 280ms var(--pop),
+    translate 280ms var(--pop),
     box-shadow 200ms ease;
-  animation: minimap-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+  animation: minimap-in 340ms var(--pop);
 }
 
 .minimap[hidden] {
@@ -375,36 +510,44 @@ body {
   width: min(48vh, 80vw);
   translate: -50% -50%;
   box-shadow:
-    0 0 0 100vmax rgb(29 17 53 / 45%),
-    0 8px 0 rgb(29 17 53 / 50%);
+    0 0 0 100vmax rgb(29 17 53 / 50%),
+    var(--drop);
   z-index: 15;
 }
 
 @keyframes minimap-in {
   from {
     opacity: 0;
-    scale: 0.6;
+    scale: 0.5;
+    rotate: -6deg;
   }
   to {
     opacity: 1;
     scale: 1;
+    rotate: 0deg;
   }
 }
 
-/* Live scoreboard (hold Tab, or 📊 on touch) and the results table */
+/* --- Live scoreboard (hold Tab, or 📊 on touch) and the results table --------------------- */
 
 .stats-button {
   position: fixed;
   top: max(10px, env(safe-area-inset-top));
   left: calc(max(10px, env(safe-area-inset-left)) + 108px);
   z-index: 6;
-  width: 40px;
-  height: 40px;
-  border: 3px solid #1d1135;
-  border-radius: 12px;
-  background: rgb(255 255 255 / 85%);
+  width: 44px;
+  height: 44px;
+  border: var(--outline);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--drop-small);
   font-size: 20px;
   cursor: pointer;
+}
+
+.stats-button:active {
+  translate: 0 3px;
+  box-shadow: none;
 }
 
 .stats-button[hidden] {
@@ -420,9 +563,11 @@ body {
   max-height: 80vh;
   overflow-y: auto;
   padding: 14px;
-  border-radius: 18px;
-  background: rgb(29 17 53 / 92%);
-  color: #fff;
+  border: var(--outline);
+  border-radius: 22px;
+  background: var(--paper);
+  box-shadow: var(--drop);
+  color: var(--ink);
   translate: -50% -50%;
   pointer-events: none;
 }
@@ -432,18 +577,7 @@ body {
 }
 
 .stats-overlay.open {
-  animation: pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
-}
-
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    scale: 0.92;
-  }
-  to {
-    opacity: 1;
-    scale: 1;
-  }
+  animation: pop-in 200ms var(--pop);
 }
 
 .stats-teams {
@@ -455,38 +589,46 @@ body {
 .stats-table {
   width: 100%;
   border-collapse: separate;
-  border-spacing: 0 3px;
-  font:
-    600 13px system-ui,
-    sans-serif;
+  border-spacing: 0 4px;
+  font: 600 14px var(--font-body);
   text-align: center;
 }
 
 .stats-table th {
   padding: 4px 6px;
+  color: var(--ink);
+  font: 400 15px var(--font-display);
+}
+
+.stats-table th.stats-name {
   color: var(--team);
-  font-weight: 900;
+  font-size: 20px;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 4px var(--ink);
 }
 
 .stats-table td {
-  padding: 5px 6px;
-  background: rgb(255 255 255 / 7%);
+  padding: 6px;
+  border-block: 2px solid var(--ink);
+  background: #fff;
 }
 
 .stats-table tr.me td {
-  background: color-mix(in srgb, var(--team) 30%, transparent);
+  background: color-mix(in srgb, var(--team) 35%, #fff);
 }
 
 .stats-table td:first-child {
-  border-radius: 8px 0 0 8px;
+  border-left: 2px solid var(--ink);
+  border-radius: 10px 0 0 10px;
 }
 
 .stats-table td:last-child {
-  border-radius: 0 8px 8px 0;
+  border-right: 2px solid var(--ink);
+  border-radius: 0 10px 10px 0;
 }
 
 .stats-table .stats-name {
-  max-width: 160px;
+  max-width: 170px;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -496,39 +638,48 @@ body {
 .stats-badge {
   display: inline-block;
   margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: #ffd166;
-  color: #1d1135;
+  padding: 1px 7px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--ink);
   font-size: 10px;
-  font-weight: 800;
-  animation: pop-in 300ms 400ms both cubic-bezier(0.2, 0.9, 0.3, 1.5);
+  font-weight: 700;
+  animation: pop-in 320ms 450ms both var(--pop);
 }
 
 .screen-card.results-card {
   width: min(760px, 100%);
 }
 
-.results-title {
-  font-size: 40px;
-  animation: pop-in 320ms cubic-bezier(0.2, 0.9, 0.3, 1.5);
+.menu-card h1.results-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: #fff;
+  font-size: 46px;
+  rotate: -2deg;
+}
+
+.menu-card h1.results-title::after {
+  display: none;
 }
 
 .results-summary {
   margin: 0;
   font-weight: 700;
-  opacity: 0.9;
 }
 
-/* Kill feed (top right) */
+/* --- Kill feed (top right, under the pause button on phones) ------------------------------ */
 
 .kill-feed {
   position: fixed;
-  top: 12px;
-  right: 12px;
+  top: calc(max(10px, env(safe-area-inset-top)) + 54px);
+  right: max(12px, env(safe-area-inset-right));
   z-index: 5;
   display: grid;
-  gap: 4px;
+  gap: 5px;
   justify-items: end;
   pointer-events: none;
 }
@@ -537,13 +688,15 @@ body {
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 3px 10px;
-  border-radius: 8px;
-  background: rgb(29 17 53 / 70%);
-  font:
-    700 13px system-ui,
-    sans-serif;
-  animation: feed-fade 5s linear forwards;
+  padding: 3px 12px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--drop-small);
+  font: 700 13px var(--font-body);
+  animation:
+    feed-in 260ms var(--pop),
+    feed-fade 5s linear forwards;
 }
 
 .feed-name {
@@ -551,6 +704,15 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 3px var(--ink);
+}
+
+@keyframes feed-in {
+  from {
+    translate: 40px 0;
+    opacity: 0;
+  }
 }
 
 @keyframes feed-fade {
@@ -563,59 +725,202 @@ body {
   }
 }
 
-/* Start / pause menu */
+/* --- Cards: pause menu and all start / join / lobby screens ------------------------------- */
 
-.pause-menu {
+.pause-menu,
+.screen {
   position: fixed;
   inset: 0;
   z-index: 10;
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgb(29 17 53 / 35%);
+  background:
+    radial-gradient(circle at 20% 15%, rgb(200 16 46 / 28%), transparent 45%),
+    radial-gradient(circle at 85% 90%, rgb(200 16 46 / 22%), transparent 40%), rgb(29 17 53 / 42%);
   overflow-y: auto;
-  /* The game blocks touch scrolling everywhere else; the menu may need it on small screens. */
+  /* The game blocks touch scrolling everywhere else; the menus may need it on small screens. */
   touch-action: pan-y;
 }
 
-.pause-menu[hidden] {
+.screen {
+  z-index: 11;
+}
+
+.pause-menu[hidden],
+.screen[hidden] {
   display: none;
 }
 
 .menu-card {
-  width: min(420px, 100%);
-  padding: 20px 24px;
-  border-radius: 16px;
-  background: rgb(29 17 53 / 90%);
-  color: #fff;
+  width: min(440px, 100%);
+  padding: 22px 24px 20px;
+  border: var(--outline);
+  border-radius: 26px;
+  background: var(--paper);
+  box-shadow: 0 8px 0 var(--ink);
+  color: var(--ink);
   text-align: center;
   user-select: none;
 }
 
-.menu-card h1 {
-  margin: 0 0 12px;
-  font-size: 30px;
+.pause-menu:not([hidden]) .menu-card {
+  animation: card-in 300ms var(--pop);
 }
 
-.menu-play {
-  width: 100%;
-  padding: 14px;
-  border: 0;
-  border-radius: 12px;
-  background: #fd3fb4;
+/* The title sits on a red paint splash with a few drips. */
+.menu-card h1 {
+  position: relative;
+  display: inline-block;
+  margin: 0 0 14px;
+  padding: 4px 26px 8px;
+  border: var(--outline);
+  border-radius: 58% 42% 55% 45% / 60% 50% 50% 40%;
+  background: var(--brand);
+  box-shadow: var(--drop);
   color: #fff;
-  font:
-    700 20px system-ui,
-    sans-serif;
-  cursor: pointer;
+  font-size: 34px;
+  rotate: -2deg;
+}
+
+.menu-card h1::after {
+  content: '';
+  position: absolute;
+  left: 22%;
+  bottom: -14px;
+  width: 12px;
+  height: 16px;
+  border: var(--outline);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: var(--brand);
+  box-shadow: 46px -4px 0 -3px var(--brand);
+}
+
+/* The game's logo on the start screen: bigger, with a wobble now and then. */
+.menu-card h1.logo {
+  padding: 8px 32px 12px;
+  font-size: 52px;
+  animation: logo-wobble 4s ease-in-out 1s infinite;
+}
+
+@keyframes logo-wobble {
+  0%,
+  86%,
+  100% {
+    rotate: -2deg;
+    scale: 1;
+  }
+  90% {
+    rotate: 2deg;
+    scale: 1.06;
+  }
+  95% {
+    rotate: -4deg;
+  }
 }
 
 .menu-heading {
   margin: 0 0 8px;
-  font-size: 14px;
-  opacity: 0.85;
+  color: var(--brand-dark);
+  font: 400 15px var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
+/* Main buttons: brand red, chunky, and they press down when tapped. */
+.menu-play {
+  width: 100%;
+  padding: 12px 14px 14px;
+  border: var(--outline);
+  border-radius: 16px;
+  background: var(--brand);
+  box-shadow: var(--drop);
+  color: #fff;
+  font: 400 24px var(--font-display);
+  letter-spacing: 0.03em;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 4px var(--ink);
+  cursor: pointer;
+  transition:
+    translate 90ms var(--snap),
+    box-shadow 90ms var(--snap),
+    background 150ms,
+    scale 150ms var(--pop);
+}
+
+.menu-play:hover:not(:disabled) {
+  background: var(--brand-light);
+  scale: 1.02;
+}
+
+.menu-play:active:not(:disabled) {
+  translate: 0 4px;
+  box-shadow: 0 1px 0 var(--ink);
+  scale: 1;
+}
+
+.menu-play:disabled {
+  background: #b9aeb0;
+  opacity: 0.7;
+  cursor: default;
+}
+
+.screen-button {
+  padding: 10px 18px 12px;
+  border: var(--outline);
+  border-radius: 14px;
+  background: var(--gold);
+  box-shadow: var(--drop-small);
+  color: var(--ink);
+  font: 400 18px var(--font-display);
+  cursor: pointer;
+  transition:
+    translate 90ms var(--snap),
+    box-shadow 90ms var(--snap),
+    scale 150ms var(--pop);
+}
+
+.screen-button:hover {
+  scale: 1.03;
+}
+
+.screen-button:active {
+  translate: 0 3px;
+  box-shadow: none;
+  scale: 1;
+}
+
+.screen-link,
+.screen-link-button {
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 600 14px var(--font-body);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  opacity: 0.75;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+
+.screen-link:hover,
+.screen-link-button:hover {
+  opacity: 1;
+}
+
+.menu-tuning {
+  padding: 8px 12px;
+  border: 2px dashed rgb(29 17 53 / 45%);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Role cards */
 .menu-roles {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -628,36 +933,52 @@ body {
   gap: 2px;
   align-content: start;
   padding: 10px 6px;
-  border: 2px solid rgb(255 255 255 / 25%);
-  border-radius: 12px;
-  background: rgb(255 255 255 / 6%);
-  color: #fff;
-  font:
-    12px system-ui,
-    sans-serif;
+  border: var(--outline);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--drop-small);
+  color: var(--ink);
+  font: 600 12px var(--font-body);
   line-height: 1.3;
   cursor: pointer;
+  transition:
+    translate 120ms var(--pop),
+    background 150ms,
+    box-shadow 120ms;
+}
+
+.menu-role:hover {
+  translate: 0 -2px;
 }
 
 .menu-role strong {
-  font-size: 15px;
+  font: 400 17px var(--font-display);
 }
 
 .menu-role-shots {
-  color: #ffd166;
+  color: var(--brand);
   font-weight: 700;
 }
 
 .menu-role.selected {
-  border-color: #fd3fb4;
-  background: rgb(253 63 180 / 25%);
+  background: color-mix(in srgb, var(--brand) 16%, #fff);
+  box-shadow:
+    0 0 0 3px var(--brand),
+    var(--drop-small);
+  animation: picked 260ms var(--pop);
+}
+
+@keyframes picked {
+  40% {
+    scale: 1.08;
+  }
 }
 
 .menu-keys {
   margin: 12px 0;
   font-size: 12px;
   line-height: 1.5;
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
 .menu-settings {
@@ -683,46 +1004,45 @@ body {
   display: none;
 }
 
-.menu-note {
-  margin: 0;
-  color: #ffd166;
-  font-size: 12px;
+.menu-settings input[type='range'],
+.menu-settings input[type='checkbox'] {
+  accent-color: var(--brand);
 }
 
-.menu-tuning {
-  padding: 8px 12px;
-  border: 1px solid rgb(255 255 255 / 40%);
-  border-radius: 8px;
-  background: transparent;
-  color: #fff;
-  cursor: pointer;
+.menu-settings select {
+  padding: 6px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.menu-note {
+  margin: 0;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* Start, join and lobby screens */
-
-.screen {
-  position: fixed;
-  inset: 0;
-  z-index: 11;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgb(29 17 53 / 45%);
-  overflow-y: auto;
-  touch-action: pan-y;
-}
-
-.screen[hidden] {
-  display: none;
-}
 
 .screen-card {
   display: grid;
   gap: 10px;
 }
 
+/* Each new screen pops in, and its parts rise in one after another. */
+.screen-card.enter {
+  animation: card-in 320ms var(--pop);
+}
+
+.screen-card.enter > * {
+  animation: rise-in 360ms var(--pop) both;
+  animation-delay: calc(var(--i, 0) * 35ms);
+}
+
 .screen-card h1 {
-  margin: 0 0 4px;
+  justify-self: center;
 }
 
 .screen-card .menu-heading,
@@ -734,17 +1054,24 @@ body {
 .screen-card input,
 .screen-card select {
   padding: 10px 12px;
-  border: 2px solid rgb(255 255 255 / 25%);
-  border-radius: 10px;
-  background: rgb(255 255 255 / 8%);
-  color: #fff;
-  font:
-    16px system-ui,
-    sans-serif;
+  border: var(--outline);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font: 600 17px var(--font-body);
+  transition:
+    box-shadow 120ms,
+    translate 120ms;
+}
+
+.screen-card input:focus,
+.screen-card select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand);
 }
 
 .screen-card select option {
-  color: #1d1135;
+  color: var(--ink);
 }
 
 .screen-label {
@@ -752,6 +1079,7 @@ body {
   gap: 4px;
   text-align: left;
   font-size: 14px;
+  font-weight: 700;
 }
 
 .screen-row {
@@ -767,42 +1095,17 @@ body {
   letter-spacing: 0.3em;
 }
 
-.screen-button {
-  padding: 10px 18px;
-  border: 0;
-  border-radius: 10px;
-  background: #3fd8f5;
-  color: #1d1135;
-  font:
-    700 16px system-ui,
-    sans-serif;
-  cursor: pointer;
-}
-
-.menu-play:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.screen-link,
-.screen-link-button {
-  border: 0;
-  background: none;
-  color: rgb(255 255 255 / 75%);
-  font:
-    14px system-ui,
-    sans-serif;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .screen-qr {
-  width: min(260px, 70vw);
+  width: min(250px, 66vw);
   aspect-ratio: 1;
   margin: 0 auto;
-  border-radius: 12px;
+  padding: 6px;
+  border: var(--outline);
+  border-radius: 18px;
   overflow: hidden;
   background: #fff;
+  box-shadow: var(--drop);
+  rotate: 1.5deg;
 }
 
 .screen-qr svg {
@@ -813,16 +1116,15 @@ body {
 
 .screen-code {
   margin: 0;
-  font:
-    800 44px ui-monospace,
-    monospace;
-  letter-spacing: 0.15em;
+  color: var(--gold);
+  font-size: 52px;
+  letter-spacing: 0.14em;
 }
 
 .screen-join-link {
   margin: 0;
   font-size: 12px;
-  opacity: 0.7;
+  opacity: 0.65;
   word-break: break-all;
 }
 
@@ -831,7 +1133,7 @@ body {
   gap: 6px;
   max-height: 34vh;
   margin: 0;
-  padding: 0;
+  padding: 2px 2px 6px;
   overflow-y: auto;
   list-style: none;
   text-align: left;
@@ -842,12 +1144,14 @@ body {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 8%);
+  border: 2px solid var(--ink);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: var(--drop-small);
 }
 
 .screen-players li.me {
-  background: rgb(253 63 180 / 25%);
+  background: color-mix(in srgb, var(--gold) 55%, #fff);
 }
 
 .screen-player-name {
@@ -855,29 +1159,53 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 700;
 }
 
 .screen-tag {
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: rgb(255 255 255 / 15%);
+  padding: 1px 8px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
   font-size: 11px;
+  font-weight: 700;
 }
 
 .screen-kick {
-  width: 28px;
-  height: 28px;
-  border: 0;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--ink);
   border-radius: 50%;
-  background: rgb(255 255 255 / 12%);
-  color: #fff;
+  background: var(--paper-dim);
+  color: var(--ink);
+  font-weight: 700;
   cursor: pointer;
+  transition:
+    background 120ms,
+    scale 120ms var(--pop);
+}
+
+.screen-kick:hover {
+  background: var(--brand);
+  color: #fff;
+  scale: 1.1;
 }
 
 .screen-waiting,
 .screen-message {
   margin: 0;
-  opacity: 0.85;
+  font-weight: 600;
+}
+
+.screen-waiting {
+  animation: waiting 1.4s ease-in-out infinite;
+}
+
+@keyframes waiting {
+  50% {
+    opacity: 0.55;
+  }
 }
 
 /* Customize: 3D preview next to the part pickers */
@@ -892,8 +1220,10 @@ body {
 .look-preview {
   width: 150px;
   height: 150px;
-  border-radius: 14px;
-  background: radial-gradient(circle at 50% 40%, rgb(255 255 255 / 22%), rgb(255 255 255 / 4%));
+  border: var(--outline);
+  border-radius: 22px;
+  background: radial-gradient(circle at 50% 40%, #fff, var(--paper-dim));
+  box-shadow: var(--drop-small);
 }
 
 .look-preview canvas {
@@ -904,12 +1234,12 @@ body {
 
 .look-picker {
   display: grid;
-  gap: 4px;
+  gap: 5px;
 }
 
 .look-row {
   display: grid;
-  grid-template-columns: 64px 36px 1fr 36px;
+  grid-template-columns: 64px 38px 1fr 38px;
   align-items: center;
   gap: 4px;
   font-size: 14px;
@@ -917,21 +1247,36 @@ body {
 
 .look-label {
   text-align: left;
-  opacity: 0.8;
+  font-weight: 700;
+  opacity: 0.75;
 }
 
 .look-value {
-  font-weight: 700;
+  font: 400 16px var(--font-display);
 }
 
 .look-arrow {
   height: 36px;
-  border: 0;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 12%);
-  color: #fff;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 0 var(--ink);
+  color: var(--ink);
   font-size: 14px;
   cursor: pointer;
+  transition:
+    translate 80ms var(--snap),
+    box-shadow 80ms var(--snap),
+    background 120ms;
+}
+
+.look-arrow:hover {
+  background: var(--gold);
+}
+
+.look-arrow:active {
+  translate: 0 2px;
+  box-shadow: none;
 }
 
 @media (max-width: 420px) {
@@ -945,23 +1290,26 @@ body {
   }
 }
 
-/* Team reveal and countdown, over the game (never blocks clicks) */
+/* --- Team reveal, countdown and match banners (never block clicks) ------------------------- */
 
 .match-banner {
   position: fixed;
-  top: 16%;
+  top: 18%;
   left: 50%;
   z-index: 12;
-  transform: translateX(-50%);
+  translate: -50% 0;
   width: min(560px, calc(100% - 32px));
   color: #fff;
   text-align: center;
-  text-shadow: 0 2px 8px rgb(0 0 0 / 50%);
   pointer-events: none;
 }
 
 .match-banner[hidden] {
   display: none;
+}
+
+.match-banner > * {
+  animation: pop-in 340ms var(--pop) both;
 }
 
 .banner-teams {
@@ -972,39 +1320,56 @@ body {
 
 .banner-team {
   padding: 10px;
-  border: 3px solid var(--team);
-  border-radius: 14px;
-  background: rgb(29 17 53 / 75%);
+  border: var(--outline);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow:
+    inset 0 6px 0 var(--team),
+    var(--drop);
+  color: var(--ink);
+}
+
+.banner-team:nth-child(2) {
+  animation-delay: 90ms;
 }
 
 .banner-team h2 {
-  margin: 0 0 6px;
+  margin: 4px 0 6px;
   color: var(--team);
-  font-size: 18px;
+  font: 400 22px var(--font-display);
+  paint-order: stroke fill;
+  -webkit-text-stroke: 5px var(--ink);
 }
 
 .banner-team ul {
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 700;
   line-height: 1.5;
 }
 
 .banner-sub {
   margin: 10px 0 0;
-  font-size: 18px;
-  font-weight: 700;
+  font: 400 20px var(--font-display);
+  paint-order: stroke fill;
+  -webkit-text-stroke: 4px var(--ink);
 }
 
 .banner-big {
   margin: 0;
-  font:
-    900 96px system-ui,
-    sans-serif;
+  font-size: 110px;
+  line-height: 1;
+  -webkit-text-stroke: 10px var(--ink);
 }
 
-/* Touch controls */
+.banner-end {
+  font-size: 60px;
+  -webkit-text-stroke: 8px var(--ink);
+}
+
+/* --- Touch controls ----------------------------------------------------------------------- */
 
 .touch-controls {
   position: fixed;
@@ -1044,9 +1409,9 @@ body {
   width: 120px;
   height: 120px;
   margin: -60px 0 0 -60px;
-  border: 2px solid rgb(255 255 255 / 45%);
+  border: 3px solid rgb(29 17 53 / 55%);
   border-radius: 50%;
-  background: rgb(255 255 255 / 15%);
+  background: rgb(255 255 255 / 18%);
   pointer-events: none;
   visibility: hidden;
 }
@@ -1062,23 +1427,30 @@ body {
   width: 52px;
   height: 52px;
   margin: -26px 0 0 -26px;
+  border: var(--outline);
   border-radius: 50%;
-  background: rgb(255 255 255 / 75%);
+  background: rgb(255 255 255 / 85%);
 }
 
 .touch-button {
   position: absolute;
-  border: 3px solid rgb(255 255 255 / 70%);
+  border: 3px solid rgb(29 17 53 / 80%);
   border-radius: 50%;
-  background: rgb(29 17 53 / 45%);
+  background: rgb(255 248 238 / 35%);
+  box-shadow: 0 3px 0 rgb(29 17 53 / 60%);
   color: #fff;
-  font:
-    700 13px system-ui,
-    sans-serif;
+  font: 400 14px var(--font-display);
+  letter-spacing: 0.04em;
+  paint-order: stroke fill;
+  -webkit-text-stroke: 3px var(--ink);
+  transition:
+    scale 80ms var(--snap),
+    background 80ms;
 }
 
 .touch-button.pressed {
-  background: rgb(253 63 180 / 65%);
+  background: rgb(200 16 46 / 75%);
+  scale: 0.92;
 }
 
 .touch-fire {
@@ -1086,6 +1458,7 @@ body {
   bottom: calc(28px + env(safe-area-inset-bottom));
   width: 96px;
   height: 96px;
+  font-size: 18px;
 }
 
 .touch-jump {
@@ -1124,96 +1497,69 @@ body {
   right: calc(10px + env(safe-area-inset-right));
   width: 44px;
   height: 44px;
-  border: 0;
-  border-radius: 12px;
-  background: rgb(29 17 53 / 55%);
-  color: #fff;
-  font-weight: 800;
+  border: var(--outline);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--drop-small);
+  color: var(--ink);
+  font: 400 16px var(--font-display);
 }
 
-.hud {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  width: 64px;
-  height: 64px;
-  margin: -32px 0 0 -32px;
-  pointer-events: none;
+/* --- Shared motion ------------------------------------------------------------------------ */
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    scale: 0.85;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
 }
 
-.ink-ring {
-  width: 100%;
-  height: 100%;
-  /* Start the gauge at the top and drain it clockwise. */
-  transform: rotate(-90deg);
+@keyframes card-in {
+  from {
+    opacity: 0;
+    scale: 0.88;
+    translate: 0 18px;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+  }
 }
 
-.ink-track {
-  fill: none;
-  stroke: rgb(29 17 53 / 35%);
-  stroke-width: 3;
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
 }
 
-.ink-fill {
-  fill: none;
-  stroke-width: 3;
-  stroke-linecap: round;
-  transition: stroke-dashoffset 80ms linear;
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    translate: -50% -24px;
+  }
+  to {
+    opacity: 1;
+    translate: -50% 0;
+  }
 }
 
-.reload-label {
-  position: absolute;
-  left: 50%;
-  top: 72px;
-  transform: translateX(-50%);
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgb(29 17 53 / 70%);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  visibility: hidden;
-}
-
-.hud.reloading .reload-label {
-  visibility: visible;
-}
-
-.hud.reloading .ink-fill {
-  opacity: 0.55;
-  transition: none;
-}
-
-.ink-ring {
-  transition: transform 120ms ease-out;
-}
-
-.hud.aiming .ink-ring {
-  /* Keep the drain direction (rotate) while shrinking the ring around the crosshair. */
-  transform: rotate(-90deg) scale(0.7);
-}
-
-.damage-vignette {
-  position: fixed;
-  inset: 0;
-  opacity: 0;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 55%,
-    color-mix(in srgb, var(--damage-color, #22d3ee) 70%, transparent) 100%
-  );
-  pointer-events: none;
-  transition: opacity 120ms linear;
-}
-
-.hud.ink-low .ink-fill {
-  animation: ink-low 0.5s steps(2) infinite;
-}
-
-@keyframes ink-low {
-  50% {
-    opacity: 0.25;
+/* Calmer for anyone who asks their device for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
   }
 }

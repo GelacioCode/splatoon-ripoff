@@ -1,3 +1,7 @@
+// Brand fonts, bundled with the game (OFL): Lilita One for titles and buttons, Fredoka for text.
+import '@fontsource/lilita-one/400.css';
+import '@fontsource/fredoka/600.css';
+import '@fontsource/fredoka/700.css';
 import './style.css';
 import { DEFAULT_SERVER_PORT } from '@paint-rush/shared';
 import { parseRoute } from './net/route';

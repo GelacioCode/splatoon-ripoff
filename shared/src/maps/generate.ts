@@ -1,5 +1,14 @@
+import { CONFIG } from '../config';
 import { createRng } from '../rng';
-import { ARENA, box, composeArena, ramp } from './arena';
+import {
+  ARENA,
+  ARENA_HALF_LENGTH,
+  ARENA_HALF_WIDTH,
+  box,
+  composeArena,
+  ramp,
+  spawnPadFront,
+} from './arena';
 import type { BlockDef, MapDef } from './types';
 
 /** An area on the ground (x, z), in team 0's half. */
@@ -10,14 +19,41 @@ export interface Rect {
   maxZ: number;
 }
 
-/** Where pieces may go in team 0's half (inside the boundary, short of the center line). */
-const AREA: Rect = { minX: -18, maxX: 18, minZ: -30.5, maxZ: -1.2 };
+/**
+ * Where pieces may go in team 0's half of an arena this `scale` (inside the boundary, short
+ * of the center line).
+ */
+function areaFor(scale: number): Rect {
+  const halfWidth = ARENA_HALF_WIDTH * scale;
+  return {
+    minX: -halfWidth,
+    maxX: halfWidth,
+    minZ: -ARENA_HALF_LENGTH * scale + 1.5,
+    maxZ: -1.2,
+  };
+}
 
 /** Always left open: the spawn pad and base, and the center platform with its ramp. */
-export const KEEP_CLEAR: readonly Rect[] = [
-  { minX: -6, maxX: 6, minZ: -32, maxZ: -22 },
-  { minX: -7, maxX: 7, minZ: -10.5, maxZ: 0 },
-];
+export function keepClear(scale: number): Rect[] {
+  const halfLength = ARENA_HALF_LENGTH * scale;
+  return [
+    { minX: -6 * scale, maxX: 6 * scale, minZ: -halfLength, maxZ: spawnPadFront(scale) + 5 },
+    { minX: -7, maxX: 7, minZ: -10.5, maxZ: 0 },
+  ];
+}
+
+/** The size step for this many players at Start (an index into CONFIG.lobby.arenaSizes). */
+export function arenaSizeFor(players: number): number {
+  const sizes = CONFIG.lobby.arenaSizes;
+  const index = sizes.findIndex((size) => players <= size.upToPlayers);
+  return index < 0 ? sizes.length - 1 : index;
+}
+
+/** How much wider and longer than normal an arena of this size step is. */
+export function arenaScale(size: number): number {
+  const sizes = CONFIG.lobby.arenaSizes;
+  return (sizes[size] ?? sizes[0]).scale;
+}
 
 /** Room left between pieces so there's always a way through (m). */
 const WALKWAY = 1.6;
@@ -51,52 +87,67 @@ function inside(r: Rect, area: Rect): boolean {
   return r.minX >= area.minX && r.maxX <= area.maxX && r.minZ >= area.minZ && r.maxZ <= area.maxZ;
 }
 
-/** Builds one piece (one or more blocks) at a random spot. */
-type PieceMaker = (random: Random) => BlockDef[];
+/** Builds one piece (one or more blocks) at a random spot in an arena of this scale. */
+type PieceMaker = (random: Random, scale: number) => BlockDef[];
 
-function lowCover(random: Random): BlockDef[] {
+/** A random spot for a piece's center: x across the half, z from the back to near the middle. */
+function spot(random: Random, scale: number, margin: number): [number, number] {
+  const halfWidth = ARENA_HALF_WIDTH * scale - margin;
+  const back = -ARENA_HALF_LENGTH * scale + margin + 1;
+  return [between(random, -halfWidth, halfWidth), between(random, back, -3)];
+}
+
+function lowCover(random: Random, scale: number): BlockDef[] {
   const w = between(random, 1.4, 2.8);
   const h = between(random, 1, 1.6);
   const d = between(random, 1, 2.4);
-  return [box('block', [between(random, -15, 15), h / 2, between(random, -28, -3)], [w, h, d])];
+  const [x, z] = spot(random, scale, 3);
+  return [box('block', [x, h / 2, z], [w, h, d])];
 }
 
-function pillar(random: Random): BlockDef[] {
+function pillar(random: Random, scale: number): BlockDef[] {
   const w = between(random, 1.3, 1.8);
   const h = between(random, 2.2, 2.9);
-  return [box('block', [between(random, -15, 15), h / 2, between(random, -28, -3)], [w, h, w])];
+  const [x, z] = spot(random, scale, 3);
+  return [box('block', [x, h / 2, z], [w, h, w])];
 }
 
 /** A tall wall to swim up once it's painted, across or along the lanes. */
-function climbWall(random: Random): BlockDef[] {
+function climbWall(random: Random, scale: number): BlockDef[] {
   const length = between(random, 4, 6);
   const h = between(random, 2.5, 3.2);
   const across = random() < 0.5;
   const size: [number, number, number] = across ? [length, h, 0.8] : [0.8, h, length];
-  return [box('wall', [between(random, -14, 14), h / 2, between(random, -27, -4)], size)];
+  const [x, z] = spot(random, scale, 4);
+  return [box('wall', [x, h / 2, z], size)];
 }
 
 /** A raised ledge by one side wall, with a ramp up to it from the spawn side. */
-function sideLedge(random: Random): BlockDef[] {
+function sideLedge(random: Random, scale: number): BlockDef[] {
   const w = between(random, 4.5, 6.5);
   const h = between(random, 2, 2.6);
   const d = between(random, 6, 9);
   const side = random() < 0.5 ? -1 : 1;
   // Flush against the side wall, so there's no gap to fall into.
-  const x = side * (18 - w / 2);
-  const z = between(random, -16, -4) - d / 2;
+  const x = side * (ARENA_HALF_WIDTH * scale - w / 2);
+  const z = between(random, -16 * scale, -4) - d / 2;
   const rampLength = between(random, 4.5, 6);
   const front = z - d / 2;
   return [box('block', [x, h / 2, z], [w, h, d]), ramp(x, 3, front - rampLength, front, 0, h)];
 }
 
-/** Which pieces a layout gets: a side ledge most of the time, walls, pillars and low cover. */
-function plan(random: Random): PieceMaker[] {
+/**
+ * Which pieces a layout gets: a side ledge most of the time (both sides in big arenas),
+ * walls, pillars and low cover, more of them the bigger the arena.
+ */
+function plan(random: Random, scale: number): PieceMaker[] {
   const pieces: PieceMaker[] = [];
-  if (random() < 0.7) pieces.push(sideLedge);
-  const walls = 1 + Math.floor(random() * 2);
-  const pillars = Math.floor(random() * 3);
-  const covers = 3 + Math.floor(random() * 3);
+  const area = scale * scale;
+  const ledges = (random() < 0.7 ? 1 : 0) + (scale > 1.2 && random() < 0.6 ? 1 : 0);
+  const walls = Math.round((1 + Math.floor(random() * 2)) * area);
+  const pillars = Math.round(Math.floor(random() * 3) * area);
+  const covers = Math.round((3 + Math.floor(random() * 3)) * area);
+  for (let i = 0; i < ledges; i++) pieces.push(sideLedge);
   for (let i = 0; i < walls; i++) pieces.push(climbWall);
   for (let i = 0; i < pillars; i++) pieces.push(pillar);
   for (let i = 0; i < covers; i++) pieces.push(lowCover);
@@ -107,16 +158,17 @@ function plan(random: Random): PieceMaker[] {
  * Team 0's cover for a fresh random layout: each piece is tried at random spots until it fits
  * inside the half, clear of the spawn, base and center, with a walkway around the others.
  */
-export function randomCover(seed: number): BlockDef[] {
+export function randomCover(seed: number, scale = 1): BlockDef[] {
   const random = createRng(seed);
   const placed: BlockDef[] = [];
-  const taken: Rect[] = [...KEEP_CLEAR];
-  for (const make of plan(random)) {
+  const area = areaFor(scale);
+  const taken: Rect[] = keepClear(scale);
+  for (const make of plan(random, scale)) {
     for (let attempt = 0; attempt < TRIES; attempt++) {
-      const piece = make(random);
+      const piece = make(random, scale);
       const areas = piece.map(footprint);
       const fits = areas.every(
-        (area) => inside(area, AREA) && taken.every((other) => !overlaps(area, other, WALKWAY)),
+        (rect) => inside(rect, area) && taken.every((other) => !overlaps(rect, other, WALKWAY)),
       );
       if (!fits) continue;
       placed.push(...piece);
@@ -127,12 +179,21 @@ export function randomCover(seed: number): BlockDef[] {
   return placed;
 }
 
+/** The fixed layout used for round 1 in arenas bigger than Drip Yard. */
+const BIG_FIRST_ROUND_SEED = 0x5eed;
+
 /**
- * The arena for a round: seed 0 is the hand-made Drip Yard (first round), any other seed a
- * fresh random layout that's the same on every screen.
+ * The arena for a round, in size step `size` (see arenaSizeFor). Seed 0 is the first round:
+ * the hand-made Drip Yard at normal size, or a fixed layout in bigger arenas (Drip Yard is
+ * made for the normal size). Any other seed is a fresh random layout, the same on every
+ * screen.
  */
-export function arenaFor(seed: number): MapDef {
-  return seed === 0 ? ARENA : composeArena(`Layout ${seed.toString(36)}`, randomCover(seed));
+export function arenaFor(seed: number, size = 0): MapDef {
+  const scale = arenaScale(size);
+  if (seed === 0 && scale === 1) return ARENA;
+  const layoutSeed = seed === 0 ? BIG_FIRST_ROUND_SEED : seed;
+  const name = seed === 0 ? 'Big Yard' : `Layout ${seed.toString(36)}`;
+  return composeArena(name, randomCover(layoutSeed, scale), scale);
 }
 
 /** A seed for a new random layout (never 0, which means Drip Yard). */

@@ -4,6 +4,7 @@ import { StateView } from '@colyseus/schema';
 import {
   ARENA,
   arenaFor,
+  arenaSizeFor,
   buildSurfaces,
   cleanName,
   CONFIG,
@@ -114,6 +115,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private paint = new PaintGrid(buildSurfaces(ARENA.blocks));
   /** Each team's paint points this match (paint is wiped every round; this isn't). */
   private teamPaint: [number, number] = [0, 0];
+  /** Development only: an arena size the lobby's creator asked for (see devArenaSize). */
+  private forcedArenaSize: number | null = null;
   /** Physics bodies of players in the arena (none while everyone waits in the lobby). */
   private readonly bodies = new Map<string, Collider>();
   /** Every shot in flight. These are the real ones: they decide where paint lands. */
@@ -227,7 +230,16 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     Object.assign(player, parseLook(options?.look));
     this.state.players.set(client.sessionId, player);
     this.joinOrder.push(client.sessionId);
-    if (!this.state.hostId) this.state.hostId = client.sessionId;
+    if (!this.state.hostId) {
+      this.state.hostId = client.sessionId;
+      const size = options?.devArenaSize;
+      const valid =
+        typeof size === 'number' &&
+        Number.isInteger(size) &&
+        size >= 0 &&
+        size < CONFIG.lobby.arenaSizes.length;
+      if (valid && process.env.NODE_ENV !== 'production') this.forcedArenaSize = size;
+    }
     if (inArena) this.bodies.set(client.sessionId, this.physics.createCharacter(player));
     // Owner-only fields (timers, ink) go to this client for its own player.
     client.view = new StateView();
@@ -272,8 +284,9 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
 
   /** Balances everyone into two teams, puts them on their spawn pads, and starts the reveal. */
   private startMatch(): void {
-    // The first round is always the hand-made Drip Yard.
-    this.loadMap(0);
+    // The arena's size fits the head count now (and stays for the whole match); the first
+    // round is Drip Yard at normal size.
+    this.loadMap(0, this.forcedArenaSize ?? arenaSizeFor(this.state.players.size));
     const teams = this.balanceTeams([...this.state.players.keys()], Math.random);
     for (const [id, player] of this.state.players) {
       player.team = teams.get(id) ?? 0;
@@ -303,13 +316,15 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   }
 
   /**
-   * Switches to the layout for `seed` (see arenaFor): new physics and an empty paint grid.
-   * Everyone in the arena gets a body in the new world. Every screen rebuilds the same layout
-   * when it sees the new `mapSeed`.
+   * Switches to the layout for `seed` in size step `size` (see arenaFor): new physics and an
+   * empty paint grid. Everyone in the arena gets a body in the new world. Every screen
+   * rebuilds the same layout when it sees the new `mapSeed` / `arenaSize`.
    */
-  private loadMap(seed: number): void {
-    if (seed === this.state.mapSeed && this.map === arenaFor(seed)) return;
-    this.map = arenaFor(seed);
+  private loadMap(seed: number, size: number): void {
+    // Drip Yard at normal size is the one layout that's already built when nothing changed.
+    const same = seed === this.state.mapSeed && size === this.state.arenaSize;
+    if (same && this.map === arenaFor(seed, size)) return;
+    this.map = arenaFor(seed, size);
     this.physics.dispose();
     this.physics = new PhysicsWorld(this.map.blocks);
     this.paint = new PaintGrid(buildSurfaces(this.map.blocks));
@@ -321,6 +336,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.landed.length = 0;
     this.landedBy.length = 0;
     this.state.mapSeed = seed;
+    this.state.arenaSize = size;
   }
 
   /**
@@ -328,7 +344,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
    * spawn with fresh state, the flag in the middle, no paint. Then a fresh 3-2-1.
    */
   private startRound(): void {
-    this.loadMap(newLayoutSeed(Math.random));
+    this.loadMap(newLayoutSeed(Math.random), this.state.arenaSize);
     // Their new bodies follow the state on the next step.
     for (const [id, player] of this.state.players) {
       if (this.bodies.has(id)) this.placeOnSpawn(player);

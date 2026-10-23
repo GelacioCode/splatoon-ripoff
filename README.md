@@ -14,6 +14,18 @@ A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming throu
 | `…/?offline` | **Offline sandbox**: play solo without the server (handy for tuning the feel). |
 | `…/?debug` | Online, plus Colyseus' netcode panel: prediction drift and a **latency simulator** to test lag. Works together with the others, e.g. `?quick&debug`. |
 
+## Arena size
+
+The arena grows with the number of players at Start, and keeps that size for the whole match:
+
+| Players | Arena |
+| --- | --- |
+| up to 10 | 36 × 64 m (normal) |
+| 11 to 20 | 1.25× wider and longer |
+| 21 and more | 1.5× wider and longer |
+
+Heights stay the same, so jumps and walls feel the same. Bigger arenas get more cover, and their first round is a fixed layout ("Big Yard"), since Drip Yard is made for the normal size. For testing with only a few players, add `?arena=1` or `?arena=2` to the host's link in `pnpm dev`; it's ignored in production.
+
 ## Lobbies
 
 1. The host clicks **Create Lobby**, enters a name and picks a role. The lobby shows a big **QR code** and a 4-character **code**.

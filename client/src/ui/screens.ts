@@ -73,6 +73,8 @@ export class Screens {
   private readonly card = element('div', 'menu-card screen-card');
   /** Runs when the current screen goes away (e.g. to free its 3D preview). */
   private cleanup: (() => void) | null = null;
+  /** Which screen is showing ('home', 'lobby', …), so updates don't replay the entrance. */
+  private shownKind = '';
 
   constructor() {
     this.root.append(this.card);
@@ -83,6 +85,7 @@ export class Screens {
   hide(): void {
     this.runCleanup();
     this.root.hidden = true;
+    this.shownKind = '';
   }
 
   /** Something to undo when the current screen is replaced or hidden. */
@@ -117,7 +120,8 @@ export class Screens {
     offline.href = '/?offline';
 
     this.show(
-      element('h1', undefined, 'Paint Rush'),
+      'home',
+      element('h1', 'logo', 'Paint Rush'),
       button('Create Lobby', 'menu-play', actions.create),
       element('p', 'menu-heading', 'or join with a code'),
       joinRow,
@@ -161,6 +165,7 @@ export class Screens {
     const customize = customizeSection(options.look, options.changeLook);
 
     this.show(
+      'join',
       element('h1', undefined, options.code ? `Join lobby ${options.code}` : 'New lobby'),
       label,
       element('p', 'menu-heading', 'Customize'),
@@ -262,13 +267,14 @@ export class Screens {
       button('Edit look', 'screen-button', actions.editLook),
       button('Leave lobby', 'screen-link-button', actions.leave),
     );
-    this.show(...parts);
+    this.show('lobby', ...parts);
   }
 
   /** Change your look while waiting in the lobby. Returns the box for the 3D preview. */
   showLookEditor(look: Look, changeLook: (look: Look) => void, done: () => void): HTMLElement {
     const customize = customizeSection(look, changeLook);
     this.show(
+      'look',
       element('h1', undefined, 'Your look'),
       customize.section,
       element('p', 'screen-waiting', 'Everyone in the lobby sees changes right away.'),
@@ -305,6 +311,7 @@ export class Screens {
       ? button('Play again', 'menu-play', view.playAgain)
       : element('p', 'screen-waiting', 'Waiting for the host to play again…');
     this.show(
+      'results',
       heading,
       summary,
       createStatsTable(view.rows, true),
@@ -317,16 +324,29 @@ export class Screens {
   /** A message with one button, e.g. "You were removed by the host". */
   showMessage(title: string, text: string, action: { label: string; run: () => void }): void {
     this.show(
+      'message',
       element('h1', undefined, title),
       element('p', 'screen-message', text),
       button(action.label, 'menu-play', action.run),
     );
   }
 
-  private show(...children: HTMLElement[]): void {
+  /**
+   * Replaces the card's contents. A different `kind` of screen pops in, its parts rising one
+   * after another; the same screen updating (e.g. someone joined the lobby) just swaps them.
+   */
+  private show(kind: string, ...children: HTMLElement[]): void {
     this.runCleanup();
     this.card.classList.remove('results-card');
     this.card.replaceChildren(...children);
+    const fresh = kind !== this.shownKind || this.root.hidden;
+    this.shownKind = kind;
+    this.card.classList.remove('enter');
+    if (fresh) {
+      children.forEach((child, i) => child.style.setProperty('--i', String(i)));
+      void this.card.offsetWidth;
+      this.card.classList.add('enter');
+    }
     this.root.hidden = false;
   }
 

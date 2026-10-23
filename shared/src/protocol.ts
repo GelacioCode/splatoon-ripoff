@@ -18,6 +18,11 @@ export interface MatchJoinOptions {
   weapon?: number;
   /** The blob's look (see LOOK_OPTIONS); invalid parts get the default. */
   look?: Look;
+  /**
+   * Development only (ignored in production): the lobby's creator can force an arena size step
+   * (see CONFIG.lobby.arenaSizes), to try big arenas without 11+ players.
+   */
+  devArenaSize?: number;
 }
 
 /** Client → server, in the lobby only: a new look. Payload: a Look. */

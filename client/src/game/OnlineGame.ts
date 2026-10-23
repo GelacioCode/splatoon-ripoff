@@ -102,7 +102,11 @@ function asBytes(payload: unknown): Uint8Array | null {
 
 /** Makes a new lobby; the room id the server gives it is the lobby code. */
 function createLobby(serverUrl: string, options: MatchJoinOptions) {
-  return new Client(serverUrl).create(ROOM_MATCH, options, MatchState);
+  // Dev testing: `?arena=1` / `?arena=2` asks for a bigger arena (the server ignores it in
+  // production).
+  const arena = Number(new URLSearchParams(window.location.search).get('arena'));
+  const devArenaSize = Number.isInteger(arena) && arena > 0 ? arena : undefined;
+  return new Client(serverUrl).create(ROOM_MATCH, { ...options, devArenaSize }, MatchState);
 }
 type MatchRoom = Awaited<ReturnType<typeof createLobby>>;
 
@@ -1030,10 +1034,11 @@ class NetSession {
    * remade in the new physics world, and shots still flying in the old arena are dropped.
    */
   private ensureMap(): void {
-    const seed = this.room.state.mapSeed;
-    if (seed === this.world.mapSeed) return;
+    const { mapSeed, arenaSize } = this.room.state;
+    const key = `${mapSeed}:${arenaSize}`;
+    if (key === this.world.mapKey) return;
     const world = this.world;
-    world.loadMap(arenaFor(seed), seed);
+    world.loadMap(arenaFor(mapSeed, arenaSize), key);
     this.shots.length = 0;
     if (this.body && this.me) this.body = world.physics.createCharacter(this.me.state);
     this.minimap.setMap(world.map, world.surfaces, world.paint);

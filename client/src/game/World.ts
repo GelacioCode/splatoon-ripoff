@@ -109,8 +109,8 @@ export class World {
    * after every capture (see `loadMap`), so don't keep references to them across frames.
    */
   map: MapDef = ARENA;
-  /** The layout seed `map` was built from (0 = Drip Yard; see arenaFor). */
-  mapSeed = 0;
+  /** What `map` was built from, as "seed:size" (see arenaFor); Drip Yard is "0:0". */
+  mapKey = '0:0';
   physics = new PhysicsWorld(ARENA.blocks);
   surfaces = buildSurfaces(ARENA.blocks);
   paint = new PaintGrid(this.surfaces);
@@ -272,8 +272,8 @@ export class World {
    * physics, paint grid and paint texture start fresh, so the old paint is gone. Anything
    * made in the old physics world (e.g. our own body) has to be made again.
    */
-  loadMap(map: MapDef, seed: number): void {
-    if (seed === this.mapSeed && map === this.map) return;
+  loadMap(map: MapDef, key: string): void {
+    if (key === this.mapKey && map === this.map) return;
     for (const object of this.mapObjects) {
       this.scene.remove(object);
       object.geometry.dispose();
@@ -283,7 +283,7 @@ export class World {
     this.atlas.dispose();
     this.physics.dispose();
     this.map = map;
-    this.mapSeed = seed;
+    this.mapKey = key;
     this.physics = new PhysicsWorld(map.blocks);
     this.surfaces = buildSurfaces(map.blocks);
     this.paint = new PaintGrid(this.surfaces);

@@ -120,6 +120,8 @@ export const MatchState = schema(
      * builds the same way (see arenaFor). It changes after every capture.
      */
     mapSeed: t.uint32().default(0),
+    /** Arena size step for this match, from the head count at Start (see arenaSizeFor). */
+    arenaSize: t.uint8().default(0),
     players: t.map(NetPlayer),
   },
   'MatchState',

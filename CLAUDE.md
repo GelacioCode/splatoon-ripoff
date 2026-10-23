@@ -118,7 +118,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 4B: flag, scoring, timer, win conditions, HUD (user moved on to new requests, 2026-10-23).
   - Plan revised 2026-10-23 (user requests): 4C KDA + scaling respawn + results/Play Again + minimap; 4D round reset after each capture (everyone to spawn, paint wiped, fully random new layout); 4E arena size grows with player count (current size = minimum); 4F UI overhaul (brand Pantone 186 C ≈ #C8102E, bold display font, snappy animations, original style; Splatoon's real UI is not copied).
   - [x] 4C: user confirmed it all works, 2026-10-23.
-  - [ ] 4D (plus the host's captures-to-win setting 3/5/7, a user request): written 2026-10-23, awaiting the user's test.
+  - [x] 4D (plus the host's captures-to-win setting 3/5/7, a user request): user confirmed `pnpm check` passed, 2026-10-23.
+  - [ ] 4E + 4F: written 2026-10-23, awaiting the user's test (`@fontsource/lilita-one` and `@fontsource/fredoka` 5.3.0, OFL, added for the user-approved bold font).
 - [ ] Phase 5: 30-bot load test
 - [ ] Phase 6: deployment
 
@@ -219,4 +220,15 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - Client: `NetSession.ensureMap()` (each frame, and before applying paint or snapshots) calls `World.loadMap(arenaFor(seed), seed)`, which rebuilds the map mesh, base zones, physics, surfaces, paint grid and atlas. It then remakes our body, clears shots and calls `Minimap.setMap`. `predictTick` reads `this.body` (no closure), because the body changes.
   - Tie-break: paint is wiped each round, so `turf0/turf1` are each team's paint points over the match (server `teamPaint`).
   - `MatchState.capturesToWin` is set by the host in the lobby (`MSG_CAPTURE_GOAL`; `CONFIG.lobby.captureGoalOptions` 3/5/7) and passed to `matchResult`.
+- Arena size (4E, user decision: today's arena is the minimum):
+  - `CONFIG.lobby.arenaSizes` (≤10 → 1×, ≤20 → 1.25×, more → 1.5×) is picked by `arenaSizeFor(players)` at Start and stored in `MatchState.arenaSize`.
+  - `composeArena(name, cover, scale)` scales the frame's width and length (floor, boundaries, spawn pad width, spawn spacing, base width) but not heights or the center platform/ramp.
+  - `randomCover(seed, scale)` scales its area and piece counts (∝ scale²) and adds a second ledge sometimes.
+  - `arenaFor(seed, size)`: Drip Yard only at size 0; bigger arenas use seed `0x5eed` ("Big Yard") for round 1. The client's `World.mapKey` is "seed:size".
+  - Dev-only: `?arena=N` on the host's link → `MatchJoinOptions.devArenaSize`, honored only when `NODE_ENV !== 'production'`.
+- UI look (4F, user decisions):
+  - Brand Pantone 186 C = `--brand #c8102e`. Fonts: Lilita One (display) + Fredoka 600/700 (body), from Fontsource, bundled.
+  - Style: paper cards with a 3 px ink outline and a hard drop shadow; titles on a red paint-splash ribbon with drips; outlined display text (`paint-order: stroke fill` + `-webkit-text-stroke`); press-down buttons; springy `--pop` easing.
+  - `Screens.show(kind, …)` replays the pop-in only when the kind of screen changes, so lobby updates don't re-animate. Reduced-motion is respected.
+  - Deliberately original: no copying of Splatoon screens, fonts or layouts.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

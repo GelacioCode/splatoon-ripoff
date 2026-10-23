@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { createRng } from '../rng';
 import { ARENA } from './arena';
-import { arenaFor, footprint, KEEP_CLEAR, newLayoutSeed, randomCover } from './generate';
+import {
+  arenaFor,
+  arenaScale,
+  arenaSizeFor,
+  footprint,
+  keepClear,
+  newLayoutSeed,
+  randomCover,
+} from './generate';
 import type { BlockDef } from './types';
 
 const SEEDS = [1, 2, 3, 42, 777, 123456, 0xdeadbeef];
+/** Every arena size step (normal, 1.25×, 1.5×). */
+const SIZES = [0, 1, 2];
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 
 function isHalfTurnOf(a: BlockDef, b: BlockDef): boolean {
@@ -25,54 +35,89 @@ describe('random layouts', () => {
     expect(randomCover(42)).not.toEqual(randomCover(43));
   });
 
-  it('play the same for both teams (every block has a 180° twin)', () => {
-    for (const seed of SEEDS) {
-      const map = arenaFor(seed);
-      for (const block of map.blocks) {
-        expect(map.blocks.some((other) => isHalfTurnOf(block, other))).toBe(true);
+  it('play the same for both teams (every block has a 180° twin), at every size', () => {
+    for (const size of SIZES) {
+      for (const seed of SEEDS) {
+        const map = arenaFor(seed, size);
+        for (const block of map.blocks) {
+          expect(map.blocks.some((other) => isHalfTurnOf(block, other))).toBe(true);
+        }
       }
     }
   });
 
   it('keep the spawn, base and center clear, and stay in their own half', () => {
-    for (const seed of SEEDS) {
-      for (const block of randomCover(seed)) {
-        const area = footprint(block);
-        expect(area.maxZ).toBeLessThan(0);
-        for (const clear of KEEP_CLEAR) {
-          const hit =
-            area.minX < clear.maxX &&
-            area.maxX > clear.minX &&
-            area.minZ < clear.maxZ &&
-            area.maxZ > clear.minZ;
-          expect(hit).toBe(false);
+    for (const size of SIZES) {
+      const scale = arenaScale(size);
+      for (const seed of SEEDS) {
+        for (const block of randomCover(seed, scale)) {
+          const area = footprint(block);
+          expect(area.maxZ).toBeLessThan(0);
+          for (const clear of keepClear(scale)) {
+            const hit =
+              area.minX < clear.maxX &&
+              area.maxX > clear.minX &&
+              area.minZ < clear.maxZ &&
+              area.maxZ > clear.minZ;
+            expect(hit).toBe(false);
+          }
         }
       }
     }
   });
 
   it('never stack pieces on top of each other', () => {
-    for (const seed of SEEDS) {
-      const cover = randomCover(seed).filter((b) => b.kind !== 'ramp');
-      cover.forEach((a, i) => {
-        for (const b of cover.slice(i + 1)) {
-          const fa = footprint(a);
-          const fb = footprint(b);
-          const touching =
-            fa.minX < fb.maxX && fa.maxX > fb.minX && fa.minZ < fb.maxZ && fa.maxZ > fb.minZ;
-          expect(touching).toBe(false);
-        }
-      });
+    for (const size of SIZES) {
+      for (const seed of SEEDS) {
+        const cover = randomCover(seed, arenaScale(size)).filter((b) => b.kind !== 'ramp');
+        cover.forEach((a, i) => {
+          for (const b of cover.slice(i + 1)) {
+            const fa = footprint(a);
+            const fb = footprint(b);
+            const touching =
+              fa.minX < fb.maxX && fa.maxX > fb.minX && fa.minZ < fb.maxZ && fa.maxZ > fb.minZ;
+            expect(touching).toBe(false);
+          }
+        });
+      }
     }
   });
 
-  it('have enough cover to fight around', () => {
-    for (const seed of SEEDS) expect(randomCover(seed).length).toBeGreaterThanOrEqual(4);
+  it('have enough cover to fight around, and more of it in bigger arenas', () => {
+    for (const seed of SEEDS) {
+      expect(randomCover(seed).length).toBeGreaterThanOrEqual(4);
+      expect(randomCover(seed, arenaScale(2)).length).toBeGreaterThan(randomCover(seed).length);
+    }
   });
 
-  it('use Drip Yard for seed 0, and new seeds are never 0', () => {
+  it('use Drip Yard for the first round at normal size, and new seeds are never 0', () => {
     expect(arenaFor(0)).toBe(ARENA);
+    expect(arenaFor(0, 2)).not.toBe(ARENA);
     const random = createRng(9);
     for (let i = 0; i < 100; i++) expect(newLayoutSeed(random)).toBeGreaterThan(0);
+  });
+});
+
+describe('arena size', () => {
+  it('grows with the player count: normal up to 10, 1.25× up to 20, 1.5× beyond', () => {
+    expect([1, 10, 11, 20, 21, 30].map(arenaSizeFor)).toEqual([0, 0, 1, 1, 2, 2]);
+    expect([0, 1, 2].map(arenaScale)).toEqual([1, 1.25, 1.5]);
+  });
+
+  it('scales width and length but not heights; spawns and bases stay on their pads', () => {
+    const normal = arenaFor(5, 0);
+    const big = arenaFor(5, 2);
+    expect(big.bounds.maxX).toBeCloseTo(normal.bounds.maxX * 1.5, 6);
+    expect(big.bounds.maxZ).toBeCloseTo(normal.bounds.maxZ * 1.5, 6);
+    expect(big.flagSpawn).toEqual(normal.flagSpawn);
+    for (const map of [normal, big]) {
+      for (const spawn of [...map.spawns[0], ...map.spawns[1]]) {
+        expect(Math.abs(spawn.x)).toBeLessThan(map.bounds.maxX);
+        expect(Math.abs(spawn.z)).toBeLessThan(map.bounds.maxZ);
+      }
+      // The base sits between the spawn pad and the middle.
+      expect(map.bases[0].center.z).toBeGreaterThan(map.spawns[0][0].z);
+      expect(map.bases[0].center.z).toBeLessThan(0);
+    }
   });
 });

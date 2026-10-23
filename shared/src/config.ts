@@ -29,6 +29,15 @@ export const CONFIG = {
     matchMinuteOptions: [3, 5, 7],
     /** Captures to win that the host can pick (the default is CONFIG.match.capturesToWin). */
     captureGoalOptions: [3, 5, 7],
+    /**
+     * Arena size by head count at Start (user decision: today's arena is the minimum). Width
+     * and length grow by `scale`; heights stay the same. Index = MatchState.arenaSize.
+     */
+    arenaSizes: [
+      { upToPlayers: 10, scale: 1 },
+      { upToPlayers: 20, scale: 1.25 },
+      { upToPlayers: Infinity, scale: 1.5 },
+    ],
     /** How long the team reveal shows before the countdown (s). */
     revealSeconds: 3,
     /** 3 · 2 · 1 before GO (s). Players stand on their spawn pads meanwhile. */
