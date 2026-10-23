@@ -65,6 +65,8 @@ export const NetPlayer = schema(
     // Not simulation state: shown in the lobby. Has a default, so a NetPlayer can still be
     // built from a plain PlayerState (fields without one must be passed in).
     name: t.string().default(''),
+    /** A bot the server plays itself ("Play with bots"), not a person. */
+    bot: t.boolean().default(false),
     // The look (see LOOK_OPTIONS): one small number per part, only resent when it changes.
     eyes: t.uint8().default(0),
     hat: t.uint8().default(0),

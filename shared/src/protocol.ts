@@ -1,7 +1,7 @@
 import type { Look } from './lobby/look';
 
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 export const DEFAULT_SERVER_PORT = 2567;
 
@@ -23,7 +23,15 @@ export interface MatchJoinOptions {
    * (see CONFIG.lobby.arenaSizes), to try big arenas without 11+ players.
    */
   devArenaSize?: number;
+  /** Creating a lobby only ("Play with bots"): start it with this many bots. */
+  bots?: number;
 }
+
+/**
+ * Host → server, in the lobby only: how many bots to have (the server plays them). Payload: a
+ * whole number; the server keeps bots + people within CONFIG.lobby.maxPlayers.
+ */
+export const MSG_SET_BOTS = 'setBots';
 
 /** Client → server, in the lobby only: a new look. Payload: a Look. */
 export const MSG_SET_LOOK = 'setLook';

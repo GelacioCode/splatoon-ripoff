@@ -10,6 +10,8 @@ export interface LobbyPlayer {
   name: string;
   host: boolean;
   me: boolean;
+  /** Played by the server ("Play with bots"). */
+  bot: boolean;
 }
 
 /** Everything the lobby screen shows; re-rendered whenever it changes. */
@@ -17,6 +19,9 @@ export interface LobbyView {
   code: string;
   players: LobbyPlayer[];
   isHost: boolean;
+  /** Bots in the lobby now, and the most there's room for (the rest of the spots are people's). */
+  bots: number;
+  maxBots: number;
   matchMinutes: number;
   /** Captures to win (3, 5 or 7). */
   capturesToWin: number;
@@ -30,6 +35,7 @@ export interface LobbyActions {
   kick: (id: string) => void;
   setMinutes: (minutes: number) => void;
   setCaptureGoal: (captures: number) => void;
+  setBots: (count: number) => void;
   editLook: () => void;
   leave: () => void;
 }
@@ -93,8 +99,11 @@ export class Screens {
     this.cleanup = cleanup;
   }
 
-  /** Start screen: create a lobby, or type a code to join one. */
-  showHome(actions: { create: () => void; joinCode: (code: string) => void }, note = ''): void {
+  /** Start screen: create a lobby (with or without bots), or type a code to join one. */
+  showHome(
+    actions: { create: () => void; playWithBots: () => void; joinCode: (code: string) => void },
+    note = '',
+  ): void {
     const codeInput = element('input', 'screen-code-input');
     codeInput.placeholder = 'CODE';
     codeInput.maxLength = LOBBY_CODE_LENGTH + 1;
@@ -123,6 +132,7 @@ export class Screens {
       'home',
       element('h1', 'logo', 'Paint Rush'),
       button('Create Lobby', 'menu-play', actions.create),
+      button('🤖 Play with bots', 'screen-button', actions.playWithBots),
       element('p', 'menu-heading', 'or join with a code'),
       joinRow,
       error,
@@ -136,6 +146,8 @@ export class Screens {
    */
   showJoin(options: {
     code: string | null;
+    /** A new lobby that starts with bots ("Play with bots"). */
+    withBots?: boolean;
     name: string;
     weapon: number;
     look: Look;
@@ -164,9 +176,14 @@ export class Screens {
 
     const customize = customizeSection(options.look, options.changeLook);
 
+    const title = options.code
+      ? `Join lobby ${options.code}`
+      : options.withBots
+        ? 'Play with bots'
+        : 'New lobby';
     this.show(
       'join',
-      element('h1', undefined, options.code ? `Join lobby ${options.code}` : 'New lobby'),
+      element('h1', undefined, title),
       label,
       element('p', 'menu-heading', 'Customize'),
       customize.section,
@@ -210,6 +227,7 @@ export class Screens {
     for (const player of view.players) {
       const row = element('li', player.me ? 'me' : undefined);
       row.append(element('span', 'screen-player-name', player.name));
+      if (player.bot) row.append(element('span', 'screen-tag screen-tag-bot', '🤖 bot'));
       if (player.host) row.append(element('span', 'screen-tag', 'host'));
       if (player.me) row.append(element('span', 'screen-tag', 'you'));
       if (view.isHost && !player.me) {
@@ -248,12 +266,12 @@ export class Screens {
       goalLabel.append(goal);
       const enough = view.players.length >= CONFIG.lobby.minPlayersToStart;
       const start = button(
-        enough ? 'Start' : `Start (needs ${CONFIG.lobby.minPlayersToStart} players)`,
+        enough ? 'Start' : `Start (needs ${CONFIG.lobby.minPlayersToStart} players, or add a bot)`,
         'menu-play',
         actions.start,
       );
       start.disabled = !enough;
-      parts.push(length, goalLabel, start);
+      parts.push(length, goalLabel, this.botStepper(view, actions), start);
     } else {
       parts.push(
         element(
@@ -268,6 +286,21 @@ export class Screens {
       button('Leave lobby', 'screen-link-button', actions.leave),
     );
     this.show('lobby', ...parts);
+  }
+
+  /** The host's "Bots: − 7 +" control (the server plays the bots). */
+  private botStepper(view: LobbyView, actions: LobbyActions): HTMLElement {
+    const row = element('div', 'screen-stepper');
+    const less = button('−', 'screen-step', () => actions.setBots(view.bots - 1));
+    less.disabled = view.bots <= 0;
+    less.setAttribute('aria-label', 'One bot fewer');
+    const more = button('+', 'screen-step', () => actions.setBots(view.bots + 1));
+    more.disabled = view.bots >= view.maxBots;
+    more.setAttribute('aria-label', 'One more bot');
+    row.append(less, element('span', 'screen-step-value', String(view.bots)), more);
+    const label = element('div', 'screen-label', 'Bots');
+    label.append(row);
+    return label;
   }
 
   /** Change your look while waiting in the lobby. Returns the box for the 3D preview. */

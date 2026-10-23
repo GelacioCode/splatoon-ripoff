@@ -9,6 +9,7 @@ import {
   cleanName,
   CONFIG,
   createFlag,
+  createRng,
   DamageLog,
   decodePaintEvents,
   defaultMatchMinutes,
@@ -37,6 +38,7 @@ import {
   MSG_PONG,
   MSG_REQUEST_LAN,
   MSG_REQUEST_PAINT,
+  MSG_SET_BOTS,
   MSG_SET_LOOK,
   MSG_SHOTS,
   MSG_SPLAT,
@@ -49,11 +51,13 @@ import {
   parsePhase,
   parseWeaponChoice,
   phaseSeconds,
+  randomLook,
   seedFromString,
   shotEventOf,
   shuffleTeams,
   smallerTeam,
   stepFlag,
+  WEAPON_KINDS,
   type Flag,
   type FlagEvent,
   type FlagPlayer,
@@ -85,10 +89,22 @@ import {
   type PlayerInput,
   type Projectile,
 } from '@paint-rush/shared/sim';
+import { createBotMind, think, type BotMind } from '../bots/botBrain';
+import { botViewOf } from '../bots/botView';
 import { TickStats } from '../perf/tickStats';
 
 /** Falling below this height puts a player back on their team's spawn pad. */
 const RESPAWN_BELOW_Y = -10;
+/** Bots only look for enemies this close (m); they shoot at 18 m. */
+const BOT_SIGHT = 22;
+/** Bots look from (and at) this height above the feet (m). */
+const BOT_EYE = 0.9;
+
+/** A server-played bot's brain: its habits, and its own dice. */
+interface Bot {
+  mind: BotMind;
+  random: () => number;
+}
 /** How often the `[perf]` line is printed (s). */
 const PERF_LOG_SECONDS = 5;
 
@@ -151,6 +167,9 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private flag: Flag = createFlag(ARENA.flagSpawn);
   /** Seconds of match time left while playing. */
   private matchTimer = 0;
+  /** Bots the room plays itself, by player id ("bot-1", …); they're in `state.players` too. */
+  private readonly bots = new Map<string, Bot>();
+  private nextBotNumber = 1;
 
   onCreate() {
     this.roomId = generateLobbyCode(Math.random, (code) => codesInUse.has(code));
@@ -201,6 +220,10 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       if (!this.isHost(client) || typeof payload !== 'string' || payload === client.sessionId) {
         return;
       }
+      if (this.bots.has(payload)) {
+        this.removeBot(payload);
+        return;
+      }
       const target = this.clients.getById(payload);
       if (!target) return;
       // Tell them why first; a normal (consented) close means their game won't try to rejoin.
@@ -222,9 +245,17 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         this.state.matchMinutes = payload;
       }
     },
+    [MSG_SET_BOTS]: (client: Client, payload: unknown) => {
+      if (this.isHost(client) && this.phase === 'lobby') this.setBotCount(payload);
+    },
   };
 
   onJoin(client: Client, options?: MatchJoinOptions) {
+    // A full lobby with bots: a bot makes room for the person.
+    if (this.state.players.size >= CONFIG.lobby.maxPlayers) {
+      const bot = [...this.bots.keys()].pop();
+      if (bot) this.removeBot(bot);
+    }
     const weapon = parseWeaponChoice(options?.weapon) ?? DEFAULT_WEAPON;
     // Joining a match that's already on: straight in, on the smaller team.
     const inArena = this.phase !== 'lobby';
@@ -245,6 +276,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         size >= 0 &&
         size < CONFIG.lobby.arenaSizes.length;
       if (valid && process.env.NODE_ENV !== 'production') this.forcedArenaSize = size;
+      // "Play with bots": the lobby opens with bots already in it.
+      if (options?.bots !== undefined) this.setBotCount(options.bots);
     }
     if (inArena) this.bodies.set(client.sessionId, this.physics.createCharacter(player));
     // Owner-only fields (timers, ink) go to this client for its own player.
@@ -263,15 +296,65 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
 
   onLeave(client: Client) {
     const id = client.sessionId;
+    this.removePlayer(id);
+    const index = this.joinOrder.indexOf(id);
+    if (index >= 0) this.joinOrder.splice(index, 1);
+    // Bots never host: the longest-waiting person takes over.
+    if (this.state.hostId === id) this.state.hostId = this.joinOrder[0] ?? '';
+    console.log(`[match] ${this.roomId}: ${id} left (${this.state.players.size} players)`);
+  }
+
+  /** Takes a player (person or bot) out of the room: body, synced state, assist history. */
+  private removePlayer(id: string): void {
     const body = this.bodies.get(id);
     if (body) this.physics.removeCharacter(body);
     this.bodies.delete(id);
     this.state.players.delete(id);
     this.damageLog.forget(id);
-    const index = this.joinOrder.indexOf(id);
-    if (index >= 0) this.joinOrder.splice(index, 1);
-    if (this.state.hostId === id) this.state.hostId = this.joinOrder[0] ?? '';
-    console.log(`[match] ${this.roomId}: ${id} left (${this.state.players.size} players)`);
+  }
+
+  /** People in the room (everyone who isn't a bot). */
+  private get humans(): number {
+    return this.state.players.size - this.bots.size;
+  }
+
+  /**
+   * The host's bot count: adds or removes bots to match it, keeping people + bots within the
+   * lobby's limit. Anything that isn't a whole number is ignored.
+   */
+  private setBotCount(payload: unknown): void {
+    if (typeof payload !== 'number' || !Number.isInteger(payload)) return;
+    const wanted = Math.max(0, Math.min(payload, CONFIG.lobby.maxPlayers - this.humans));
+    while (this.bots.size < wanted) this.addBot();
+    while (this.bots.size > wanted) {
+      const last = [...this.bots.keys()].pop();
+      if (!last) break;
+      this.removeBot(last);
+    }
+  }
+
+  /** A new bot: a random role and look, played by the room itself (see stepBot). */
+  private addBot(): void {
+    const number = this.nextBotNumber++;
+    const id = `bot-${number}`;
+    const random = createRng((Math.random() * 0xffffffff) >>> 0);
+    const inArena = this.phase !== 'lobby';
+    const team = inArena ? smallerTeam(this.teamsInArena()) : 0;
+    const weapon = Math.floor(random() * WEAPON_KINDS.length);
+    const player = new NetPlayer(
+      createPlayerState(this.spawnFor(team), spawnYaw(team), team, weapon),
+    );
+    player.name = `Bot ${number}`;
+    player.bot = true;
+    Object.assign(player, randomLook(random));
+    this.state.players.set(id, player);
+    this.bots.set(id, { mind: createBotMind(random), random });
+    if (inArena) this.bodies.set(id, this.physics.createCharacter(player));
+  }
+
+  private removeBot(id: string): void {
+    if (!this.bots.delete(id)) return;
+    this.removePlayer(id);
   }
 
   onDispose() {
@@ -500,6 +583,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.advancePhase(ctx.dt);
     const canMove = this.phase === 'playing';
     for (const [sessionId, player] of this.state.players) {
+      const bot = this.bots.get(sessionId);
+      if (bot) {
+        this.stepBot(sessionId, bot, player, canMove, ctx.dt);
+        continue;
+      }
       const inputs = this.inputs.get(sessionId);
       const body = this.bodies.get(sessionId);
       if (!body) {
@@ -558,7 +646,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     const budget = 1000 / CONFIG.net.tickRate;
     const f = (value: number) => value.toFixed(1);
     console.log(
-      `[perf] ${this.roomId}: ${this.state.players.size} players · tick ${f(summary.avg)} ms avg / ` +
+      `[perf] ${this.roomId}: ${this.state.players.size} players (${this.bots.size} bots) · tick ${f(summary.avg)} ms avg / ` +
         `${f(summary.p95)} p95 / ${f(summary.max)} max (budget ${f(budget)} ms) · ` +
         `${this.projectiles.length} shots in flight · ${this.phase}`,
     );
@@ -618,6 +706,33 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     const by = this.state.players.get(byId)?.name ?? 'someone';
     console.log(`[match] ${this.roomId}: ${by} splatted ${victim.name}`);
   }
+
+  /**
+   * One tick of a bot: it looks at the match (only enemies it has a clear line to), decides
+   * an input like a player would, and runs it through the same rules as everyone else.
+   */
+  private stepBot(id: string, bot: Bot, player: NetPlayer, canMove: boolean, dt: number): void {
+    const body = this.bodies.get(id);
+    if (!body) return;
+    if (stepLife(player, dt)) this.placeOnSpawn(player);
+    const view = botViewOf(this.state, id, this.map, this.canSee);
+    if (!view) return;
+    const input = think(view, bot.mind, dt, bot.random);
+    this.stepPlayerTick(id, player, body, canMove ? input : frozenInput(input), dt);
+  }
+
+  /** Whether a bot at `me` can see `enemy`: close enough, with no wall in between. */
+  private readonly canSee = (me: NetPlayer, enemy: NetPlayer): boolean => {
+    const from = { x: me.x, y: me.y + BOT_EYE, z: me.z };
+    const dx = enemy.x - from.x;
+    const dy = enemy.y + BOT_EYE - from.y;
+    const dz = enemy.z - from.z;
+    const distance = Math.hypot(dx, dy, dz);
+    if (distance > BOT_SIGHT) return false;
+    if (distance < 0.01) return true;
+    const direction = { x: dx / distance, y: dy / distance, z: dz / distance };
+    return this.physics.raycast(from, direction, distance) === null;
+  };
 
   /** One input's worth of the shared rules for one player: movement, then their weapon. */
   private stepPlayerTick(

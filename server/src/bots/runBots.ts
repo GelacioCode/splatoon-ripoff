@@ -24,7 +24,8 @@ import {
   type MapDef,
   type MatchJoinOptions,
 } from '@paint-rush/shared';
-import { createBotMind, think, type BotMind, type BotView } from './botBrain';
+import { createBotMind, think, type BotMind } from './botBrain';
+import { botViewOf } from './botView';
 
 /** Gap between bots joining, so the server isn't hit by 30 joins at once (ms). */
 const JOIN_GAP_MS = 120;
@@ -124,40 +125,9 @@ class Bot {
   /** One tick: look around, decide, send the input (like the game does 30 times a second). */
   tick(): void {
     const state = this.room.state;
-    const me = state.players.get(this.room.sessionId);
-    if (!me || parsePhase(state.phase) === 'lobby') return;
-    const map = this.currentMap();
-    const enemies: BotView['enemies'] = [];
-    for (const p of state.players.values()) {
-      if (p.team !== me.team && p.respawnTimer <= 0) enemies.push({ x: p.x, y: p.y, z: p.z });
-    }
-    const carrierTeam = state.players.get(state.flagCarrier)?.team;
-    const flagVisible =
-      state.flagState === 'home' || state.flagState === 'dropped' || state.flagState === 'carried';
-    const view: BotView = {
-      me: {
-        x: me.x,
-        y: me.y,
-        z: me.z,
-        team: me.team,
-        carrying: me.carrying,
-        splatted: me.respawnTimer > 0,
-      },
-      enemies,
-      flag: flagVisible
-        ? {
-            x: state.flagX,
-            y: state.flagY,
-            z: state.flagZ,
-            holder:
-              carrierTeam === undefined ? 'none' : carrierTeam === me.team ? 'mine' : 'theirs',
-          }
-        : null,
-      base: map.bases[me.team]?.center ?? map.bases[0].center,
-      enemyBase: map.bases[1 - me.team]?.center ?? map.bases[1].center,
-      halfWidth: map.bounds.maxX,
-      halfLength: map.bounds.maxZ,
-    };
+    if (parsePhase(state.phase) === 'lobby') return;
+    const view = botViewOf(state, this.room.sessionId, this.currentMap());
+    if (!view) return;
     const command = think(view, this.mind, TICK_MS / 1000, this.random);
     Object.assign(this.input.data, command);
     this.input.send();

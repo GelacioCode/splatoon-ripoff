@@ -1193,6 +1193,48 @@ select {
   font-weight: 700;
 }
 
+.screen-tag-bot {
+  background: var(--ink);
+}
+
+/* The host's "Bots: − 7 +" control. */
+.screen-stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.screen-step {
+  width: 40px;
+  height: 40px;
+  border: var(--outline);
+  border-radius: 12px;
+  background: var(--gold);
+  box-shadow: var(--drop-small);
+  color: var(--ink);
+  font: 400 24px/1 var(--font-display);
+  cursor: pointer;
+  transition:
+    translate 90ms var(--snap),
+    box-shadow 90ms var(--snap);
+}
+
+.screen-step:active:not(:disabled) {
+  translate: 0 3px;
+  box-shadow: none;
+}
+
+.screen-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.screen-step-value {
+  min-width: 2ch;
+  font: 400 24px var(--font-display);
+  text-align: center;
+}
+
 .screen-kick {
   width: 30px;
   height: 30px;

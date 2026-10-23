@@ -41,22 +41,35 @@ describe('bot steering', () => {
 });
 
 describe('bot thinking', () => {
-  it('shoots at an enemy in range, and not at one far away', () => {
+  it('shoots at an enemy in range after a short reaction, and not at one far away', () => {
     const random = createRng(1);
-    const near = think(
-      view({ enemies: [{ x: 3, y: 0, z: -15 }] }),
-      createBotMind(random),
-      DT,
-      random,
-    );
-    expect(near.fire).toBe(true);
-    const far = think(
-      view({ enemies: [{ x: 0, y: 0, z: 25 }] }),
-      createBotMind(random),
-      DT,
-      random,
-    );
-    expect(far.fire).toBe(false);
+    const near = view({ enemies: [{ x: 3, y: 0, z: -15 }] });
+    const mind = createBotMind(random);
+    // Not instantly: it takes a moment to react.
+    expect(think(near, mind, DT, random).fire).toBe(false);
+    let fired = false;
+    for (let i = 0; i < 30 && !fired; i++) fired = think(near, mind, DT, random).fire;
+    expect(fired).toBe(true);
+
+    const farMind = createBotMind(random);
+    const far = view({ enemies: [{ x: 0, y: 0, z: 25 }] });
+    for (let i = 0; i < 30; i++) expect(think(far, farMind, DT, random).fire).toBe(false);
+  });
+
+  it('aims close to the enemy, but not perfectly', () => {
+    const random = createRng(5);
+    const mind = createBotMind(random);
+    const enemy = { x: 0, y: 0, z: -30 };
+    const exact = yawToward({ x: 0, z: -20 }, enemy);
+    const errors = new Set<number>();
+    for (let i = 0; i < 90; i++) {
+      const input = think(view({ enemies: [enemy] }), mind, DT, random);
+      const error = Math.abs(input.aimYaw - exact);
+      expect(error).toBeLessThan(0.07);
+      errors.add(Math.round(error * 1e4));
+    }
+    // The wobble changes over time (it's not one fixed offset).
+    expect(errors.size).toBeGreaterThan(1);
   });
 
   it('runs the flag to the enemy base, and never swims while carrying it', () => {

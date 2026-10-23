@@ -23,6 +23,7 @@ import {
   MSG_PONG,
   MSG_REQUEST_LAN,
   MSG_REQUEST_PAINT,
+  MSG_SET_BOTS,
   MSG_SET_LOOK,
   MSG_SHOTS,
   MSG_SPLAT,
@@ -240,17 +241,25 @@ class OnlineGame {
   private showHome(note = ''): void {
     window.history.replaceState(null, '', `/${searchWithoutQuick()}`);
     this.screens.showHome(
-      { create: () => this.showJoin(null), joinCode: (code) => this.showJoin(code) },
+      {
+        create: () => this.showJoin(null),
+        playWithBots: () => this.showJoin(null, true),
+        joinCode: (code) => this.showJoin(code),
+      },
       note,
     );
   }
 
-  /** Name and role, then join the lobby `code`, or create a new one when `code` is null. */
-  private showJoin(code: string | null): void {
+  /**
+   * Name and role, then join the lobby `code`, or create a new one when `code` is null (with
+   * the default number of bots in it, for "Play with bots").
+   */
+  private showJoin(code: string | null, withBots = false): void {
     const settings = this.world.settings;
     let preview: LookPreview | null = null;
     const form = this.screens.showJoin({
       code,
+      withBots,
       name: settings.name,
       weapon: settings.weapon,
       look: settings.look,
@@ -272,7 +281,10 @@ class OnlineGame {
         const options = { name: settings.name, weapon: settings.weapon, look: settings.look };
         const joining = code
           ? joinLobby(this.serverUrl, code, options)
-          : createLobby(this.serverUrl, options);
+          : createLobby(this.serverUrl, {
+              ...options,
+              bots: withBots ? CONFIG.lobby.defaultBots : undefined,
+            });
         joining.then(
           (room) => this.enter(room),
           (error: unknown) => {
@@ -934,12 +946,15 @@ class NetSession {
       this.room.send(MSG_REQUEST_LAN);
     }
     const players: LobbyPlayer[] = [];
+    let bots = 0;
     for (const [id, player] of state.players) {
+      if (player.bot) bots++;
       players.push({
         id,
         name: player.name,
         host: id === state.hostId,
         me: id === this.room.sessionId,
+        bot: player.bot,
       });
     }
     const link = joinUrl(window.location, this.room.roomId, this.lanAddresses);
@@ -953,6 +968,9 @@ class NetSession {
         code: this.room.roomId,
         players,
         isHost,
+        bots,
+        // People keep their spots: bots fill only what's left.
+        maxBots: CONFIG.lobby.maxPlayers - (players.length - bots),
         matchMinutes: state.matchMinutes,
         capturesToWin: state.capturesToWin,
         qrSvg: isHost ? (this.qr?.svg ?? null) : null,
@@ -963,6 +981,7 @@ class NetSession {
         kick: (id) => this.room.send(MSG_KICK, id),
         setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
         setCaptureGoal: (captures) => this.room.send(MSG_CAPTURE_GOAL, captures),
+        setBots: (count) => this.room.send(MSG_SET_BOTS, count),
         editLook: () => this.openLookEditor(),
         leave: () => {
           this.leaving = true;

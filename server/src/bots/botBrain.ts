@@ -1,7 +1,8 @@
 import { createInput, type PlayerInput } from '@paint-rush/shared/sim';
 
-// Load-test bots: simple players that keep the server as busy as real ones would (moving,
-// shooting, swimming, going for the flag). Not meant to be smart or fun to play against.
+// Bots: simple players for "Play with bots" lobbies and the load test. They move, shoot,
+// swim and play the objective. They react a little late and their aim wobbles, so they can
+// be beaten.
 
 export interface Point {
   x: number;
@@ -38,14 +39,29 @@ export interface BotMind {
   swimFor: number;
   last: { x: number; z: number };
   stuckFor: number;
+  /** Seconds an enemy has been in range; it fires once this reaches `reaction`. */
+  seenFor: number;
+  reaction: number;
+  /** How far off its aim is right now (rad), and when that changes. */
+  aimError: { yaw: number; pitch: number };
+  nextAimError: number;
 }
 
 /** Enemies closer than this get shot at (m). */
 const SHOOT_RANGE = 18;
 /** Close enough to a spot to pick a new one (m). */
 const ARRIVED = 2;
+/** Delay before the first shot at an enemy that came into range (s): this, plus up to SPREAD. */
+const REACTION_SECONDS = 0.35;
+const REACTION_SPREAD = 0.35;
+/** Most the aim is off, sideways (rad, about 3.5°); half that up and down. */
+const AIM_WOBBLE = 0.06;
 
 type Random = () => number;
+
+function newReaction(random: Random): number {
+  return REACTION_SECONDS + random() * REACTION_SPREAD;
+}
 
 export function createBotMind(random: Random): BotMind {
   return {
@@ -58,6 +74,10 @@ export function createBotMind(random: Random): BotMind {
     swimFor: 0,
     last: { x: 0, z: 0 },
     stuckFor: 0,
+    seenFor: 0,
+    reaction: newReaction(random),
+    aimError: { yaw: 0, pitch: 0 },
+    nextAimError: 0,
   };
 }
 
@@ -143,12 +163,29 @@ export function think(view: BotView, mind: BotMind, dt: number, random: Random):
   const targetDistance = target ? Math.hypot(target.x - me.x, target.z - me.z) : Infinity;
   const fighting = target !== null && targetDistance < SHOOT_RANGE;
 
+  // Like a person: a moment to react to a new enemy, and an aim that's never quite exact.
+  if (fighting) mind.seenFor += dt;
+  else if (mind.seenFor > 0) {
+    mind.seenFor = 0;
+    mind.reaction = newReaction(random);
+  }
+  mind.nextAimError -= dt;
+  if (mind.nextAimError <= 0) {
+    mind.aimError = {
+      yaw: (random() * 2 - 1) * AIM_WOBBLE,
+      pitch: (random() * 2 - 1) * AIM_WOBBLE * 0.5,
+    };
+    mind.nextAimError = 0.3 + random() * 0.4;
+  }
+
   // Face the enemy while fighting (and shoot); otherwise face where we're going.
   const aimAt = fighting && target ? target : goal;
   input.aimYaw = yawToward(me, aimAt);
   if (fighting && target) {
-    input.aimPitch = Math.atan2(target.y + 0.5 - (me.y + 0.5), targetDistance);
-    input.fire = true;
+    input.aimYaw += mind.aimError.yaw;
+    input.aimPitch =
+      Math.atan2(target.y + 0.5 - (me.y + 0.5), targetDistance) + mind.aimError.pitch;
+    input.fire = mind.seenFor >= mind.reaction;
   }
 
   const move = moveInput(input.aimYaw, goal.x - me.x, goal.z - me.z);

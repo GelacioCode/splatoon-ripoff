@@ -144,6 +144,14 @@ To test gyro over https on your phone, run a temporary tunnel to the dev server:
 
 The tuning panel has sliders for movement and camera feel. **Copy tuning** copies the current values so they can be saved into `shared/src/config.ts`.
 
+## Play with bots
+
+- **🤖 Play with bots** on the start screen makes a lobby with 7 bots in it, so one person can play a full match. **Practice alone** is still the offline sandbox (no server, no match).
+- The host sets the number of bots in any lobby with **Bots − N +** (people always keep their spots: bots only fill what's left of the 30). The host can also remove one bot with its ✕.
+- A person joining a full lobby takes a bot's place.
+- Bots are played by the server itself, with the same rules as everyone. They react a moment late and their aim wobbles a little, so they can be beaten. They only shoot at enemies they can actually see (no shooting through walls).
+- Bots get a random role and look, show up in the kill feed, stats and results, and stay in the lobby for Play Again.
+
 ## Load test (bots)
 
 Simple bots fill a lobby to test how the game holds up with many players. They move, shoot nearby enemies, swim now and then, go for the flag and run it to the enemy base, and fall back to defend while the other team has it.

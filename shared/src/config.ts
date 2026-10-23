@@ -23,8 +23,13 @@ export const CONFIG = {
   lobby: {
     maxPlayers: 30,
     maxNameLength: 16,
-    /** The lobby's Start button needs this many players (the server itself accepts 1, for testing). */
+    /**
+     * The lobby's Start button needs this many players, bots included (the server itself
+     * accepts 1, for testing).
+     */
     minPlayersToStart: 2,
+    /** "Play with bots" opens a new lobby with this many bots (the host can change it there). */
+    defaultBots: 7,
     /** Match lengths the host can pick (minutes). */
     matchMinuteOptions: [3, 5, 7],
     /** Captures to win that the host can pick (the default is CONFIG.match.capturesToWin). */
