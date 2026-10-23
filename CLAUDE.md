@@ -113,14 +113,15 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - [x] Phase 3: lobby, QR join, customization, auto-balance, done 2026-10-23 (plan approved 2026-10-23, with the `uqr` dependency and a `?quick` dev shortcut; milestones 3A lobby/QR/host controls/balance/reveal/countdown, 3B customization)
   - [x] 3A: user confirmed and committed, 2026-10-23.
   - [x] 3B customization (eyes, hat, goggles, shoes, body shape; live 3D preview; saved locally) plus names over players (user request): user confirmed, 2026-10-23.
-- [ ] Phase 4: Capture the Flag (plan approved 2026-10-23: 4A health/splat/respawn, 4B flag + timer + HUD, 4C minimap + end screen + Play Again)
+- [x] Phase 4: Capture the Flag, done 2026-10-23 (plan approved 2026-10-23: 4A health/splat/respawn, 4B flag + timer + HUD, 4C minimap + end screen + Play Again)
   - [x] 4A: user confirmed everything works (including the Fold 7 touch-controls fix), 2026-10-23.
   - [x] 4B: flag, scoring, timer, win conditions, HUD (user moved on to new requests, 2026-10-23).
   - Plan revised 2026-10-23 (user requests): 4C KDA + scaling respawn + results/Play Again + minimap; 4D round reset after each capture (everyone to spawn, paint wiped, fully random new layout); 4E arena size grows with player count (current size = minimum); 4F UI overhaul (brand Pantone 186 C ≈ #C8102E, bold display font, snappy animations, original style; Splatoon's real UI is not copied).
   - [x] 4C: user confirmed it all works, 2026-10-23.
   - [x] 4D (plus the host's captures-to-win setting 3/5/7, a user request): user confirmed `pnpm check` passed, 2026-10-23.
-  - [ ] 4E + 4F: written 2026-10-23, awaiting the user's test (`@fontsource/lilita-one` and `@fontsource/fredoka` 5.3.0, OFL, added for the user-approved bold font).
-- [ ] Phase 5: 30-bot load test
+  - [x] 4E + 4F: user installed the fonts and moved on to Phase 5, 2026-10-23 (`@fontsource/lilita-one` and `@fontsource/fredoka` 5.3.0, OFL, added for the user-approved bold font).
+- [ ] Phase 5: 30-bot load test (plan approved 2026-10-23, with `@colyseus/sdk` 0.18.6 as a server devDependency; 5A bots + measurements, 5B optimize from the numbers)
+  - [ ] 5A: written 2026-10-23, awaiting the user's numbers.
 - [ ] Phase 6: deployment
 
 ## Decisions log
@@ -231,4 +232,7 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - Style: paper cards with a 3 px ink outline and a hard drop shadow; titles on a red paint-splash ribbon with drips; outlined display text (`paint-order: stroke fill` + `-webkit-text-stroke`); press-down buttons; springy `--pop` easing.
   - `Screens.show(kind, …)` replays the pop-in only when the kind of screen changes, so lobby updates don't re-animate. Reduced-motion is respected.
   - Deliberately original: no copying of Splatoon screens, fonts or layouts.
+- Load test (5A):
+  - `server/src/bots/runBots.ts` (`pnpm --filter @paint-rush/server bots -- --code X --count N` or `--create --start`) connects real SDK clients from Node. Each sends 30 Hz `NetInput` from `think()` (`botBrain.ts`, pure and tested: chasers go for the flag, carriers go home, they shoot enemies within 18 m, strafe, jump when stuck, swim now and then) and meters its `ws` bytes.
+  - The server's `TickStats` prints a `[perf]` line every 5 s (avg / p95 / max tick ms vs the 33 ms budget, shots in flight).
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

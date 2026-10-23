@@ -85,9 +85,12 @@ import {
   type PlayerInput,
   type Projectile,
 } from '@paint-rush/shared/sim';
+import { TickStats } from '../perf/tickStats';
 
 /** Falling below this height puts a player back on their team's spawn pad. */
 const RESPAWN_BELOW_Y = -10;
+/** How often the `[perf]` line is printed (s). */
+const PERF_LOG_SECONDS = 5;
 
 /** Codes of the lobbies open on this server, so a new lobby never reuses a live code. */
 const codesInUse = new Set<string>();
@@ -117,6 +120,9 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private teamPaint: [number, number] = [0, 0];
   /** Development only: an arena size the lobby's creator asked for (see devArenaSize). */
   private forcedArenaSize: number | null = null;
+  /** Tick timings for the load test's `[perf]` log line. */
+  private readonly tickStats = new TickStats();
+  private perfTimer = 0;
   /** Physics bodies of players in the arena (none while everyone waits in the lobby). */
   private readonly bodies = new Map<string, Collider>();
   /** Every shot in flight. These are the real ones: they decide where paint lands. */
@@ -489,6 +495,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
    * everyone. Before GO, players can only look around.
    */
   private step(ctx: StepContext): void {
+    const startedAt = performance.now();
     this.elapsed += ctx.dt;
     this.advancePhase(ctx.dt);
     const canMove = this.phase === 'playing';
@@ -534,6 +541,27 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       this.landedBy.length = 0;
     }
     if (this.phase === 'playing') this.stepMatch(ctx.dt);
+    this.recordTick(performance.now() - startedAt, ctx.dt);
+  }
+
+  /**
+   * Load testing: how long ticks take. Every few seconds while players are in, one line:
+   * average, 95th percentile and worst tick against the budget (one tick at 30 Hz = 33 ms).
+   */
+  private recordTick(ms: number, dt: number): void {
+    this.tickStats.record(ms);
+    this.perfTimer += dt;
+    if (this.perfTimer < PERF_LOG_SECONDS) return;
+    this.perfTimer = 0;
+    const summary = this.tickStats.take();
+    if (!summary || this.state.players.size === 0) return;
+    const budget = 1000 / CONFIG.net.tickRate;
+    const f = (value: number) => value.toFixed(1);
+    console.log(
+      `[perf] ${this.roomId}: ${this.state.players.size} players · tick ${f(summary.avg)} ms avg / ` +
+        `${f(summary.p95)} p95 / ${f(summary.max)} max (budget ${f(budget)} ms) · ` +
+        `${this.projectiles.length} shots in flight · ${this.phase}`,
+    );
   }
 
   /**

@@ -1,0 +1,82 @@
+import { describe, expect, it } from 'vitest';
+import { createRng } from '@paint-rush/shared';
+import { createBotMind, moveInput, think, yawToward, type BotView } from './botBrain';
+
+const DT = 1 / 30;
+
+function view(overrides: Partial<BotView> = {}): BotView {
+  return {
+    me: { x: 0, y: 0, z: -20, team: 0, carrying: false, splatted: false },
+    enemies: [],
+    flag: { x: 0, y: 1.5, z: 0, holder: 'none' },
+    base: { x: 0, y: 1.5, z: -24.5 },
+    halfWidth: 18,
+    halfLength: 32,
+    ...overrides,
+  };
+}
+
+/** Where a stick input walks, the way stepPlayer turns it into a world direction. */
+function walkDirection(yaw: number, moveX: number, moveY: number) {
+  const sin = Math.sin(yaw);
+  const cos = Math.cos(yaw);
+  return { x: cos * moveX - sin * moveY, z: -sin * moveX - cos * moveY };
+}
+
+describe('bot steering', () => {
+  it('faces a target (yaw 0 looks toward −Z)', () => {
+    expect(yawToward({ x: 0, z: 0 }, { x: 0, z: -5 })).toBeCloseTo(0, 9);
+    expect(Math.abs(yawToward({ x: 0, z: 0 }, { x: 0, z: 5 }))).toBeCloseTo(Math.PI, 9);
+  });
+
+  it('walks toward where it wants to go, whichever way it faces', () => {
+    for (const yaw of [0, 1, 2.5, -2]) {
+      const stick = moveInput(yaw, 3, 4);
+      const walk = walkDirection(yaw, stick.moveX, stick.moveY);
+      expect(walk.x).toBeCloseTo(0.6, 9);
+      expect(walk.z).toBeCloseTo(0.8, 9);
+    }
+  });
+});
+
+describe('bot thinking', () => {
+  it('shoots at an enemy in range, and not at one far away', () => {
+    const random = createRng(1);
+    const near = think(
+      view({ enemies: [{ x: 3, y: 0, z: -15 }] }),
+      createBotMind(random),
+      DT,
+      random,
+    );
+    expect(near.fire).toBe(true);
+    const far = think(
+      view({ enemies: [{ x: 0, y: 0, z: 25 }] }),
+      createBotMind(random),
+      DT,
+      random,
+    );
+    expect(far.fire).toBe(false);
+  });
+
+  it('heads home with the flag, and never swims while carrying it', () => {
+    const random = createRng(2);
+    const mind = createBotMind(random);
+    const v = view({ me: { x: 0, y: 1.5, z: 0, team: 0, carrying: true, splatted: false } });
+    for (let i = 0; i < 300; i++) {
+      const input = think(v, mind, DT, random);
+      expect(input.swim).toBe(false);
+      const walk = walkDirection(input.aimYaw, input.moveX - mind.strafe, input.moveY);
+      // Home is toward −Z.
+      expect(walk.z).toBeLessThan(0);
+    }
+  });
+
+  it('does nothing while splatted', () => {
+    const random = createRng(3);
+    const v = view({ me: { x: 0, y: 0, z: -20, team: 0, carrying: false, splatted: true } });
+    const input = think(v, createBotMind(random), DT, random);
+    expect(input.moveX).toBe(0);
+    expect(input.moveY).toBe(0);
+    expect(input.fire).toBe(false);
+  });
+});

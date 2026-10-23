@@ -134,6 +134,22 @@ To test gyro over https on your phone, run a temporary tunnel to the dev server:
 
 The tuning panel has sliders for movement and camera feel. **Copy tuning** copies the current values so they can be saved into `shared/src/config.ts`.
 
+## Load test (bots)
+
+Simple bots fill a lobby to test how the game holds up with many players. They move, shoot nearby enemies, swim now and then, go for the flag and bring it home.
+
+```bash
+# with pnpm dev running: 29 bots join the lobby your browser shows (use its real code)
+pnpm --filter @paint-rush/server bots -- --code K7QX --count 29
+# or: bots make their own lobby and start it straight away (join late from the browser)
+pnpm --filter @paint-rush/server bots -- --create --start --count 30
+```
+
+- **Server timing:** while players are in, the `pnpm dev` terminal prints a line every 5 s:
+  `[perf] K7QX: 30 players · tick 2.1 ms avg / 3.4 p95 / 7.9 max (budget 33.3 ms)`. A tick must stay well under the budget, or the game slows down.
+- **Data use:** the bots' terminal prints every 5 s how much data each bot receives and sends (KB/s).
+- **Stopping:** Ctrl+C in the bots' terminal makes them all leave.
+
 ## Scripts (run from the repo root)
 
 | Command | What it does |
