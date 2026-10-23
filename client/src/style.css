@@ -1281,6 +1281,61 @@ select {
   background: var(--ink);
 }
 
+/* The host's team color pairs: two swatches and a name per pair. */
+.screen-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.screen-color-pair {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 6px 8px;
+  border: var(--outline);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--drop-small);
+  color: var(--ink);
+  font: 700 14px var(--font-body);
+  cursor: pointer;
+  transition:
+    translate 90ms var(--snap),
+    box-shadow 90ms var(--snap),
+    scale 150ms var(--pop);
+}
+
+.screen-color-pair:hover:not(:disabled) {
+  scale: 1.03;
+}
+
+.screen-color-pair:active:not(:disabled) {
+  translate: 0 3px;
+  box-shadow: none;
+}
+
+.screen-color-pair.chosen {
+  background: var(--gold);
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.screen-color-pair:disabled {
+  cursor: default;
+}
+
+.screen-swatch {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+
+.screen-color-name {
+  margin-left: 4px;
+}
+
 /* The host's "Bots: − 7 +" control. */
 .screen-stepper {
   display: flex;

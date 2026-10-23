@@ -1,5 +1,5 @@
 import { highlights, playerScore, type HighlightKind, type PlayerStats } from '@paint-rush/shared';
-import { TEAM_COLORS } from '../render/palette';
+import { TEAM_COLORS, teamName } from '../render/palette';
 
 /** One player's line in the stats table. */
 export interface StatsRow extends PlayerStats {
@@ -45,7 +45,7 @@ export function createStatsTable(rows: readonly StatsRow[], badges: boolean): HT
     table.style.setProperty('--team', cssColor(TEAM_COLORS[team]));
     const head = document.createElement('tr');
     head.append(
-      cell('th', team === 0 ? 'Pink' : 'Cyan', 'stats-name'),
+      cell('th', teamName(team), 'stats-name'),
       cell('th', 'K'),
       cell('th', 'D'),
       cell('th', 'A'),

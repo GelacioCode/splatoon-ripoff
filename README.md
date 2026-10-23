@@ -61,6 +61,10 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
   - **Data:** KB/s down and up. Only shown in `pnpm dev`, or with `?debug` in the link.
 - `?debug` also opens the Colyseus netcode panel, which has a latency simulator for testing lag.
 
+## Team colours
+
+The host picks the two teams' colours in the lobby: **Pink vs Cyan** (the default) or **Red vs Violet** (CGI's brand colours). Everyone's lobby shows the choice straight away, and in the match the blobs, paint, shots, bases, hill, minimap, HUD and team names ("Red team wins!") all follow it. Very dark colours are brightened a little for names and text, so they stay readable.
+
 ## Game modes
 
 The host picks one in the lobby:

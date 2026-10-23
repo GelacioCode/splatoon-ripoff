@@ -1,5 +1,5 @@
 import type { Objective } from '../game/objective';
-import { TEAM_COLORS } from '../render/palette';
+import { TEAM_COLORS, teamPaletteVersion, textOnTeam } from '../render/palette';
 import { HillBar } from './hillBar';
 import { OrderLine } from './orders';
 
@@ -24,6 +24,7 @@ export class Scoreboard {
   private readonly order = new OrderLine();
   private readonly hillBar = new HillBar();
   private shown = '';
+  private paletteVersion = -1;
 
   constructor() {
     this.root.className = 'scoreboard';
@@ -31,10 +32,10 @@ export class Scoreboard {
     const row = document.createElement('div');
     row.className = 'scoreboard-row';
     this.scores = [document.createElement('span'), document.createElement('span')];
-    this.scores.forEach((score, team) => {
+    this.scores.forEach((score) => {
       score.className = 'scoreboard-score';
-      score.style.background = cssColor(TEAM_COLORS[team]);
     });
+    this.applyTeamColors();
     this.timer.className = 'scoreboard-timer';
     row.append(this.scores[0], this.timer, this.scores[1]);
     this.root.append(row, this.hillBar.root, this.order.root);
@@ -52,6 +53,7 @@ export class Scoreboard {
 
   /** `goal`: stages to win, shown under the clock. */
   update(score0: number, score1: number, secondsLeft: number, goal: number): void {
+    if (this.paletteVersion !== teamPaletteVersion()) this.applyTeamColors();
     const key = `${score0}|${score1}|${secondsLeft}|${goal}`;
     if (key === this.shown) return;
     // A score that just went up gets a little bounce.
@@ -75,6 +77,15 @@ export class Scoreboard {
   /** Your order right now, or null for none. */
   setOrder(objective: Objective | null): void {
     this.order.update(objective);
+  }
+
+  /** The score boxes in the current team colors, with ink or white numbers to match. */
+  private applyTeamColors(): void {
+    this.paletteVersion = teamPaletteVersion();
+    this.scores.forEach((score, team) => {
+      score.style.background = cssColor(TEAM_COLORS[team]);
+      score.style.color = textOnTeam(team);
+    });
   }
 
   dispose(): void {

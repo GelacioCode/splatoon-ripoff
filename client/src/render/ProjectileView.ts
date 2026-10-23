@@ -27,7 +27,7 @@ export class ProjectileView {
   private readonly rotation = new Quaternion();
   private readonly scale = new Vector3();
 
-  constructor(teamColors: number[]) {
+  constructor(teamColors: readonly number[]) {
     this.teamColors = teamColors.map((hex) => new Color(hex));
     this.mesh = new InstancedMesh(
       new SphereGeometry(0.11, 10, 8),
@@ -36,6 +36,11 @@ export class ProjectileView {
     );
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
+  }
+
+  /** New team colors (the lobby's color pair changed). */
+  setTeamColors(teamColors: readonly number[]): void {
+    teamColors.forEach((hex, team) => this.teamColors[team]?.setHex(hex));
   }
 
   /** `alpha` blends between each shot's previous and current tick position (0–1). */

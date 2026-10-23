@@ -13,6 +13,7 @@ import {
   Vector3,
   WebGLRenderer,
   type Material,
+  type ShaderMaterial,
 } from 'three';
 import {
   ARENA,
@@ -120,6 +121,8 @@ export class World {
   /** The base zones' meshes (also in mapObjects), and whether they're shown. */
   private baseZones: Mesh[] = [];
   private basesVisible = true;
+  /** The arena's paint shader (its team color uniforms change with the color pair). */
+  private mapMaterial: ShaderMaterial | null = null;
   private readonly paintTextureSize: number;
   readonly view = new ThirdPersonCamera(window.innerWidth / window.innerHeight);
   readonly input: InputManager;
@@ -304,9 +307,25 @@ export class World {
   /** The arena mesh and the base zones of the current map. */
   private addMapObjects(): void {
     const mesh = createMapMesh(this.map, this.surfaces, this.atlas);
+    this.mapMaterial = mesh.material as ShaderMaterial;
     this.scene.add(mesh);
     this.mapObjects.push(mesh);
     this.addBaseZones();
+  }
+
+  /**
+   * Recolors what was built in the old team colors (the lobby's color pair changed): the
+   * paint on the map, the bases and the shots. Paint is stored by team number, so it all
+   * changes color at once.
+   */
+  applyTeamColors(): void {
+    const uniforms = this.mapMaterial?.uniforms;
+    (uniforms?.uTeamColor0?.value as Color | undefined)?.setHex(TEAM_COLORS[0]);
+    (uniforms?.uTeamColor1?.value as Color | undefined)?.setHex(TEAM_COLORS[1]);
+    for (const zone of this.baseZones) {
+      (zone.material as MeshBasicMaterial).color.setHex(TEAM_COLORS[zone.userData.team as number]);
+    }
+    this.projectileView.setTeamColors(TEAM_COLORS);
   }
 
   /** Each team's base (where the flag is brought to score): a glowing box in its color. */
@@ -332,6 +351,8 @@ export class World {
       floor.position.set(zone.center.x, zone.center.y - zone.size.y / 2 + 0.03, zone.center.z);
       volume.visible = this.basesVisible;
       floor.visible = this.basesVisible;
+      volume.userData.team = team;
+      floor.userData.team = team;
       this.scene.add(volume, floor);
       this.mapObjects.push(volume, floor);
       this.baseZones.push(volume, floor);

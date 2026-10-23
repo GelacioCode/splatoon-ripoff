@@ -3,6 +3,7 @@ export * from './lobby/lobbyCode';
 export * from './lobby/look';
 export * from './lobby/names';
 export * from './lobby/phases';
+export * from './lobby/teamColors';
 export * from './lobby/teams';
 export * from './maps/arena';
 export * from './maps/generate';

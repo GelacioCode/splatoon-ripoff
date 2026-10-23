@@ -5,11 +5,12 @@ import {
   LOBBY_CODE_LENGTH,
   parseLobbyCode,
   STAGE_MODE_NAMES,
+  TEAM_PALETTES,
   type GameMode,
   type Look,
   type StageMode,
 } from '@paint-rush/shared';
-import { TEAM_COLORS } from '../render/palette';
+import { TEAM_COLORS, teamName, teamTextColor } from '../render/palette';
 import { createLookPicker } from './lookPicker';
 import { createRoleCards } from './roleCards';
 import { createStatsTable, type StatsRow } from './statsTable';
@@ -36,6 +37,8 @@ export interface LobbyView {
   /** Stages (rounds) to win (3, 5 or 7). */
   capturesToWin: number;
   gameMode: GameMode;
+  /** The team color pair (index in TEAM_PALETTES). */
+  teamColors: number;
   /** SVG markup of the join QR code (host only), or null while it's being made. */
   qrSvg: string | null;
   joinLink: string;
@@ -47,6 +50,7 @@ export interface LobbyActions {
   setMinutes: (minutes: number) => void;
   setCaptureGoal: (captures: number) => void;
   setGameMode: (mode: GameMode) => void;
+  setTeamColors: (index: number) => void;
   setBots: (count: number) => void;
   editLook: () => void;
   leave: () => void;
@@ -293,9 +297,17 @@ export class Screens {
         actions.start,
       );
       start.disabled = !enough;
-      parts.push(modeLabel, length, goalLabel, this.botStepper(view, actions), start);
+      parts.push(
+        modeLabel,
+        this.colorPicker(view, actions),
+        length,
+        goalLabel,
+        this.botStepper(view, actions),
+        start,
+      );
     } else {
       parts.push(
+        this.colorPicker(view, null),
         element(
           'p',
           'screen-waiting',
@@ -309,6 +321,33 @@ export class Screens {
       button('Leave lobby', 'screen-link-button', actions.leave),
     );
     this.show('lobby', ...parts);
+  }
+
+  /**
+   * The team colors: one button per pair (two swatches and the names) for the host, or just
+   * the chosen pair for everyone else (`actions` null).
+   */
+  private colorPicker(view: LobbyView, actions: LobbyActions | null): HTMLElement {
+    const row = element('div', 'screen-colors');
+    TEAM_PALETTES.forEach((palette, index) => {
+      const chosen = index === view.teamColors;
+      if (!actions && !chosen) return;
+      const pick = button('', `screen-color-pair${chosen ? ' chosen' : ''}`, () =>
+        actions?.setTeamColors(index),
+      );
+      pick.disabled = !actions;
+      pick.setAttribute('aria-pressed', String(chosen));
+      for (const team of palette.teams) {
+        const swatch = element('span', 'screen-swatch');
+        swatch.style.background = cssColor(team.color);
+        pick.append(swatch);
+      }
+      pick.append(element('span', 'screen-color-name', palette.name));
+      row.append(pick);
+    });
+    const label = element('div', 'screen-label', 'Team colors');
+    label.append(row);
+    return label;
   }
 
   /** The host's "Bots: − 7 +" control (the server plays the bots). */
@@ -353,10 +392,9 @@ export class Screens {
     playAgain: () => void;
     leave: () => void;
   }): void {
-    const title =
-      view.winner < 0 ? "It's a draw!" : `${view.winner === 0 ? 'Pink' : 'Cyan'} team wins!`;
+    const title = view.winner < 0 ? "It's a draw!" : `${teamName(view.winner)} team wins!`;
     const heading = element('h1', 'results-title', title);
-    if (view.winner >= 0) heading.style.color = cssColor(TEAM_COLORS[view.winner]);
+    if (view.winner >= 0) heading.style.color = cssColor(teamTextColor(view.winner));
     const summary = element(
       'p',
       'results-summary',
@@ -435,7 +473,7 @@ export class MatchBanner {
     teams.forEach((names, team) => {
       const column = element('div', 'banner-team');
       column.style.setProperty('--team', cssColor(TEAM_COLORS[team]));
-      column.append(element('h2', undefined, team === 0 ? 'Pink team' : 'Cyan team'));
+      column.append(element('h2', undefined, `${teamName(team)} team`));
       const list = element('ul');
       for (const name of names) list.append(element('li', undefined, name));
       column.append(list);
@@ -467,9 +505,9 @@ export class MatchBanner {
   ): void {
     const key = `end|${winner}|${reason}|${scores.join()}|${turf.join()}`;
     if (!this.update(key)) return;
-    const title = winner < 0 ? "It's a draw!" : `${winner === 0 ? 'Pink' : 'Cyan'} team wins!`;
+    const title = winner < 0 ? "It's a draw!" : `${teamName(winner)} team wins!`;
     const big = element('p', 'banner-big banner-end', title);
-    if (winner >= 0) big.style.color = cssColor(TEAM_COLORS[winner]);
+    if (winner >= 0) big.style.color = cssColor(teamTextColor(winner));
     const how =
       reason === 'captures'
         ? `${scores[0]} – ${scores[1]} · first to ${goal} rounds`
@@ -482,10 +520,10 @@ export class MatchBanner {
   /** After a stage is won (a capture, or the hill): who won it, and that a new arena is coming. */
   showScored(team: number, scores: [number, number], goal: number, mode: StageMode): void {
     if (!this.update(`scored|${team}|${scores.join()}|${mode}`)) return;
-    const name = team === 0 ? 'Pink' : 'Cyan';
+    const name = teamName(team);
     const title = mode === 'koth' ? `${name} takes the hill!` : `${name} scores!`;
     const big = element('p', 'banner-big banner-end', title);
-    big.style.color = cssColor(TEAM_COLORS[team] ?? TEAM_COLORS[0]);
+    big.style.color = cssColor(teamTextColor(team));
     this.root.replaceChildren(
       big,
       element('p', 'banner-sub', `${scores[0]} – ${scores[1]} · first to ${goal} · new arena!`),

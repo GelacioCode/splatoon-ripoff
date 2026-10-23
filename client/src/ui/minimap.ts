@@ -1,5 +1,5 @@
 import type { MapDef, PaintGrid, Surface } from '@paint-rush/shared';
-import { TEAM_COLORS } from '../render/palette';
+import { TEAM_COLORS, teamPaletteVersion } from '../render/palette';
 
 /** Drawing scale of the minimap canvas (pixels per meter). Paint uses one pixel per cell. */
 const PIXELS_PER_METER = 6;
@@ -70,6 +70,7 @@ export class Minimap {
   private team = 0;
   private visible = false;
   private expanded = false;
+  private paletteVersion = teamPaletteVersion();
 
   constructor(map: MapDef, surfaces: Surface[], paint: PaintGrid) {
     const ctx = this.canvas.getContext('2d');
@@ -162,6 +163,12 @@ export class Minimap {
   /** Call every frame while visible. */
   draw(frame: MinimapFrame, timeMs: number): void {
     if (!this.visible) return;
+    // New team colors: the bases and the paint in them.
+    if (this.paletteVersion !== teamPaletteVersion()) {
+      this.paletteVersion = teamPaletteVersion();
+      this.drawLayout();
+      this.refreshPaint(true);
+    }
     const ctx = this.ctx;
     const { width, height } = this.canvas;
     ctx.clearRect(0, 0, width, height);

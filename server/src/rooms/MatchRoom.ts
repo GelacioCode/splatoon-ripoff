@@ -23,6 +23,7 @@ import {
   inputsToRun,
   isCaptureGoal,
   isGameMode,
+  isTeamPalette,
   isMatchLength,
   matchResult,
   MatchState,
@@ -47,6 +48,7 @@ import {
   MSG_SHOTS,
   MSG_SPLAT,
   MSG_START,
+  MSG_TEAM_COLORS,
   NetInput,
   NetPlayer,
   nextPhase,
@@ -262,6 +264,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     [MSG_MATCH_LENGTH]: (client: Client, payload: unknown) => {
       if (this.isHost(client) && this.phase === 'lobby' && isMatchLength(payload)) {
         this.state.matchMinutes = payload;
+      }
+    },
+    [MSG_TEAM_COLORS]: (client: Client, payload: unknown) => {
+      if (this.isHost(client) && this.phase === 'lobby' && isTeamPalette(payload)) {
+        this.state.teamColors = payload;
       }
     },
     [MSG_GAME_MODE]: (client: Client, payload: unknown) => {

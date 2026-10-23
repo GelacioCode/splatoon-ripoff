@@ -1,4 +1,4 @@
-import { TEAM_COLORS } from '../render/palette';
+import { teamTextColor } from '../render/palette';
 
 /** How long an entry stays (ms), and how many show at once. */
 const ENTRY_MS = 5000;
@@ -12,7 +12,7 @@ function name(text: string, team: number): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = 'feed-name';
   span.textContent = text;
-  span.style.color = cssColor(TEAM_COLORS[team] ?? TEAM_COLORS[0]);
+  span.style.color = cssColor(teamTextColor(team));
   return span;
 }
 

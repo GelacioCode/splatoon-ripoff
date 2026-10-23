@@ -1,7 +1,7 @@
 import type { Look } from './lobby/look';
 
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 export const DEFAULT_SERVER_PORT = 2567;
 
@@ -79,6 +79,9 @@ export const MSG_CAPTURE_GOAL = 'captureGoal';
 
 /** Host → server, in the lobby only: the game mode. Payload: a GameMode. */
 export const MSG_GAME_MODE = 'gameMode';
+
+/** Host → server, in the lobby only: the team color pair. Payload: an index in TEAM_PALETTES. */
+export const MSG_TEAM_COLORS = 'teamColors';
 
 /** Host → server: match length. Payload: minutes, one of CONFIG.lobby.matchMinuteOptions. */
 export const MSG_MATCH_LENGTH = 'matchLength';

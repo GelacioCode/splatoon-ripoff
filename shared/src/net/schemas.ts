@@ -117,6 +117,8 @@ export const MatchState = schema(
     turf1: t.uint32().default(0),
     /** Stages (rounds) to win, set by the host in the lobby (3, 5 or 7). */
     capturesToWin: t.uint8().default(3),
+    /** The host's team color pair: an index into TEAM_PALETTES. */
+    teamColors: t.uint8().default(0),
     /** The host's GameMode ('ctf', 'koth' or 'random'); read it with parseGameMode. */
     gameMode: t.string().default('ctf'),
     /** What this stage is played as: a StageMode ('ctf' or 'koth'); read it with parseStageMode. */

@@ -30,6 +30,7 @@ import {
   MSG_SHOTS,
   MSG_SPLAT,
   MSG_START,
+  MSG_TEAM_COLORS,
   NetInput,
   parseFlagState,
   parseGameMode,
@@ -68,7 +69,7 @@ import { FlagView } from '../render/FlagView';
 import { HillView } from '../render/HillView';
 import { LookPreview } from '../render/LookPreview';
 import { ObjectiveArrow } from '../render/ObjectiveArrow';
-import { TEAM_COLORS } from '../render/palette';
+import { setTeamPalette, TEAM_COLORS, teamName, teamTextColor } from '../render/palette';
 import { saveSettings } from '../settings';
 import { Announcer } from '../ui/announcer';
 import type { DevOverlay } from '../ui/devOverlay';
@@ -548,6 +549,8 @@ class NetSession {
     this.world.scene.remove(this.hillView.root);
     this.hillView.dispose();
     this.world.setBasesVisible(true);
+    // Back to the usual colors behind the start screen.
+    if (setTeamPalette(0)) this.world.applyTeamColors();
     this.world.scene.remove(this.arrow.root);
     this.arrow.dispose();
     this.scoreboard.dispose();
@@ -559,6 +562,8 @@ class NetSession {
   frame(timeMs: number): void {
     const world = this.world;
     this.ensureMap();
+    // The host's color pair: everything follows as soon as it changes (in the lobby).
+    if (setTeamPalette(this.room.state.teamColors)) this.applyTeamColors();
     const phase = parsePhase(this.room.state.phase);
     this.updateScreens(phase);
     const me = this.me;
@@ -637,9 +642,8 @@ class NetSession {
       if (remote.player.team !== remote.team) {
         // A new match with new teams: recolor them and their name tag.
         remote.team = remote.player.team;
-        const color = TEAM_COLORS[remote.team] ?? TEAM_COLORS[0];
-        remote.character.setColor(color);
-        remote.character.setName(remote.player.name, color);
+        remote.character.setColor(TEAM_COLORS[remote.team] ?? TEAM_COLORS[0]);
+        remote.character.setName(remote.player.name, teamTextColor(remote.team));
       }
       // Hidden while splatted, and a moment longer so the jump back to spawn isn't seen.
       const splatted = remote.player.respawnTimer > 0;
@@ -668,6 +672,16 @@ class NetSession {
     if (phase === 'ended') this.maybeShowResults();
     world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, this.shots, this.shotLoop.alpha);
     this.updateStatus(dt);
+  }
+
+  /**
+   * The lobby's color pair changed: recolor the arena's paint, bases and shots, and every
+   * blob and name tag (by forgetting which team each was drawn in). The HUD follows by itself.
+   */
+  private applyTeamColors(): void {
+    this.world.applyTeamColors();
+    this.myTeam = -1;
+    for (const remote of this.remotes.values()) remote.team = -1;
   }
 
   /** For drawn shots: stops one at the first enemy it touches, with a little splash. */
@@ -984,21 +998,21 @@ class NetSession {
     const name =
       (typeof event.by === 'string' && this.room.state.players.get(event.by)?.name) || 'Someone';
     const team = typeof event.team === 'number' ? event.team : -1;
-    const color = cssColor(TEAM_COLORS[team] ?? 0xffffff);
-    const teamName = team === 0 ? 'Pink' : 'Cyan';
+    const color = cssColor(team === 0 || team === 1 ? teamTextColor(team) : 0xffffff);
+    const side = teamName(team);
     if (event.kind === 'taken') {
       this.announcer.show(`${name} took the flag!`, color);
       this.world.sfx.fanfare(0.5);
     } else if (event.kind === 'captured') {
       if (team === 0 || team === 1) this.lastScoringTeam = team;
-      this.announcer.show(`${name} scored for ${teamName}!`, color);
+      this.announcer.show(`${name} scored for ${side}!`, color);
       this.world.sfx.fanfare(1);
     } else if (event.kind === 'hillHeld') {
-      this.announcer.show(`${teamName} has the hill!`, color);
+      this.announcer.show(`${side} has the hill!`, color);
       this.world.sfx.fanfare(0.5);
     } else if (event.kind === 'hillWon') {
       if (team === 0 || team === 1) this.lastScoringTeam = team;
-      this.announcer.show(`${teamName} took the hill!`, color);
+      this.announcer.show(`${side} took the hill!`, color);
       this.world.sfx.fanfare(1);
     } else if (event.kind === 'dropped') {
       this.announcer.show(`${name} dropped the flag!`, color);
@@ -1041,6 +1055,7 @@ class NetSession {
       state.matchMinutes,
       state.capturesToWin,
       gameMode,
+      state.teamColors,
       link,
     ]);
     if (key === this.lobbyKey) return;
@@ -1056,6 +1071,7 @@ class NetSession {
         matchMinutes: state.matchMinutes,
         capturesToWin: state.capturesToWin,
         gameMode,
+        teamColors: state.teamColors,
         qrSvg: isHost ? (this.qr?.svg ?? null) : null,
         joinLink: link,
       },
@@ -1065,6 +1081,7 @@ class NetSession {
         setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
         setCaptureGoal: (captures) => this.room.send(MSG_CAPTURE_GOAL, captures),
         setGameMode: (mode) => this.room.send(MSG_GAME_MODE, mode),
+        setTeamColors: (index) => this.room.send(MSG_TEAM_COLORS, index),
         setBots: (count) => this.room.send(MSG_SET_BOTS, count),
         editLook: () => this.openLookEditor(),
         leave: () => {
@@ -1231,7 +1248,7 @@ class NetSession {
     if (sessionId !== this.room.sessionId) {
       const character = world.createCharacter(player.team, player.weapon, parseLook(player));
       // Other players get their name overhead, in their team's color.
-      character.setName(player.name, TEAM_COLORS[player.team] ?? TEAM_COLORS[0]);
+      character.setName(player.name, teamTextColor(player.team));
       this.remotes.set(sessionId, { player, character, hiddenUntil: 0, team: player.team });
       return;
     }
