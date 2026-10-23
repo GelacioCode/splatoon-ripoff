@@ -154,6 +154,7 @@ class Bot {
           }
         : null,
       base: map.bases[me.team]?.center ?? map.bases[0].center,
+      enemyBase: map.bases[1 - me.team]?.center ?? map.bases[1].center,
       halfWidth: map.bounds.maxX,
       halfLength: map.bounds.maxZ,
     };

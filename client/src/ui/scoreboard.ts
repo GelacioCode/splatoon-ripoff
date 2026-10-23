@@ -1,4 +1,6 @@
+import type { Objective } from '../game/objective';
 import { TEAM_COLORS } from '../render/palette';
+import { OrderLine } from './orders';
 
 function cssColor(hex: number): string {
   return `#${hex.toString(16).padStart(6, '0')}`;
@@ -11,14 +13,14 @@ function clock(seconds: number): string {
 }
 
 /**
- * Top-center match info: pink captures · time left · cyan captures, with a line under it
- * saying what to do right now ("Grab the flag in the middle!").
+ * Top-center match info: pink captures · time left · cyan captures, with your order under it
+ * ("ATTACK! Escort your carrier to the enemy base").
  */
 export class Scoreboard {
   private readonly root = document.createElement('div');
   private readonly scores: [HTMLSpanElement, HTMLSpanElement];
   private readonly timer = document.createElement('span');
-  private readonly objective = document.createElement('div');
+  private readonly order = new OrderLine();
   private shown = '';
 
   constructor() {
@@ -32,9 +34,8 @@ export class Scoreboard {
       score.style.background = cssColor(TEAM_COLORS[team]);
     });
     this.timer.className = 'scoreboard-timer';
-    this.objective.className = 'scoreboard-objective';
     row.append(this.scores[0], this.timer, this.scores[1]);
-    this.root.append(row, this.objective);
+    this.root.append(row, this.order.root);
     document.body.append(this.root);
   }
 
@@ -43,14 +44,8 @@ export class Scoreboard {
   }
 
   /** `goal`: captures to win, shown under the clock. */
-  update(
-    score0: number,
-    score1: number,
-    secondsLeft: number,
-    objective: string,
-    goal: number,
-  ): void {
-    const key = `${score0}|${score1}|${secondsLeft}|${objective}|${goal}`;
+  update(score0: number, score1: number, secondsLeft: number, goal: number): void {
+    const key = `${score0}|${score1}|${secondsLeft}|${goal}`;
     if (key === this.shown) return;
     // A score that just went up gets a little bounce.
     const before = [this.scores[0].textContent, this.scores[1].textContent];
@@ -68,8 +63,11 @@ export class Scoreboard {
     this.timer.dataset.goal = `first to ${goal}`;
     // The last 30 seconds tick in red.
     this.timer.classList.toggle('urgent', secondsLeft <= 30);
-    this.objective.textContent = objective;
-    this.objective.hidden = objective === '';
+  }
+
+  /** Your order right now, or null for none. */
+  setOrder(objective: Objective | null): void {
+    this.order.update(objective);
   }
 
   dispose(): void {

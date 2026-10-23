@@ -63,17 +63,27 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 
 ## Capture the Flag
 
-- One neutral flag starts on the raised platform in the middle, with a light beam above it. An arrow at the screen edge points to it when it's off screen.
+- One neutral flag starts on the raised platform in the middle, with a light beam above it.
 - **Take it** by touching it while standing (not as a puddle). It rides on your back in your team colour.
 - **Carrier rules:** you can't swim and you move at 80 % speed, so your team has to escort you and paint a path.
-- **Score** by carrying it into **your own base**, the glowing area in your colour in front of your spawn. The flag reappears in the middle 3 seconds later.
+- **Score** by carrying it into **the enemy base**, the glowing area in their colour in front of their spawn. The flag reappears in the middle 3 seconds later.
+- **Your objective** is a bobbing yellow arrow over your head, plus an order under the scoreboard:
+
+  | Situation | Arrow points to | Order |
+  | --- | --- | --- |
+  | The flag is free (in the middle or dropped) | the flag | 🏁 GET THE FLAG! |
+  | You carry it | the enemy base | 🏁 SCORE! |
+  | A teammate carries it | the enemy base | ⚔ ATTACK! (escort them) |
+  | An enemy carries it | your own base | 🛡 DEFEND YOUR SPAWN! |
+
+  The arrow shrinks away while you aim, so it never covers your target.
 - **Splatted carrier:** the flag drops on the spot, and anyone can take it. Left untouched for 15 s, it goes back to the middle.
 - **A fresh round after every capture** (that doesn't win):
   - "Pink scores!" shows, then everyone goes back to their spawn, the paint is wiped, and the arena gets a **brand-new random layout**, followed by 3 · 2 · 1 · GO.
   - The first round is always the hand-made Drip Yard.
   - The match clock pauses between rounds.
 - **Winning:** the first team to reach the host's goal (**3, 5 or 7 captures**, set in the lobby) wins. When the host's match time runs out, the team with more captures wins; on a tie, the team that painted more over the whole match wins. An exact tie is a draw.
-- The scoreboard at top centre shows captures, time left, and what to do right now.
+- The scoreboard at top centre shows captures, time left, and your order.
 
 ## Stats, minimap and results
 
@@ -136,7 +146,7 @@ The tuning panel has sliders for movement and camera feel. **Copy tuning** copie
 
 ## Load test (bots)
 
-Simple bots fill a lobby to test how the game holds up with many players. They move, shoot nearby enemies, swim now and then, go for the flag and bring it home.
+Simple bots fill a lobby to test how the game holds up with many players. They move, shoot nearby enemies, swim now and then, go for the flag and run it to the enemy base, and fall back to defend while the other team has it.
 
 ```bash
 # with pnpm dev running: 29 bots join the lobby your browser shows (use its real code)

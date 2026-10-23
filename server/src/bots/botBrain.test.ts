@@ -10,6 +10,7 @@ function view(overrides: Partial<BotView> = {}): BotView {
     enemies: [],
     flag: { x: 0, y: 1.5, z: 0, holder: 'none' },
     base: { x: 0, y: 1.5, z: -24.5 },
+    enemyBase: { x: 0, y: 1.5, z: 24.5 },
     halfWidth: 18,
     halfLength: 32,
     ...overrides,
@@ -58,7 +59,7 @@ describe('bot thinking', () => {
     expect(far.fire).toBe(false);
   });
 
-  it('heads home with the flag, and never swims while carrying it', () => {
+  it('runs the flag to the enemy base, and never swims while carrying it', () => {
     const random = createRng(2);
     const mind = createBotMind(random);
     const v = view({ me: { x: 0, y: 1.5, z: 0, team: 0, carrying: true, splatted: false } });
@@ -66,7 +67,22 @@ describe('bot thinking', () => {
       const input = think(v, mind, DT, random);
       expect(input.swim).toBe(false);
       const walk = walkDirection(input.aimYaw, input.moveX - mind.strafe, input.moveY);
-      // Home is toward −Z.
+      // The enemy base is toward +Z.
+      expect(walk.z).toBeGreaterThan(0);
+    }
+  });
+
+  it('falls back to defend its own base while an enemy has the flag', () => {
+    const random = createRng(4);
+    const mind = { ...createBotMind(random), chaser: false };
+    const v = view({
+      me: { x: 0, y: 0, z: 0, team: 0, carrying: false, splatted: false },
+      flag: { x: 5, y: 0, z: 10, holder: 'theirs' },
+    });
+    for (let i = 0; i < 100; i++) {
+      const input = think(v, mind, DT, random);
+      const walk = walkDirection(input.aimYaw, input.moveX - mind.strafe, input.moveY);
+      // Its own base is toward −Z.
       expect(walk.z).toBeLessThan(0);
     }
   });

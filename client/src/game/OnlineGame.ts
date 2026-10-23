@@ -28,6 +28,7 @@ import {
   MSG_SPLAT,
   MSG_START,
   NetInput,
+  parseFlagState,
   parseLook,
   parsePhase,
   ROOM_MATCH,
@@ -60,11 +61,11 @@ import { meterRoomTraffic, TrafficMeter } from '../net/trafficMeter';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
 import { FlagView } from '../render/FlagView';
 import { LookPreview } from '../render/LookPreview';
+import { ObjectiveArrow } from '../render/ObjectiveArrow';
 import { TEAM_COLORS } from '../render/palette';
 import { saveSettings } from '../settings';
 import { Announcer } from '../ui/announcer';
 import type { DevOverlay } from '../ui/devOverlay';
-import { FlagMarker } from '../ui/flagMarker';
 import { Minimap, type MinimapFrame, type MinimapPoint } from '../ui/minimap';
 import { qrCodeSvg } from '../ui/qrCode';
 import { Scoreboard } from '../ui/scoreboard';
@@ -73,6 +74,7 @@ import { StatsOverlay } from '../ui/statsOverlay';
 import type { StatsRow } from '../ui/statsTable';
 import { FixedStep } from './fixedStep';
 import { NewShotFilter } from './newShotFilter';
+import { flagObjective, type Objective } from './objective';
 import { snapshotOf, World, type PlayerSnapshot } from './World';
 
 /** How often the dev overlay's connection line refreshes (s). */
@@ -430,7 +432,8 @@ class NetSession {
   private myTeam = -1;
   // Capture the Flag on screen.
   private readonly flagView: FlagView;
-  private readonly flagMarker = new FlagMarker();
+  /** The yellow arrow over our own head, pointing at what to do. */
+  private readonly arrow: ObjectiveArrow;
   private readonly scoreboard = new Scoreboard();
   private readonly announcer = new Announcer();
   private readonly minimap: Minimap;
@@ -461,6 +464,8 @@ class NetSession {
     this.seed = seedFromString(room.sessionId);
     this.flagView = new FlagView(world.toonRamp);
     world.scene.add(this.flagView.root);
+    this.arrow = new ObjectiveArrow(world.toonRamp);
+    world.scene.add(this.arrow.root);
     this.minimap = new Minimap(world.map, world.surfaces, world.paint);
     this.statsOverlay = new StatsOverlay(world.touchDevice);
     // Others are drawn slightly in the past, between two snapshots, so they move smoothly.
@@ -519,7 +524,8 @@ class NetSession {
     this.world.killFeed.clear();
     this.world.setSplatted(null);
     this.world.scene.remove(this.flagView.root);
-    this.flagMarker.dispose();
+    this.world.scene.remove(this.arrow.root);
+    this.arrow.dispose();
     this.scoreboard.dispose();
     this.announcer.dispose();
     this.minimap.dispose();
@@ -750,8 +756,8 @@ class NetSession {
   }
 
   /**
-   * The flag (at its spot, or on its carrier's back), the arrow pointing to it, and the
-   * scoreboard line saying what to do.
+   * The flag (at its spot, or on its carrier's back), our order under the scoreboard, and the
+   * arrow over our head pointing where the order says to go.
    */
   private updateFlag(dt: number, phase: MatchPhase): void {
     const state = this.room.state;
@@ -786,28 +792,34 @@ class NetSession {
     this.flagOnMap =
       active && at ? { x: at.x, z: at.z, color: cssColor(color ?? 0xffffff), carried } : null;
     this.flagView.update(dt, active, at?.x ?? 0, at?.y ?? 0, at?.z ?? 0, carried, yaw, color);
-    // The marker floats above the flag, but not over our own head while we carry it.
-    const markAt = active && at && carrierId !== myId ? { x: at.x, y: at.y + 2.3, z: at.z } : null;
-    this.flagMarker.update(this.world.view.camera, markAt, cssColor(color ?? 0xffffff));
 
-    let objective = '';
-    if (phase === 'playing') {
-      const carrierTeam = state.players.get(carrierId)?.team;
-      if (carried && carrierId === myId) objective = 'You have the flag! Bring it to your base';
-      else if (carried && carrierTeam === myTeam) objective = 'Escort your flag carrier!';
-      else if (carried) objective = 'Stop the enemy flag carrier!';
-      else if (flagState === 'dropped')
-        objective = `The flag is down! It returns in ${state.flagTimer}`;
-      else if (flagState === 'away') objective = 'Flag coming back to the middle…';
-      else objective = 'Grab the flag in the middle!';
-    }
-    this.scoreboard.update(
-      state.score0,
-      state.score1,
-      state.timeLeft,
-      objective,
-      state.capturesToWin,
-    );
+    // Our order, and the arrow over our head pointing where it says to go.
+    const onField = phase === 'countdown' || phase === 'playing';
+    const objective = onField
+      ? flagObjective({
+          flagState: parseFlagState(flagState),
+          carrierTeam: carried ? (state.players.get(carrierId)?.team ?? null) : null,
+          carrierIsMe: carried && carrierId === myId,
+          myTeam,
+          flagTimer: state.flagTimer,
+        })
+      : null;
+    this.scoreboard.setOrder(objective);
+    const me = this.me?.state;
+    const alive = me !== undefined && me.respawnTimer <= 0;
+    const target = objective && alive ? this.objectiveSpot(objective, at, myTeam) : null;
+    this.arrow.update(dt, this.feet, target, objective?.icon ?? 'flag', me?.aiming ?? false);
+    this.scoreboard.update(state.score0, state.score1, state.timeLeft, state.capturesToWin);
+  }
+
+  /** Where an objective's arrow points: the flag, a base (its floor), or the middle. */
+  private objectiveSpot(objective: Objective, flagAt: Vec3 | null, myTeam: number): Vec3 | null {
+    const map = this.world.map;
+    if (objective.target === 'flag') return flagAt;
+    if (objective.target === 'middle') return map.flagSpawn;
+    const team = objective.target === 'ownBase' ? myTeam : 1 - myTeam;
+    const base = map.bases[team === 1 ? 1 : 0];
+    return { x: base.center.x, y: base.center.y - base.size.y / 2, z: base.center.z };
   }
 
   /** The minimap while the match is on: paint refreshed a few times a second, moving bits every frame. */

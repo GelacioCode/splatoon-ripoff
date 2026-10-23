@@ -280,7 +280,7 @@ select {
   }
 }
 
-/* --- Capture the Flag: scoreboard, announcements, flag marker ------------------------------ */
+/* --- Capture the Flag: scoreboard, orders, announcements ---------------------------------- */
 
 .scoreboard {
   position: fixed;
@@ -363,24 +363,98 @@ select {
   }
 }
 
-.scoreboard-objective {
-  padding: 3px 12px;
-  border: 2px solid var(--ink);
+/* Your order under the scores: the yellow objective badge, "ATTACK!", and what it means. */
+.order {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 4px 4px;
+  border: var(--outline);
   border-radius: 999px;
   background: var(--paper);
   color: var(--ink);
-  font: 700 13px var(--font-body);
-  white-space: nowrap;
   box-shadow: var(--drop-small);
+  white-space: nowrap;
 }
 
-.scoreboard-objective[hidden] {
+.order[hidden] {
   display: none;
+}
+
+.order.order-new {
+  animation: order-pop 420ms var(--pop);
+}
+
+@keyframes order-pop {
+  0% {
+    scale: 0.6;
+    rotate: -3deg;
+  }
+  60% {
+    scale: 1.08;
+    rotate: 1deg;
+  }
+  100% {
+    scale: 1;
+    rotate: 0deg;
+  }
+}
+
+.order-icon {
+  width: 34px;
+  height: 34px;
+  animation: marker-bob 1.2s ease-in-out infinite;
+}
+
+@keyframes marker-bob {
+  50% {
+    translate: 0 -2px;
+  }
+}
+
+.order-text {
+  display: grid;
+  line-height: 1.05;
+}
+
+.order-title {
+  font: 400 19px var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+/* Attack and defend orders get the team-fight colors. */
+.order[data-icon='attack'] .order-title {
+  color: var(--brand);
+}
+
+.order[data-icon='defend'] .order-title {
+  color: #2b59c3;
+}
+
+.order-detail {
+  font: 700 11px var(--font-body);
+  opacity: 0.8;
+}
+
+/* Narrow phone screens: just the badge and the order, clear of the minimap. */
+@media (max-width: 560px) {
+  .order-detail {
+    display: none;
+  }
+
+  .order-title {
+    font-size: 16px;
+  }
+
+  .order-icon {
+    width: 28px;
+    height: 28px;
+  }
 }
 
 .announcer {
   position: fixed;
-  top: calc(max(10px, env(safe-area-inset-top)) + 84px);
+  top: calc(max(10px, env(safe-area-inset-top)) + 104px);
   left: 50%;
   z-index: 5;
   translate: -50% 0;
@@ -414,59 +488,6 @@ select {
     opacity: 0;
     transform: translateY(-8px);
   }
-}
-
-.flag-marker {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 4;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-.flag-marker[hidden] {
-  display: none;
-}
-
-.flag-marker-icon {
-  position: absolute;
-  left: -16px;
-  top: -18px;
-  width: 32px;
-  height: 32px;
-  border: var(--outline);
-  border-radius: 50%;
-  background: var(--paper);
-  box-shadow: var(--drop-small);
-  font: 400 18px/27px var(--font-display);
-  text-align: center;
-  animation: marker-bob 1.2s ease-in-out infinite;
-}
-
-@keyframes marker-bob {
-  50% {
-    translate: 0 -3px;
-  }
-}
-
-.flag-marker-arrow {
-  position: absolute;
-  left: -6px;
-  top: -8px;
-  width: 0;
-  height: 0;
-  display: none;
-  border-left: 11px solid currentcolor;
-  border-top: 8px solid transparent;
-  border-bottom: 8px solid transparent;
-  transform-origin: 6px 8px;
-  filter: drop-shadow(0 0 1px var(--ink));
-}
-
-.flag-marker.off-screen .flag-marker-arrow {
-  display: block;
 }
 
 /* --- Minimap (top left); tap it or press M for the big map -------------------------------- */

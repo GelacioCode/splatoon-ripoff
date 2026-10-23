@@ -16,8 +16,10 @@ export interface BotView {
   enemies: Point[];
   /** Where the flag is, and who has it: 'none', 'mine' (my team) or 'theirs'. */
   flag: (Point & { holder: 'none' | 'mine' | 'theirs' }) | null;
-  /** My team's base (where a carrier scores). */
+  /** My team's base, in front of my spawn (defended when the enemy has the flag). */
   base: Point;
+  /** The enemy team's base (where a carrier scores). */
+  enemyBase: Point;
   /** The arena's half extents, for picking spots to wander to. */
   halfWidth: number;
   halfLength: number;
@@ -91,11 +93,16 @@ function nearest(from: Point, points: readonly Point[]): Point | null {
   return best;
 }
 
-/** Where to head: home with the flag, after the flag (chasers), or somewhere to roam. */
+/**
+ * Where to head: the enemy base with the flag; otherwise chasers go after the flag (or escort
+ * our carrier to the enemy base), and the others roam, or fall back to defend our base while
+ * an enemy has the flag.
+ */
 function goalFor(view: BotView, mind: BotMind): { x: number; z: number } {
   const { me, flag } = view;
-  if (me.carrying) return view.base;
-  if (flag && flag.holder !== 'mine' && mind.chaser) return flag;
+  if (me.carrying) return view.enemyBase;
+  if (flag && mind.chaser) return flag.holder === 'mine' ? view.enemyBase : flag;
+  if (flag?.holder === 'theirs') return view.base;
   return mind.wander;
 }
 

@@ -38,15 +38,15 @@ describe('the flag', () => {
     expect(flag.state).toBe('home');
   });
 
-  it('scores when carried into your own base (not the enemy one), then resets', () => {
+  it('scores when carried into the enemy base (not your own), then resets', () => {
     const flag = createFlag(SPAWN);
     const sam = player('sam', 0, SPAWN);
     stepFlag(flag, [sam], DT, SPAWN, BASES);
-    // Through the enemy base: nothing.
-    Object.assign(sam, BASES[1].center);
-    expect(stepFlag(flag, [sam], DT, SPAWN, BASES)).toBeNull();
-    // Into team 0's base: a capture.
+    // Through your own base: nothing.
     Object.assign(sam, BASES[0].center);
+    expect(stepFlag(flag, [sam], DT, SPAWN, BASES)).toBeNull();
+    // Into team 1's base: a capture for team 0.
+    Object.assign(sam, BASES[1].center);
     expect(stepFlag(flag, [sam], DT, SPAWN, BASES)).toEqual({
       kind: 'captured',
       by: 'sam',

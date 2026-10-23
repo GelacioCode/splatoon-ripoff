@@ -8,6 +8,11 @@ import type { Vec3 } from '../math3d';
  */
 export type FlagState = 'home' | 'carried' | 'dropped' | 'away';
 
+/** A synced flag state string as a FlagState ('home' for anything unknown). */
+export function parseFlagState(value: string): FlagState {
+  return value === 'carried' || value === 'dropped' || value === 'away' ? value : 'home';
+}
+
 export interface Flag {
   state: FlagState;
   /** Position (for 'carried': the carrier's feet, updated every tick). */
@@ -64,7 +69,7 @@ function placeAt(flag: Flag, at: Vec3): void {
 /**
  * One tick of the flag rules (Capture the Flag):
  *  - anyone standing next to a flag at home or dropped takes it;
- *  - the carrier brings it into their own team's base to capture: their team scores, and the
+ *  - the carrier brings it into the enemy team's base to capture: their team scores, and the
  *    flag is away for a moment, then back at its spawn;
  *  - a splatted (or departed) carrier drops it where they were; untouched, it returns home.
  * Returns what happened this tick, if anything.
@@ -98,7 +103,8 @@ export function stepFlag(
       return { kind: 'dropped', by, team };
     }
     placeAt(flag, carrier);
-    const base = bases[carrier.team];
+    // Scored in the other team's base (in front of their spawn), so they have to defend it.
+    const base = bases[1 - carrier.team];
     if (base && isInZone(base, carrier.x, carrier.y, carrier.z)) {
       flag.state = 'away';
       flag.carrier = '';
