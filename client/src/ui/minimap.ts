@@ -57,24 +57,36 @@ export class Minimap {
   private paintOld = document.createElement('canvas');
   private paintNew = document.createElement('canvas');
   private paintChangedAt = 0;
-  private readonly map: MapDef;
-  private readonly surfaces: Surface[];
-  private readonly paint: PaintGrid;
-  /** Floor-like surfaces, lowest first, so higher ledges paint over what's under them. */
-  private readonly floors: Surface[];
-  private readonly cellsX: number;
-  private readonly cellsZ: number;
+  private map!: MapDef;
+  private surfaces!: Surface[];
+  private paint!: PaintGrid;
+  /** Floor-like surfaces (the paint shown on the map). */
+  private floors = new Set<number>();
+  private cellsX = 0;
+  private cellsZ = 0;
   private team = 0;
   private visible = false;
   private expanded = false;
 
   constructor(map: MapDef, surfaces: Surface[], paint: PaintGrid) {
+    const ctx = this.canvas.getContext('2d');
+    if (!ctx) throw new Error('Minimap: no 2D canvas');
+    this.ctx = ctx;
+    this.root.className = 'minimap';
+    this.root.hidden = true;
+    this.root.append(this.canvas);
+    this.root.addEventListener('click', () => this.setExpanded(!this.expanded));
+    document.body.append(this.root);
+    window.addEventListener('keydown', this.onKey);
+    this.setMap(map, surfaces, paint);
+  }
+
+  /** Shows another arena (a new layout every round), with no paint yet. */
+  setMap(map: MapDef, surfaces: Surface[], paint: PaintGrid): void {
     this.map = map;
     this.surfaces = surfaces;
     this.paint = paint;
-    this.floors = surfaces
-      .filter((s) => s.paintable && s.normal.y > 0.7)
-      .sort((a, b) => a.origin.y - b.origin.y);
+    this.floors = new Set(surfaces.filter((s) => s.paintable && s.normal.y > 0.7).map((s) => s.id));
     const width = map.bounds.maxX - map.bounds.minX;
     const depth = map.bounds.maxZ - map.bounds.minZ;
     this.cellsX = Math.ceil(width / paint.cellSize);
@@ -87,17 +99,8 @@ export class Minimap {
       c.width = this.cellsX;
       c.height = this.cellsZ;
     }
-    const ctx = this.canvas.getContext('2d');
-    if (!ctx) throw new Error('Minimap: no 2D canvas');
-    this.ctx = ctx;
-
-    this.root.className = 'minimap';
-    this.root.hidden = true;
-    this.root.append(this.canvas);
-    this.root.addEventListener('click', () => this.setExpanded(!this.expanded));
-    document.body.append(this.root);
-    window.addEventListener('keydown', this.onKey);
     this.drawLayout();
+    this.refreshPaint(true);
   }
 
   /** Turns the map so `team` attacks upward. */
@@ -124,12 +127,10 @@ export class Minimap {
     const image = ctx.createImageData(this.cellsX, this.cellsZ);
     const colors = TEAM_COLORS.map(rgb);
     const size = this.paint.cellSize;
-    const floors = new Set(this.floors.map((s) => s.id));
-    // Lowest floors first: the paint grid lists surfaces in their own order, so sort per cell
-    // height by drawing higher surfaces later.
+    // Higher surfaces are drawn last, so a painted ledge shows over the floor under it.
     const painted: { x: number; z: number; y: number; team: number }[] = [];
     this.paint.forEachPaintedCell((surfaceId, u, v, team) => {
-      if (!floors.has(surfaceId)) return;
+      if (!this.floors.has(surfaceId)) return;
       const s = this.surfaces[surfaceId];
       painted.push({
         x: s.origin.x + s.uAxis.x * u + s.vAxis.x * v,

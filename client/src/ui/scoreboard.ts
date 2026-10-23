@@ -42,13 +42,30 @@ export class Scoreboard {
     this.root.hidden = !visible;
   }
 
-  update(score0: number, score1: number, secondsLeft: number, objective: string): void {
-    const key = `${score0}|${score1}|${secondsLeft}|${objective}`;
+  /** `goal`: captures to win, shown under the clock. */
+  update(
+    score0: number,
+    score1: number,
+    secondsLeft: number,
+    objective: string,
+    goal: number,
+  ): void {
+    const key = `${score0}|${score1}|${secondsLeft}|${objective}|${goal}`;
     if (key === this.shown) return;
+    // A score that just went up gets a little bounce.
+    const before = [this.scores[0].textContent, this.scores[1].textContent];
     this.shown = key;
     this.scores[0].textContent = String(score0);
     this.scores[1].textContent = String(score1);
+    this.scores.forEach((score, team) => {
+      if (before[team] !== null && before[team] !== '' && before[team] !== score.textContent) {
+        score.classList.remove('bump');
+        void score.offsetWidth;
+        score.classList.add('bump');
+      }
+    });
     this.timer.textContent = clock(secondsLeft);
+    this.timer.dataset.goal = `first to ${goal}`;
     // The last 30 seconds tick in red.
     this.timer.classList.toggle('urgent', secondsLeft <= 30);
     this.objective.textContent = objective;

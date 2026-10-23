@@ -117,7 +117,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 4A: user confirmed everything works (including the Fold 7 touch-controls fix), 2026-10-23.
   - [x] 4B: flag, scoring, timer, win conditions, HUD (user moved on to new requests, 2026-10-23).
   - Plan revised 2026-10-23 (user requests): 4C KDA + scaling respawn + results/Play Again + minimap; 4D round reset after each capture (everyone to spawn, paint wiped, fully random new layout); 4E arena size grows with player count (current size = minimum); 4F UI overhaul (brand Pantone 186 C ≈ #C8102E, bold display font, snappy animations, original style; Splatoon's real UI is not copied).
-  - [ ] 4C: written 2026-10-23, awaiting the user's test.
+  - [x] 4C: user confirmed it all works, 2026-10-23.
+  - [ ] 4D (plus the host's captures-to-win setting 3/5/7, a user request): written 2026-10-23, awaiting the user's test.
 - [ ] Phase 5: 30-bot load test
 - [ ] Phase 6: deployment
 
@@ -212,4 +213,10 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - `NetPlayer` has `kills/deaths/assists/captures/paint`. Paint points come from `PaintGrid.splatCounting` credited to the shooter (`stepProjectiles` `onHit(hit, shot)` + the server's `landedBy`).
   - `playerScore` and `highlights` rank players for the results. The host sends `MSG_PLAY_AGAIN` → `backToLobby` (bodies removed, an empty paint snapshot broadcast, phase `lobby`). The client keeps its character objects (hidden in the lobby, recolored if teams change).
   - The minimap is a 2D canvas (`ui/minimap.ts`): layout drawn once, paint from the grid into a one-pixel-per-cell image every 0.25 s with a fade. It's turned so your team attacks upward, and shows teammates only.
+- Rounds (4D, user decisions: everyone resets to spawn; a fully random layout each round):
+  - Non-winning capture → phase `scored` (`CONFIG.match.scoredSeconds`) → server `startRound()` (new `mapSeed` via `newLayoutSeed`, `loadMap` rebuilds physics/paint/bodies, everyone `placeOnSpawn`, flag home) → `countdown` → `playing`. The match clock is set once in `startMatch` and only runs while `playing`.
+  - Layouts: `arenaFor(seed)` (seed 0 = Drip Yard, used for round 1; otherwise `composeArena(randomCover(seed))`). `randomCover` places a side ledge + ramp, climb walls, pillars and low cover in team 0's half, with rejection sampling: inside `AREA`, clear of `KEEP_CLEAR` (spawn/base, center), 1.6 m walkways. The half is mirrored, so it's symmetric (tested).
+  - Client: `NetSession.ensureMap()` (each frame, and before applying paint or snapshots) calls `World.loadMap(arenaFor(seed), seed)`, which rebuilds the map mesh, base zones, physics, surfaces, paint grid and atlas. It then remakes our body, clears shots and calls `Minimap.setMap`. `predictTick` reads `this.body` (no closure), because the body changes.
+  - Tie-break: paint is wiped each round, so `turf0/turf1` are each team's paint points over the match (server `teamPaint`).
+  - `MatchState.capturesToWin` is set by the host in the lobby (`MSG_CAPTURE_GOAL`; `CONFIG.lobby.captureGoalOptions` 3/5/7) and passed to `matchResult`.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

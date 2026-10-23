@@ -98,6 +98,12 @@ describe('matchResult', () => {
     expect(matchResult([1, 1], 100, [0, 0])).toBeNull();
   });
 
+  it("uses the host's capture goal (3, 5 or 7)", () => {
+    expect(matchResult([1, 3], 100, [0, 0], 5)).toBeNull();
+    expect(matchResult([1, 5], 100, [0, 0], 5)).toEqual({ winner: 1, reason: 'captures' });
+    expect(matchResult([6, 2], 100, [0, 0], 7)).toBeNull();
+  });
+
   it('when time runs out: most captures, then most turf, else a draw', () => {
     expect(matchResult([2, 1], 0, [10, 90])).toEqual({ winner: 0, reason: 'time' });
     expect(matchResult([1, 1], 0, [10, 90])).toEqual({ winner: 1, reason: 'turf' });

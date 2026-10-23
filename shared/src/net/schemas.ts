@@ -110,9 +110,16 @@ export const MatchState = schema(
     winner: t.int8().default(-1),
     /** How it was won: a MatchResult reason ('captures', 'time', 'turf' or 'draw'). */
     winReason: t.string().default(''),
-    /** Turf painted per team at the end (% of the paintable map). */
-    turf0: t.uint8().default(0),
-    turf1: t.uint8().default(0),
+    /** Each team's paint points over the whole match (paint is wiped every round). */
+    turf0: t.uint32().default(0),
+    turf1: t.uint32().default(0),
+    /** Captures to win, set by the host in the lobby (3, 5 or 7). */
+    capturesToWin: t.uint8().default(3),
+    /**
+     * The current round's layout: 0 is Drip Yard, anything else a random layout every screen
+     * builds the same way (see arenaFor). It changes after every capture.
+     */
+    mapSeed: t.uint32().default(0),
     players: t.map(NetPlayer),
   },
   'MatchState',

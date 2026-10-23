@@ -2,11 +2,13 @@ import { Vector3 } from 'three';
 import { Client, Predict, type InputHandle } from '@colyseus/sdk';
 import {
   ARENA,
+  arenaFor,
   CONFIG,
   decodePaintEvents,
   decodePaintSnapshot,
   decodeShotEvents,
   MatchState,
+  MSG_CAPTURE_GOAL,
   MSG_CHOOSE_WEAPON,
   MSG_FLAG,
   MSG_HIT,
@@ -435,6 +437,8 @@ class NetSession {
   /** When the match ended (ms), and whether the results screen is up yet. */
   private endedAt = 0;
   private resultsShown = false;
+  /** The team that scored last, for the "Pink scores!" banner between rounds. */
+  private lastScoringTeam = 0;
   private readonly saveToken = () => saveReconnectToken(this.room.reconnectionToken);
 
   constructor(
@@ -453,7 +457,7 @@ class NetSession {
     this.seed = seedFromString(room.sessionId);
     this.flagView = new FlagView(world.toonRamp);
     world.scene.add(this.flagView.root);
-    this.minimap = new Minimap(ARENA, world.surfaces, world.paint);
+    this.minimap = new Minimap(world.map, world.surfaces, world.paint);
     this.statsOverlay = new StatsOverlay(world.touchDevice);
     // Others are drawn slightly in the past, between two snapshots, so they move smoothly.
     this.predict = Predict.get(room, { mode: 'lerp', delay: CONFIG.net.interpolationDelayMs });
@@ -520,6 +524,7 @@ class NetSession {
 
   frame(timeMs: number): void {
     const world = this.world;
+    this.ensureMap();
     const phase = parsePhase(this.room.state.phase);
     this.updateScreens(phase);
     const me = this.me;
@@ -728,6 +733,13 @@ class NetSession {
         state.winReason,
         [state.score0, state.score1],
         [state.turf0, state.turf1],
+        state.capturesToWin,
+      );
+    } else if (phase === 'scored') {
+      this.banner.showScored(
+        this.lastScoringTeam,
+        [state.score0, state.score1],
+        state.capturesToWin,
       );
     } else if (previous === 'countdown') this.banner.showGo();
     else if (previous !== 'playing') this.banner.hide();
@@ -785,7 +797,13 @@ class NetSession {
       else if (flagState === 'away') objective = 'Flag coming back to the middle…';
       else objective = 'Grab the flag in the middle!';
     }
-    this.scoreboard.update(state.score0, state.score1, state.timeLeft, objective);
+    this.scoreboard.update(
+      state.score0,
+      state.score1,
+      state.timeLeft,
+      objective,
+      state.capturesToWin,
+    );
   }
 
   /** The minimap while the match is on: paint refreshed a few times a second, moving bits every frame. */
@@ -877,6 +895,7 @@ class NetSession {
       this.announcer.show(`${name} took the flag!`, color);
       this.world.sfx.fanfare(0.5);
     } else if (event.kind === 'captured') {
+      if (team === 0 || team === 1) this.lastScoringTeam = team;
       this.announcer.show(`${name} scored for ${teamName}!`, color);
       this.world.sfx.fanfare(1);
     } else if (event.kind === 'dropped') {
@@ -910,7 +929,7 @@ class NetSession {
     const link = joinUrl(window.location, this.room.roomId, this.lanAddresses);
     if (isHost && this.qr?.url !== link) this.qr = { url: link, svg: qrCodeSvg(link) };
 
-    const key = JSON.stringify([players, isHost, state.matchMinutes, link]);
+    const key = JSON.stringify([players, isHost, state.matchMinutes, state.capturesToWin, link]);
     if (key === this.lobbyKey) return;
     this.lobbyKey = key;
     this.screens.showLobby(
@@ -919,6 +938,7 @@ class NetSession {
         players,
         isHost,
         matchMinutes: state.matchMinutes,
+        capturesToWin: state.capturesToWin,
         qrSvg: isHost ? (this.qr?.svg ?? null) : null,
         joinLink: link,
       },
@@ -926,6 +946,7 @@ class NetSession {
         start: () => this.room.send(MSG_START),
         kick: (id) => this.room.send(MSG_KICK, id),
         setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
+        setCaptureGoal: (captures) => this.room.send(MSG_CAPTURE_GOAL, captures),
         editLook: () => this.openLookEditor(),
         leave: () => {
           this.leaving = true;
@@ -977,10 +998,12 @@ class NetSession {
     state: PlayerState,
     input: PlayerInput,
     dt: number,
-    body: Collider,
     newShots: NewShotFilter,
   ): void {
     const world = this.world;
+    // The body is remade whenever the arena changes, so always use the current one.
+    const body = this.body;
+    if (!body) return;
     const command = parsePhase(this.room.state.phase) === 'playing' ? input : frozenInput(input);
     stepPlayer(world.physics, body, state, command, dt, world.paint);
     this.fired.length = 0;
@@ -997,7 +1020,23 @@ class NetSession {
       this.warnOnce('paint message is not bytes', payload);
       return;
     }
+    this.ensureMap();
     for (const paint of decodePaintEvents(bytes)) this.world.paintAt(paint);
+  }
+
+  /**
+   * Builds the arena the server is on, if it isn't the one shown (a new random layout after
+   * every capture, or Drip Yard for a new match). The paint starts fresh, our own body is
+   * remade in the new physics world, and shots still flying in the old arena are dropped.
+   */
+  private ensureMap(): void {
+    const seed = this.room.state.mapSeed;
+    if (seed === this.world.mapSeed) return;
+    const world = this.world;
+    world.loadMap(arenaFor(seed), seed);
+    this.shots.length = 0;
+    if (this.body && this.me) this.body = world.physics.createCharacter(this.me.state);
+    this.minimap.setMap(world.map, world.surfaces, world.paint);
   }
 
   /** Other players' new shots: fly them here too, with a quieter shot sound. */
@@ -1018,6 +1057,8 @@ class NetSession {
 
   /** All the paint on the map, sent when we join or reconnect. */
   private receiveSnapshot(payload: unknown): void {
+    // The snapshot is for the server's current arena: build that one first.
+    this.ensureMap();
     const bytes = asBytes(payload);
     const cells = bytes ? decodePaintSnapshot(bytes) : null;
     if (!cells || !this.world.loadPaintSnapshot(cells)) {
@@ -1086,7 +1127,7 @@ class NetSession {
     const newShots = new NewShotFilter(player.shotCount);
     this.wasReloading = player.reloadTimer > 0;
     this.me = createReconciler(this.predict, player, this.netInput, (state, command, dt) =>
-      this.predictTick(state, command, dt, body, newShots),
+      this.predictTick(state, command, dt, newShots),
     );
   }
 

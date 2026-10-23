@@ -27,6 +27,8 @@ export const CONFIG = {
     minPlayersToStart: 2,
     /** Match lengths the host can pick (minutes). */
     matchMinuteOptions: [3, 5, 7],
+    /** Captures to win that the host can pick (the default is CONFIG.match.capturesToWin). */
+    captureGoalOptions: [3, 5, 7],
     /** How long the team reveal shows before the countdown (s). */
     revealSeconds: 3,
     /** 3 · 2 · 1 before GO (s). Players stand on their spawn pads meanwhile. */
@@ -55,6 +57,11 @@ export const CONFIG = {
   match: {
     durationSeconds: 5 * 60,
     capturesToWin: 3,
+    /**
+     * After a capture (that doesn't win), "Pink scores!" shows this long before the next
+     * round: everyone back on their spawn, paint wiped, a new random layout (s).
+     */
+    scoredSeconds: 2.5,
     /** A dropped flag left untouched this long returns to the center. */
     flagReturnSeconds: 15,
     /** Pause after a capture before the flag reappears in the center. */

@@ -2,14 +2,25 @@ import { CONFIG } from '../config';
 
 /**
  * Where a match is: players gathering in the lobby, the team reveal, the 3-2-1 countdown,
- * playing, then ended (a winner, or time ran out).
+ * playing, a short "scored" break after each capture (then a new round from the countdown),
+ * and ended (a winner, or time ran out).
  */
-export type MatchPhase = 'lobby' | 'reveal' | 'countdown' | 'playing' | 'ended';
+export type MatchPhase = 'lobby' | 'reveal' | 'countdown' | 'playing' | 'scored' | 'ended';
+
+const PHASES: readonly MatchPhase[] = [
+  'lobby',
+  'reveal',
+  'countdown',
+  'playing',
+  'scored',
+  'ended',
+];
 
 /** How long a timed phase lasts (s), or null for phases that wait for something else. */
 export function phaseSeconds(phase: MatchPhase): number | null {
   if (phase === 'reveal') return CONFIG.lobby.revealSeconds;
   if (phase === 'countdown') return CONFIG.lobby.countdownSeconds;
+  if (phase === 'scored') return CONFIG.match.scoredSeconds;
   return null;
 }
 
@@ -17,18 +28,27 @@ export function phaseSeconds(phase: MatchPhase): number | null {
 export function nextPhase(phase: MatchPhase): MatchPhase {
   if (phase === 'reveal') return 'countdown';
   if (phase === 'countdown') return 'playing';
+  // After a capture, the next round starts with a fresh countdown.
+  if (phase === 'scored') return 'countdown';
   return phase;
 }
 
 /** Synced as a plain string; anything unexpected (e.g. before the first update) counts as the lobby. */
 export function parsePhase(value: unknown): MatchPhase {
-  return value === 'reveal' || value === 'countdown' || value === 'playing' || value === 'ended'
-    ? value
-    : 'lobby';
+  return PHASES.includes(value as MatchPhase) ? (value as MatchPhase) : 'lobby';
+}
+
+/** Whether players are in the arena (not waiting in the lobby). */
+export function inArena(phase: MatchPhase): boolean {
+  return phase !== 'lobby';
 }
 
 export function isMatchLength(value: unknown): value is number {
   return typeof value === 'number' && CONFIG.lobby.matchMinuteOptions.includes(value);
+}
+
+export function isCaptureGoal(value: unknown): value is number {
+  return typeof value === 'number' && CONFIG.lobby.captureGoalOptions.includes(value);
 }
 
 /** The match length a new lobby starts with (minutes). */

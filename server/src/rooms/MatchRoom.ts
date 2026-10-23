@@ -3,6 +3,7 @@ import { Room, type Client, type Rewind, type StepContext } from '@colyseus/core
 import { StateView } from '@colyseus/schema';
 import {
   ARENA,
+  arenaFor,
   buildSurfaces,
   cleanName,
   CONFIG,
@@ -16,9 +17,11 @@ import {
   encodeShotEvents,
   generateLobbyCode,
   inputsToRun,
+  isCaptureGoal,
   isMatchLength,
   matchResult,
   MatchState,
+  MSG_CAPTURE_GOAL,
   MSG_CHOOSE_WEAPON,
   MSG_FLAG,
   MSG_HIT,
@@ -53,6 +56,8 @@ import {
   type Flag,
   type FlagEvent,
   type FlagPlayer,
+  newLayoutSeed,
+  type MapDef,
   type MatchJoinOptions,
   type MatchResult,
   type MatchPhase,
@@ -103,8 +108,12 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     idle: ({ latest }) => latest ?? true,
   });
 
-  private readonly physics = new PhysicsWorld(ARENA.blocks);
-  private readonly paint = new PaintGrid(buildSurfaces(ARENA.blocks));
+  /** This round's arena (a new random one after every capture), with its physics and paint. */
+  private map: MapDef = ARENA;
+  private physics = new PhysicsWorld(ARENA.blocks);
+  private paint = new PaintGrid(buildSurfaces(ARENA.blocks));
+  /** Each team's paint points this match (paint is wiped every round; this isn't). */
+  private teamPaint: [number, number] = [0, 0];
   /** Physics bodies of players in the arena (none while everyone waits in the lobby). */
   private readonly bodies = new Map<string, Collider>();
   /** Every shot in flight. These are the real ones: they decide where paint lands. */
@@ -140,6 +149,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.phase = 'lobby';
     this.state.hostId = '';
     this.state.matchMinutes = defaultMatchMinutes();
+    this.state.capturesToWin = CONFIG.match.capturesToWin;
+    this.state.mapSeed = 0;
     this.state.countdown = 0;
     // Created before the fixed timestep, so it records after every tick.
     this.rewind = this.allowRewindState({ maxRewindMs: 500 });
@@ -191,6 +202,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     [MSG_SET_LOOK]: (client: Client, payload: unknown) => {
       const player = this.state.players.get(client.sessionId);
       if (player && this.phase === 'lobby') Object.assign(player, parseLook(payload));
+    },
+    [MSG_CAPTURE_GOAL]: (client: Client, payload: unknown) => {
+      if (this.isHost(client) && this.phase === 'lobby' && isCaptureGoal(payload)) {
+        this.state.capturesToWin = payload;
+      }
     },
     [MSG_MATCH_LENGTH]: (client: Client, payload: unknown) => {
       if (this.isHost(client) && this.phase === 'lobby' && isMatchLength(payload)) {
@@ -256,6 +272,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
 
   /** Balances everyone into two teams, puts them on their spawn pads, and starts the reveal. */
   private startMatch(): void {
+    // The first round is always the hand-made Drip Yard.
+    this.loadMap(0);
     const teams = this.balanceTeams([...this.state.players.keys()], Math.random);
     for (const [id, player] of this.state.players) {
       player.team = teams.get(id) ?? 0;
@@ -273,11 +291,51 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.score1 = 0;
     this.state.winner = -1;
     this.state.winReason = '';
+    this.teamPaint = [0, 0];
     this.damageLog.clear();
-    this.flag = createFlag(ARENA.flagSpawn);
+    this.flag = createFlag(this.map.flagSpawn);
     this.syncFlag();
+    // The match clock runs for the whole match (it pauses between rounds).
+    this.matchTimer = this.state.matchMinutes * 60;
+    this.state.timeLeft = Math.ceil(this.matchTimer);
     this.setPhase('reveal');
     console.log(`[match] ${this.roomId}: started with ${this.state.players.size} players`);
+  }
+
+  /**
+   * Switches to the layout for `seed` (see arenaFor): new physics and an empty paint grid.
+   * Everyone in the arena gets a body in the new world. Every screen rebuilds the same layout
+   * when it sees the new `mapSeed`.
+   */
+  private loadMap(seed: number): void {
+    if (seed === this.state.mapSeed && this.map === arenaFor(seed)) return;
+    this.map = arenaFor(seed);
+    this.physics.dispose();
+    this.physics = new PhysicsWorld(this.map.blocks);
+    this.paint = new PaintGrid(buildSurfaces(this.map.blocks));
+    for (const id of this.bodies.keys()) {
+      const player = this.state.players.get(id);
+      if (player) this.bodies.set(id, this.physics.createCharacter(player));
+    }
+    this.projectiles.length = 0;
+    this.landed.length = 0;
+    this.landedBy.length = 0;
+    this.state.mapSeed = seed;
+  }
+
+  /**
+   * After a capture: the next round on a brand-new random layout, everyone back on their
+   * spawn with fresh state, the flag in the middle, no paint. Then a fresh 3-2-1.
+   */
+  private startRound(): void {
+    this.loadMap(newLayoutSeed(Math.random));
+    // Their new bodies follow the state on the next step.
+    for (const [id, player] of this.state.players) {
+      if (this.bodies.has(id)) this.placeOnSpawn(player);
+    }
+    this.flag = createFlag(this.map.flagSpawn);
+    this.syncFlag();
+    console.log(`[match] ${this.roomId}: new round on ${this.map.name}`);
   }
 
   /**
@@ -295,7 +353,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       player.protectTimer = 0;
       player.carrying = false;
     }
-    this.flag = createFlag(ARENA.flagSpawn);
+    this.flag = createFlag(this.map.flagSpawn);
     this.syncFlag();
     this.paint.clear();
     this.broadcastBytes(MSG_PAINT_SNAPSHOT, encodePaintSnapshot(this.paint.exportCells()), {});
@@ -307,10 +365,6 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.phase = phase;
     this.phaseTimer = phaseSeconds(phase) ?? 0;
     this.state.countdown = Math.ceil(this.phaseTimer);
-    if (phase === 'playing') {
-      this.matchTimer = this.state.matchMinutes * 60;
-      this.state.timeLeft = Math.ceil(this.matchTimer);
-    }
   }
 
   /**
@@ -335,13 +389,20 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         standing: p.swimBlend < 0.5,
       });
     }
-    const event = stepFlag(this.flag, inArena, dt, ARENA.flagSpawn, ARENA.bases);
+    const event = stepFlag(this.flag, inArena, dt, this.map.flagSpawn, this.map.bases);
     if (event) this.onFlagEvent(event);
     this.syncFlag();
 
-    const turf = this.turfPercent();
-    const result = matchResult([this.state.score0, this.state.score1], this.matchTimer, turf);
-    if (result) this.endMatch(result, turf);
+    const s = this.state;
+    const result = matchResult(
+      [s.score0, s.score1],
+      this.matchTimer,
+      this.teamPaint,
+      s.capturesToWin,
+    );
+    if (result) this.endMatch(result);
+    // A capture that didn't win: a moment to celebrate, then a new round (see startRound).
+    else if (event?.kind === 'captured') this.setPhase('scored');
   }
 
   private onFlagEvent(event: FlagEvent): void {
@@ -379,20 +440,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     }
   }
 
-  /** How much of the paintable map each team has painted (%). */
-  private turfPercent(): [number, number] {
-    const total = Math.max(1, this.paint.totalCells);
-    return [
-      Math.round((this.paint.paintedCells(0) / total) * 100),
-      Math.round((this.paint.paintedCells(1) / total) * 100),
-    ];
-  }
-
-  private endMatch(result: MatchResult, turf: [number, number]): void {
+  private endMatch(result: MatchResult): void {
     this.state.winner = result.winner;
     this.state.winReason = result.reason;
-    this.state.turf0 = turf[0];
-    this.state.turf1 = turf[1];
+    this.state.turf0 = this.teamPaint[0];
+    this.state.turf1 = this.teamPaint[1];
     // Nobody carries anything once it's over.
     this.flag.state = this.flag.state === 'carried' ? 'dropped' : this.flag.state;
     this.flag.carrier = '';
@@ -410,7 +462,9 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.phaseTimer -= dt;
     const left = Math.max(0, Math.ceil(this.phaseTimer));
     if (left !== this.state.countdown) this.state.countdown = left;
-    if (this.phaseTimer <= 0) this.setPhase(nextPhase(this.phase));
+    if (this.phaseTimer > 0) return;
+    if (this.phase === 'scored') this.startRound();
+    this.setPhase(nextPhase(this.phase));
   }
 
   /**
@@ -543,7 +597,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     if (player.y < RESPAWN_BELOW_Y) {
       // A carrier falling off the map doesn't get a free ride home: the flag goes back.
       if (this.flag.state === 'carried' && this.flag.carrier === sessionId) {
-        this.flag = createFlag(ARENA.flagSpawn);
+        this.flag = createFlag(this.map.flagSpawn);
         this.syncFlag();
         this.broadcast(MSG_FLAG, { kind: 'returned' } satisfies FlagEvent);
       }
@@ -586,6 +640,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     const bytes = encodePaintEvents(landed);
     decodePaintEvents(bytes).forEach((event, i) => {
       const cells = this.paint.splatCounting(event.point, event.radius, event.team);
+      // Paint over the whole match decides a tie (each round's paint is wiped).
+      if (event.team === 0 || event.team === 1) this.teamPaint[event.team] += cells;
       // Paint points for whoever's shot (or splat burst) it was.
       const painter = this.state.players.get(this.landedBy[i] ?? '');
       if (painter && cells > 0) painter.paint += cells;
@@ -601,7 +657,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   }
 
   private spawnFor(team: number) {
-    const spawns = ARENA.spawns[team];
+    const spawns = this.map.spawns[team];
     const spot = spawns[Math.floor(Math.random() * spawns.length)];
     return { x: spot.x, y: spot.y + 0.05, z: spot.z };
   }

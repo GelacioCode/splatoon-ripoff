@@ -140,15 +140,16 @@ export interface MatchResult {
 }
 
 /**
- * Whether the match is over, and who won: first to `capturesToWin`; otherwise when time runs
- * out, the most captures, then the most turf painted.
+ * Whether the match is over, and who won: first to `goal` captures (the host's setting);
+ * otherwise when time runs out, the most captures, then the most paint. Paint is wiped every
+ * round, so `turf` is each team's paint over the whole match.
  */
 export function matchResult(
   scores: readonly [number, number],
   timeLeft: number,
   turf: readonly [number, number],
+  goal: number = CONFIG.match.capturesToWin,
 ): MatchResult | null {
-  const goal = CONFIG.match.capturesToWin;
   if (scores[0] >= goal || scores[1] >= goal) {
     return { winner: scores[0] >= goal ? 0 : 1, reason: 'captures' };
   }

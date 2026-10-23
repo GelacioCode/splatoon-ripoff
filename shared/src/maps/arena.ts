@@ -3,7 +3,7 @@ import type { BlockDef, BlockKind, MapDef, ZoneDef } from './types';
 
 type Triple = [number, number, number];
 
-function box(
+export function box(
   kind: BlockKind,
   [cx, cy, cz]: Triple,
   [sx, sy, sz]: Triple,
@@ -22,7 +22,7 @@ function box(
  * A ramp running along Z: a tilted slab whose top face climbs from height `yStart` at
  * `zStart` to height `yEnd` at `zEnd`.
  */
-function ramp(
+export function ramp(
   x: number,
   width: number,
   zStart: number,
@@ -51,7 +51,7 @@ function ramp(
 }
 
 /** The same point turned 180° around the center of the map. */
-function turnPoint(p: Vec3): Vec3 {
+export function turnPoint(p: Vec3): Vec3 {
   return { x: -p.x, y: p.y, z: -p.z };
 }
 
@@ -71,13 +71,22 @@ const CENTER: BlockDef[] = [
   box('block', [0, 0.75, 0], [10, 1.5, 10]),
 ];
 
-/** Team 0's half (−Z side). Team 1 gets the same blocks turned 180°, so both sides play alike. */
-const HALF: BlockDef[] = [
+/**
+ * Team 0's half (−Z side) that every layout shares: the boundary, the spawn pad, and the ramp
+ * up to the center platform. Team 1 gets the same blocks turned 180°.
+ */
+const FIXED_HALF: BlockDef[] = [
   // Boundary: tall and unpaintable, so nobody can climb out.
   box('boundary', [-18.5, 3, 0], [1, 6, 66], false),
   box('boundary', [0, 3, -32.5], [38, 6, 1], false),
   // Spawn pad at the back.
   box('block', [0, 0.5, -29.5], [10, 1, 5]),
+  // Ramp up to the center platform.
+  ramp(0, 4, -9, -5, 0, 1.5),
+];
+
+/** The original "Drip Yard" cover for team 0's half, used for the first round. */
+const CLASSIC_COVER: BlockDef[] = [
   // Low cover in front of the base.
   box('block', [-6, 0.6, -21], [2.4, 1.2, 1]),
   box('block', [6, 0.6, -21], [2.4, 1.2, 1]),
@@ -91,8 +100,6 @@ const HALF: BlockDef[] = [
   // Cover around the middle.
   box('block', [-7, 0.75, -4], [1.6, 1.5, 1.6]),
   box('block', [8, 0.75, -6], [1.6, 1.5, 1.6]),
-  // Ramp up to the center platform.
-  ramp(0, 4, -9, -5, 0, 1.5),
 ];
 
 /** On top of the spawn pad, front row first (more room for the camera behind you). */
@@ -106,12 +113,22 @@ const SPAWNS: Vec3[] = [
 
 const BASE: ZoneDef = { center: { x: 0, y: 1.5, z: -24.5 }, size: { x: 8, y: 3, z: 4 } };
 
-/** "Drip Yard": the first Capture the Flag arena (36 × 64 m, same layout for both teams). */
-export const ARENA: MapDef = {
-  name: 'Drip Yard',
-  bounds: { minX: -18, maxX: 18, minZ: -32, maxZ: 32 },
-  blocks: [...CENTER, ...HALF, ...HALF.map(turnBlock)],
-  spawns: [SPAWNS, SPAWNS.map(turnPoint)],
-  bases: [BASE, { center: turnPoint(BASE.center), size: BASE.size }],
-  flagSpawn: { x: 0, y: 1.5, z: 0 },
-};
+/**
+ * An arena from team 0's cover (−Z half): the shared frame (floor, boundary, spawn pads,
+ * center platform and its ramps) plus that cover, mirrored for team 1 so both sides play
+ * alike. 36 × 64 m.
+ */
+export function composeArena(name: string, cover: readonly BlockDef[]): MapDef {
+  const half = [...FIXED_HALF, ...cover];
+  return {
+    name,
+    bounds: { minX: -18, maxX: 18, minZ: -32, maxZ: 32 },
+    blocks: [...CENTER, ...half, ...half.map(turnBlock)],
+    spawns: [SPAWNS, SPAWNS.map(turnPoint)],
+    bases: [BASE, { center: turnPoint(BASE.center), size: BASE.size }],
+    flagSpawn: { x: 0, y: 1.5, z: 0 },
+  };
+}
+
+/** "Drip Yard": the first Capture the Flag arena, hand-made (the first round of every match). */
+export const ARENA: MapDef = composeArena('Drip Yard', CLASSIC_COVER);

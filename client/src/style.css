@@ -198,6 +198,36 @@ body {
   text-align: center;
 }
 
+.scoreboard-timer {
+  display: grid;
+  line-height: 1.1;
+}
+
+/* "first to 5" under the clock */
+.scoreboard-timer::after {
+  content: attr(data-goal);
+  font:
+    700 10px system-ui,
+    sans-serif;
+  opacity: 0.75;
+}
+
+.scoreboard-score.bump {
+  animation: score-bump 450ms cubic-bezier(0.2, 0.9, 0.3, 1.6);
+}
+
+@keyframes score-bump {
+  0% {
+    scale: 1;
+  }
+  35% {
+    scale: 1.5;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
 .scoreboard-timer.urgent {
   color: #ff5c7a;
 }

@@ -229,6 +229,15 @@ export class PaintAtlas {
     this.queued = 0;
   }
 
+  /** Frees the GPU memory (when the arena is swapped for a new layout). */
+  dispose(): void {
+    this.target.dispose();
+    this.geometry.dispose();
+    for (const child of this.scene.children) {
+      if (child instanceof Mesh) (child.material as ShaderMaterial).dispose();
+    }
+  }
+
   /** Wipes all paint. */
   clear(): void {
     this.queued = 0;

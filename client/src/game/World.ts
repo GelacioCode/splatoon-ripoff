@@ -12,6 +12,7 @@ import {
   Scene,
   Vector3,
   WebGLRenderer,
+  type Material,
 } from 'three';
 import {
   ARENA,
@@ -24,6 +25,7 @@ import {
   PaintGrid,
   weaponStats,
   type Look,
+  type MapDef,
   type PaintEvent,
   type Vec3,
 } from '@paint-rush/shared';
@@ -102,10 +104,20 @@ export class World {
   readonly quality: QualityLevel;
   readonly renderer: WebGLRenderer;
   readonly scene = new Scene();
-  readonly physics = new PhysicsWorld(ARENA.blocks);
-  readonly surfaces = buildSurfaces(ARENA.blocks);
-  readonly paint = new PaintGrid(this.surfaces);
-  readonly atlas: PaintAtlas;
+  /**
+   * The current arena and everything built from it. Online, a new layout replaces these
+   * after every capture (see `loadMap`), so don't keep references to them across frames.
+   */
+  map: MapDef = ARENA;
+  /** The layout seed `map` was built from (0 = Drip Yard; see arenaFor). */
+  mapSeed = 0;
+  physics = new PhysicsWorld(ARENA.blocks);
+  surfaces = buildSurfaces(ARENA.blocks);
+  paint = new PaintGrid(this.surfaces);
+  atlas: PaintAtlas;
+  /** Scene objects that belong to the current arena (its mesh and base zones). */
+  private mapObjects: Mesh[] = [];
+  private readonly paintTextureSize: number;
   readonly view = new ThirdPersonCamera(window.innerWidth / window.innerHeight);
   readonly input: InputManager;
   readonly particles: Particles;
@@ -164,9 +176,9 @@ export class World {
     sun.position.set(...SUN_DIRECTION).multiplyScalar(30);
     this.scene.add(sun);
 
-    const layout = packAtlas(this.surfaces, preset.paintTextureSize, PAINT_PIXELS_PER_METER);
-    this.atlas = new PaintAtlas(this.renderer, this.surfaces, layout);
-    this.scene.add(createMapMesh(ARENA, this.surfaces, this.atlas));
+    this.paintTextureSize = preset.paintTextureSize;
+    this.atlas = this.createAtlas();
+    this.addMapObjects();
 
     this.particles = new Particles(preset.particles, this.toonRamp);
     this.scene.add(this.particles.mesh, this.projectileView.mesh);
@@ -183,7 +195,6 @@ export class World {
       }),
     );
     this.scene.add(this.shadow);
-    this.addBaseZones();
 
     this.menu = createPauseMenu(this.settings, this.touchDevice, {
       play: () => this.play(),
@@ -256,9 +267,47 @@ export class World {
     this.menu.setVisible(false);
   }
 
+  /**
+   * Swaps the arena for another layout (online: a new random one after every capture). Its
+   * physics, paint grid and paint texture start fresh, so the old paint is gone. Anything
+   * made in the old physics world (e.g. our own body) has to be made again.
+   */
+  loadMap(map: MapDef, seed: number): void {
+    if (seed === this.mapSeed && map === this.map) return;
+    for (const object of this.mapObjects) {
+      this.scene.remove(object);
+      object.geometry.dispose();
+      (object.material as Material).dispose();
+    }
+    this.mapObjects = [];
+    this.atlas.dispose();
+    this.physics.dispose();
+    this.map = map;
+    this.mapSeed = seed;
+    this.physics = new PhysicsWorld(map.blocks);
+    this.surfaces = buildSurfaces(map.blocks);
+    this.paint = new PaintGrid(this.surfaces);
+    this.atlas = this.createAtlas();
+    this.addMapObjects();
+  }
+
+  /** The paint texture for the current surfaces (detail depends on the quality preset). */
+  private createAtlas(): PaintAtlas {
+    const layout = packAtlas(this.surfaces, this.paintTextureSize, PAINT_PIXELS_PER_METER);
+    return new PaintAtlas(this.renderer, this.surfaces, layout);
+  }
+
+  /** The arena mesh and the base zones of the current map. */
+  private addMapObjects(): void {
+    const mesh = createMapMesh(this.map, this.surfaces, this.atlas);
+    this.scene.add(mesh);
+    this.mapObjects.push(mesh);
+    this.addBaseZones();
+  }
+
   /** Each team's base (where the flag is brought to score): a glowing box in its color. */
   private addBaseZones(): void {
-    ARENA.bases.forEach((zone, team) => {
+    this.map.bases.forEach((zone, team) => {
       const color = TEAM_COLORS[team];
       const volume = new Mesh(
         new BoxGeometry(zone.size.x, zone.size.y, zone.size.z),
@@ -278,6 +327,7 @@ export class World {
       floor.rotation.x = -Math.PI / 2;
       floor.position.set(zone.center.x, zone.center.y - zone.size.y / 2 + 0.03, zone.center.z);
       this.scene.add(volume, floor);
+      this.mapObjects.push(volume, floor);
     });
   }
 

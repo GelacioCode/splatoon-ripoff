@@ -61,6 +61,9 @@ export const MSG_KICKED = 'kicked';
  */
 export const MSG_PLAY_AGAIN = 'playAgain';
 
+/** Host → server: captures to win. Payload: one of CONFIG.lobby.captureGoalOptions. */
+export const MSG_CAPTURE_GOAL = 'captureGoal';
+
 /** Host → server: match length. Payload: minutes, one of CONFIG.lobby.matchMinuteOptions. */
 export const MSG_MATCH_LENGTH = 'matchLength';
 

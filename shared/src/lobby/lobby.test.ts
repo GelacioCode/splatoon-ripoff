@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { createRng } from '../rng';
 import { generateLobbyCode, LOBBY_CODE_ALPHABET, parseLobbyCode } from './lobbyCode';
 import { cleanName, DEFAULT_PLAYER_NAME } from './names';
-import { isMatchLength, nextPhase, parsePhase, phaseSeconds } from './phases';
+import { isCaptureGoal, isMatchLength, nextPhase, parsePhase, phaseSeconds } from './phases';
 import { shuffleTeams, smallerTeam } from './teams';
 
 describe('lobby codes', () => {
@@ -89,5 +89,13 @@ describe('match phases', () => {
     expect(isMatchLength(5)).toBe(true);
     expect(isMatchLength(4)).toBe(false);
     expect(isMatchLength('5')).toBe(false);
+  });
+
+  it('after a capture: a short "scored" break, then a fresh countdown; goals are 3, 5 or 7', () => {
+    expect(nextPhase('scored')).toBe('countdown');
+    expect(phaseSeconds('scored')).toBe(CONFIG.match.scoredSeconds);
+    expect(parsePhase('scored')).toBe('scored');
+    expect([3, 5, 7].every(isCaptureGoal)).toBe(true);
+    expect(isCaptureGoal(4)).toBe(false);
   });
 });

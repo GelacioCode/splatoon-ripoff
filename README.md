@@ -18,7 +18,7 @@ A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming throu
 
 1. The host clicks **Create Lobby**, enters a name and picks a role. The lobby shows a big **QR code** and a 4-character **code**.
 2. Players scan the QR code (or open the site and type the code), enter a name, design their blob (eyes, hat, goggles, shoes, body shape, with a turning 3D preview), pick a role and join. Name, look and role are remembered on each device. **Edit look** in the lobby changes it for everyone at once.
-3. The host sees everyone in the list. They can remove a player (✕), set the match length, and press **Start**, which needs 2 players. The host plays too.
+3. The host sees everyone in the list. They can remove a player (✕), set the match length (3 / 5 / 7 minutes) and the captures to win (3 / 5 / 7), and press **Start**, which needs 2 players. The host plays too.
 4. On Start, players are shuffled into two even teams. A **team reveal** shows, then **3 · 2 · 1 · GO!** while everyone waits on their spawn pad. Then click or tap to play.
 5. Players who join while a match is on go straight in, on the smaller team.
 6. In the arena, other players' names float over their heads in their team's colour. Names hide behind walls and disappear while a player is a puddle, so hiding in paint still works.
@@ -56,7 +56,11 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 - **Carrier rules:** you can't swim and you move at 80 % speed, so your team has to escort you and paint a path.
 - **Score** by carrying it into **your own base**, the glowing area in your colour in front of your spawn. The flag reappears in the middle 3 seconds later.
 - **Splatted carrier:** the flag drops on the spot, and anyone can take it. Left untouched for 15 s, it goes back to the middle.
-- **Winning:** first team to 3 captures wins. When the host's match time runs out, the team with more captures wins; on a tie, the team that painted more of the map wins. An exact tie is a draw.
+- **A fresh round after every capture** (that doesn't win):
+  - "Pink scores!" shows, then everyone goes back to their spawn, the paint is wiped, and the arena gets a **brand-new random layout**, followed by 3 · 2 · 1 · GO.
+  - The first round is always the hand-made Drip Yard.
+  - The match clock pauses between rounds.
+- **Winning:** the first team to reach the host's goal (**3, 5 or 7 captures**, set in the lobby) wins. When the host's match time runs out, the team with more captures wins; on a tie, the team that painted more over the whole match wins. An exact tie is a draw.
 - The scoreboard at top centre shows captures, time left, and what to do right now.
 
 ## Stats, minimap and results

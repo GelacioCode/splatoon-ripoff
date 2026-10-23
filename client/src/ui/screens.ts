@@ -18,6 +18,8 @@ export interface LobbyView {
   players: LobbyPlayer[];
   isHost: boolean;
   matchMinutes: number;
+  /** Captures to win (3, 5 or 7). */
+  capturesToWin: number;
   /** SVG markup of the join QR code (host only), or null while it's being made. */
   qrSvg: string | null;
   joinLink: string;
@@ -27,6 +29,7 @@ export interface LobbyActions {
   start: () => void;
   kick: (id: string) => void;
   setMinutes: (minutes: number) => void;
+  setCaptureGoal: (captures: number) => void;
   editLook: () => void;
   leave: () => void;
 }
@@ -228,6 +231,16 @@ export class Screens {
       minutes.addEventListener('change', () => actions.setMinutes(Number(minutes.value)));
       const length = element('label', 'screen-label', 'Match length');
       length.append(minutes);
+      const goal = element('select', 'screen-select');
+      for (const option of CONFIG.lobby.captureGoalOptions) {
+        const el = element('option', undefined, `First to ${option} captures`);
+        el.value = String(option);
+        el.selected = option === view.capturesToWin;
+        goal.append(el);
+      }
+      goal.addEventListener('change', () => actions.setCaptureGoal(Number(goal.value)));
+      const goalLabel = element('label', 'screen-label', 'To win');
+      goalLabel.append(goal);
       const enough = view.players.length >= CONFIG.lobby.minPlayersToStart;
       const start = button(
         enough ? 'Start' : `Start (needs ${CONFIG.lobby.minPlayersToStart} players)`,
@@ -235,10 +248,14 @@ export class Screens {
         actions.start,
       );
       start.disabled = !enough;
-      parts.push(length, start);
+      parts.push(length, goalLabel, start);
     } else {
       parts.push(
-        element('p', 'screen-waiting', `Waiting for the host… (${view.matchMinutes} min match)`),
+        element(
+          'p',
+          'screen-waiting',
+          `Waiting for the host… (${view.matchMinutes} min, first to ${view.capturesToWin} captures)`,
+        ),
       );
     }
     parts.push(
@@ -281,8 +298,8 @@ export class Screens {
     const summary = element(
       'p',
       'results-summary',
-      `Captures ${view.scores[0]} – ${view.scores[1]} · Turf ${view.turf[0]}% – ${view.turf[1]}%` +
-        (view.reason === 'turf' ? ' (decided by turf)' : ''),
+      `Captures ${view.scores[0]} – ${view.scores[1]} · Paint ${view.turf[0]} – ${view.turf[1]}` +
+        (view.reason === 'turf' ? ' (decided by paint)' : ''),
     );
     const next = view.isHost
       ? button('Play again', 'menu-play', view.playAgain)
@@ -361,7 +378,13 @@ export class MatchBanner {
    * The match is over: who won and how. `winner` is a team, or −1 for a draw; `reason` is a
    * MatchResult reason.
    */
-  showEnd(winner: number, reason: string, scores: [number, number], turf: [number, number]): void {
+  showEnd(
+    winner: number,
+    reason: string,
+    scores: [number, number],
+    turf: [number, number],
+    goal: number,
+  ): void {
     const key = `end|${winner}|${reason}|${scores.join()}|${turf.join()}`;
     if (!this.update(key)) return;
     const title = winner < 0 ? "It's a draw!" : `${winner === 0 ? 'Pink' : 'Cyan'} team wins!`;
@@ -369,11 +392,22 @@ export class MatchBanner {
     if (winner >= 0) big.style.color = cssColor(TEAM_COLORS[winner]);
     const how =
       reason === 'captures'
-        ? `${scores[0]} – ${scores[1]} · first to ${CONFIG.match.capturesToWin} captures`
+        ? `${scores[0]} – ${scores[1]} · first to ${goal} captures`
         : reason === 'time'
           ? `Time's up! ${scores[0]} – ${scores[1]}`
-          : `Time's up! ${scores[0]} – ${scores[1]}, decided by turf: ${turf[0]}% vs ${turf[1]}%`;
+          : `Time's up! ${scores[0]} – ${scores[1]}, decided by paint: ${turf[0]} vs ${turf[1]}`;
     this.root.replaceChildren(big, element('p', 'banner-sub', how));
+  }
+
+  /** After a capture: who scored, and that a new arena is coming. */
+  showScored(team: number, scores: [number, number], goal: number): void {
+    if (!this.update(`scored|${team}|${scores.join()}`)) return;
+    const big = element('p', 'banner-big banner-end', `${team === 0 ? 'Pink' : 'Cyan'} scores!`);
+    big.style.color = cssColor(TEAM_COLORS[team] ?? TEAM_COLORS[0]);
+    this.root.replaceChildren(
+      big,
+      element('p', 'banner-sub', `${scores[0]} – ${scores[1]} · first to ${goal} · new arena!`),
+    );
   }
 
   /** "GO!" for a moment, then the banner hides by itself. */
