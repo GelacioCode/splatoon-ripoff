@@ -318,6 +318,25 @@ export class MatchBanner {
     }
   }
 
+  /**
+   * The match is over: who won and how. `winner` is a team, or −1 for a draw; `reason` is a
+   * MatchResult reason.
+   */
+  showEnd(winner: number, reason: string, scores: [number, number], turf: [number, number]): void {
+    const key = `end|${winner}|${reason}|${scores.join()}|${turf.join()}`;
+    if (!this.update(key)) return;
+    const title = winner < 0 ? "It's a draw!" : `${winner === 0 ? 'Pink' : 'Cyan'} team wins!`;
+    const big = element('p', 'banner-big banner-end', title);
+    if (winner >= 0) big.style.color = cssColor(TEAM_COLORS[winner]);
+    const how =
+      reason === 'captures'
+        ? `${scores[0]} – ${scores[1]} · first to ${CONFIG.match.capturesToWin} captures`
+        : reason === 'time'
+          ? `Time's up! ${scores[0]} – ${scores[1]}`
+          : `Time's up! ${scores[0]} – ${scores[1]}, decided by turf: ${turf[0]}% vs ${turf[1]}%`;
+    this.root.replaceChildren(big, element('p', 'banner-sub', how));
+  }
+
   /** "GO!" for a moment, then the banner hides by itself. */
   showGo(): void {
     if (!this.update('go')) return;

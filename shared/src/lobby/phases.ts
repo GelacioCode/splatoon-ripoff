@@ -1,10 +1,10 @@
 import { CONFIG } from '../config';
 
 /**
- * Where a match is: players gathering in the lobby, the team reveal, the 3-2-1 countdown, then
- * playing. (Phase 4 adds the end of the match.)
+ * Where a match is: players gathering in the lobby, the team reveal, the 3-2-1 countdown,
+ * playing, then ended (a winner, or time ran out).
  */
-export type MatchPhase = 'lobby' | 'reveal' | 'countdown' | 'playing';
+export type MatchPhase = 'lobby' | 'reveal' | 'countdown' | 'playing' | 'ended';
 
 /** How long a timed phase lasts (s), or null for phases that wait for something else. */
 export function phaseSeconds(phase: MatchPhase): number | null {
@@ -22,7 +22,9 @@ export function nextPhase(phase: MatchPhase): MatchPhase {
 
 /** Synced as a plain string; anything unexpected (e.g. before the first update) counts as the lobby. */
 export function parsePhase(value: unknown): MatchPhase {
-  return value === 'reveal' || value === 'countdown' || value === 'playing' ? value : 'lobby';
+  return value === 'reveal' || value === 'countdown' || value === 'playing' || value === 'ended'
+    ? value
+    : 'lobby';
 }
 
 export function isMatchLength(value: unknown): value is number {

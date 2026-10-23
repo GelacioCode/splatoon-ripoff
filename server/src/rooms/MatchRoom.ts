@@ -6,6 +6,7 @@ import {
   buildSurfaces,
   cleanName,
   CONFIG,
+  createFlag,
   decodePaintEvents,
   defaultMatchMinutes,
   DEFAULT_WEAPON,
@@ -15,8 +16,10 @@ import {
   generateLobbyCode,
   inputsToRun,
   isMatchLength,
+  matchResult,
   MatchState,
   MSG_CHOOSE_WEAPON,
+  MSG_FLAG,
   MSG_HIT,
   MSG_KICK,
   MSG_KICKED,
@@ -44,7 +47,12 @@ import {
   shotEventOf,
   shuffleTeams,
   smallerTeam,
+  stepFlag,
+  type Flag,
+  type FlagEvent,
+  type FlagPlayer,
   type MatchJoinOptions,
+  type MatchResult,
   type MatchPhase,
   type PaintEvent,
   type SplatEvent,
@@ -112,6 +120,10 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
    * shooter saw everyone (other players are drawn ~100 ms in the past, plus the ping).
    */
   private rewind!: Rewind;
+  /** The one neutral flag (mirrored into the synced state every tick). */
+  private flag: Flag = createFlag(ARENA.flagSpawn);
+  /** Seconds of match time left while playing. */
+  private matchTimer = 0;
 
   onCreate() {
     this.roomId = generateLobbyCode(Math.random, (code) => codesInUse.has(code));
@@ -123,6 +135,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     // Created before the fixed timestep, so it records after every tick.
     this.rewind = this.allowRewindState({ maxRewindMs: 500 });
     this.rewind.attachAll(this.state.players, { fields: ['x', 'y', 'z', 'swimBlend'] });
+    this.syncFlag();
     this.setFixedTimestep((ctx) => this.step(ctx), CONFIG.net.tickRate);
     console.log(`[match] lobby ${this.roomId} created`);
   }
@@ -236,6 +249,13 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       this.placeOnSpawn(player);
       if (!this.bodies.has(id)) this.bodies.set(id, this.physics.createCharacter(player));
     }
+    // A fresh match: no captures, the flag in the middle.
+    this.state.score0 = 0;
+    this.state.score1 = 0;
+    this.state.winner = -1;
+    this.state.winReason = '';
+    this.flag = createFlag(ARENA.flagSpawn);
+    this.syncFlag();
     this.setPhase('reveal');
     console.log(`[match] ${this.roomId}: started with ${this.state.players.size} players`);
   }
@@ -244,6 +264,99 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.phase = phase;
     this.phaseTimer = phaseSeconds(phase) ?? 0;
     this.state.countdown = Math.ceil(this.phaseTimer);
+    if (phase === 'playing') {
+      this.matchTimer = this.state.matchMinutes * 60;
+      this.state.timeLeft = Math.ceil(this.matchTimer);
+    }
+  }
+
+  /**
+   * Capture the Flag, once per tick while playing: the clock, the flag, the carrier, and
+   * whether someone has won.
+   */
+  private stepMatch(dt: number): void {
+    this.matchTimer = Math.max(0, this.matchTimer - dt);
+    const left = Math.ceil(this.matchTimer);
+    if (left !== this.state.timeLeft) this.state.timeLeft = left;
+
+    const inArena: FlagPlayer[] = [];
+    for (const [id, p] of this.state.players) {
+      if (!this.bodies.has(id)) continue;
+      inArena.push({
+        id,
+        team: p.team,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        alive: p.respawnTimer <= 0,
+        standing: p.swimBlend < 0.5,
+      });
+    }
+    const event = stepFlag(this.flag, inArena, dt, ARENA.flagSpawn, ARENA.bases);
+    if (event) this.onFlagEvent(event);
+    this.syncFlag();
+
+    const turf = this.turfPercent();
+    const result = matchResult([this.state.score0, this.state.score1], this.matchTimer, turf);
+    if (result) this.endMatch(result, turf);
+  }
+
+  private onFlagEvent(event: FlagEvent): void {
+    if (event.kind === 'captured') {
+      if (event.team === 0) this.state.score0++;
+      else this.state.score1++;
+    }
+    if (event.kind === 'dropped') {
+      // Settle a flag dropped in mid-air (a carrier splatted while jumping) onto the ground.
+      const below = this.physics.raycast(
+        { x: this.flag.x, y: this.flag.y + 0.5, z: this.flag.z },
+        { x: 0, y: -1, z: 0 },
+        40,
+      );
+      if (below) this.flag.y = below.point.y;
+    }
+    this.broadcast(MSG_FLAG, event);
+  }
+
+  /** Mirrors the flag into the synced state, and marks who's carrying it. */
+  private syncFlag(): void {
+    const s = this.state;
+    const f = this.flag;
+    s.flagState = f.state;
+    s.flagX = f.x;
+    s.flagY = f.y;
+    s.flagZ = f.z;
+    s.flagCarrier = f.carrier;
+    s.flagTimer = f.state === 'dropped' ? Math.ceil(f.timer) : 0;
+    for (const [id, player] of s.players) {
+      const carrying = f.state === 'carried' && f.carrier === id;
+      if (player.carrying !== carrying) player.carrying = carrying;
+    }
+  }
+
+  /** How much of the paintable map each team has painted (%). */
+  private turfPercent(): [number, number] {
+    const total = Math.max(1, this.paint.totalCells);
+    return [
+      Math.round((this.paint.paintedCells(0) / total) * 100),
+      Math.round((this.paint.paintedCells(1) / total) * 100),
+    ];
+  }
+
+  private endMatch(result: MatchResult, turf: [number, number]): void {
+    this.state.winner = result.winner;
+    this.state.winReason = result.reason;
+    this.state.turf0 = turf[0];
+    this.state.turf1 = turf[1];
+    // Nobody carries anything once it's over.
+    this.flag.state = this.flag.state === 'carried' ? 'dropped' : this.flag.state;
+    this.flag.carrier = '';
+    this.syncFlag();
+    this.setPhase('ended');
+    const s = this.state;
+    console.log(
+      `[match] ${this.roomId}: ended (${result.reason}), winner ${result.winner}, ${s.score0}–${s.score1}`,
+    );
   }
 
   /** Counts down the reveal and the countdown, moving on when each runs out. */
@@ -301,6 +414,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       this.applyPaint(this.landed);
       this.landed.length = 0;
     }
+    if (this.phase === 'playing') this.stepMatch(ctx.dt);
   }
 
   /**
@@ -363,7 +477,15 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       this.sendShots(sessionId, shots);
     }
 
-    if (player.y < RESPAWN_BELOW_Y) this.placeOnSpawn(player);
+    if (player.y < RESPAWN_BELOW_Y) {
+      // A carrier falling off the map doesn't get a free ride home: the flag goes back.
+      if (this.flag.state === 'carried' && this.flag.carrier === sessionId) {
+        this.flag = createFlag(ARENA.flagSpawn);
+        this.syncFlag();
+        this.broadcast(MSG_FLAG, { kind: 'returned' } satisfies FlagEvent);
+      }
+      this.placeOnSpawn(player);
+    }
   }
 
   /**

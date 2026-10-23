@@ -8,6 +8,7 @@ import {
   decodeShotEvents,
   MatchState,
   MSG_CHOOSE_WEAPON,
+  MSG_FLAG,
   MSG_HIT,
   MSG_KICK,
   MSG_KICKED,
@@ -54,11 +55,15 @@ import { clearReconnectToken, loadReconnectToken, saveReconnectToken } from '../
 import { isLocalPage, joinPath, joinUrl, type Route } from '../net/route';
 import { meterRoomTraffic, TrafficMeter } from '../net/trafficMeter';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
+import { FlagView } from '../render/FlagView';
 import { LookPreview } from '../render/LookPreview';
 import { TEAM_COLORS } from '../render/palette';
 import { saveSettings } from '../settings';
+import { Announcer } from '../ui/announcer';
 import type { DevOverlay } from '../ui/devOverlay';
+import { FlagMarker } from '../ui/flagMarker';
 import { qrCodeSvg } from '../ui/qrCode';
+import { Scoreboard } from '../ui/scoreboard';
 import { MatchBanner, Screens, type LobbyPlayer } from '../ui/screens';
 import { FixedStep } from './fixedStep';
 import { NewShotFilter } from './newShotFilter';
@@ -348,6 +353,10 @@ interface ShotTarget {
   team: number;
 }
 
+function cssColor(hex: number): string {
+  return `#${hex.toString(16).padStart(6, '0')}`;
+}
+
 /** Spawn protection shows as blinking. */
 function blinking(protectTimer: number, timeMs: number): boolean {
   return protectTimer > 0 && Math.floor(timeMs / 100) % 2 === 0;
@@ -401,6 +410,11 @@ class NetSession {
   private splattedBy = 'someone';
   private wasSplatted = false;
   private lastHp: number = CONFIG.player.maxHp;
+  // Capture the Flag on screen.
+  private readonly flagView: FlagView;
+  private readonly flagMarker = new FlagMarker();
+  private readonly scoreboard = new Scoreboard();
+  private readonly announcer = new Announcer();
   private readonly saveToken = () => saveReconnectToken(this.room.reconnectionToken);
 
   constructor(
@@ -417,6 +431,8 @@ class NetSession {
     this.screens = screens;
     this.banner = banner;
     this.seed = seedFromString(room.sessionId);
+    this.flagView = new FlagView(world.toonRamp);
+    world.scene.add(this.flagView.root);
     // Others are drawn slightly in the past, between two snapshots, so they move smoothly.
     this.predict = Predict.get(room, { mode: 'lerp', delay: CONFIG.net.interpolationDelayMs });
     this.netInput = room.input({ type: NetInput });
@@ -429,6 +445,7 @@ class NetSession {
     room.onMessage(MSG_PONG, (sentAt: unknown) => this.receivePong(sentAt));
     room.onMessage(MSG_HIT, (splat: unknown) => this.world.showHit(splat === true));
     room.onMessage(MSG_SPLAT, (payload: unknown) => this.receiveSplat(payload));
+    room.onMessage(MSG_FLAG, (payload: unknown) => this.receiveFlag(payload));
     room.onMessage(MSG_KICKED, () => {
       this.kicked = true;
     });
@@ -471,6 +488,10 @@ class NetSession {
     this.world.atlas.clear();
     this.world.killFeed.clear();
     this.world.setSplatted(null);
+    this.world.scene.remove(this.flagView.root);
+    this.flagMarker.dispose();
+    this.scoreboard.dispose();
+    this.announcer.dispose();
   }
 
   frame(timeMs: number): void {
@@ -558,6 +579,7 @@ class NetSession {
         (shot, from, direction, distance) => this.shotHitsTarget(shot, from, direction, distance),
       );
     }
+    this.updateFlag(dt, phase);
     world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, this.shots, this.shotLoop.alpha);
     this.updateStatus(dt);
   }
@@ -637,11 +659,97 @@ class NetSession {
       this.editingLook = false;
       this.world.setMenuVisible(true);
     }
-    const secondsLeft = this.room.state.countdown;
+    const state = this.room.state;
+    const secondsLeft = state.countdown;
+    this.scoreboard.setVisible(phase !== 'reveal');
     if (phase === 'reveal') this.banner.showReveal(this.teamNames(), secondsLeft);
     else if (phase === 'countdown') this.banner.showCountdown(secondsLeft);
-    else if (previous === 'countdown') this.banner.showGo();
+    else if (phase === 'ended') {
+      this.banner.showEnd(
+        state.winner,
+        state.winReason,
+        [state.score0, state.score1],
+        [state.turf0, state.turf1],
+      );
+    } else if (previous === 'countdown') this.banner.showGo();
     else if (previous !== 'playing') this.banner.hide();
+  }
+
+  /**
+   * The flag (at its spot, or on its carrier's back), the arrow pointing to it, and the
+   * scoreboard line saying what to do.
+   */
+  private updateFlag(dt: number, phase: MatchPhase): void {
+    const state = this.room.state;
+    const flagState = state.flagState;
+    const carrierId = state.flagCarrier;
+    const myId = this.room.sessionId;
+    const myTeam = state.players.get(myId)?.team ?? 0;
+    let at: Vec3 | null = null;
+    let yaw = 0;
+    let color: number | null = null;
+    const carried = flagState === 'carried';
+    if (carried) {
+      const carrier = state.players.get(carrierId);
+      if (carrier) {
+        color = TEAM_COLORS[carrier.team] ?? null;
+        if (carrierId === myId) {
+          at = { x: this.feet.x, y: this.feet.y, z: this.feet.z };
+          yaw = this.world.view.yaw;
+        } else {
+          at = {
+            x: this.predict.value(carrier, 'x'),
+            y: this.predict.value(carrier, 'y'),
+            z: this.predict.value(carrier, 'z'),
+          };
+          yaw = this.predict.value(carrier, 'yaw');
+        }
+      }
+    } else if (flagState === 'home' || flagState === 'dropped') {
+      at = { x: state.flagX, y: state.flagY, z: state.flagZ };
+    }
+    const active = phase !== 'lobby' && at !== null;
+    this.flagView.update(dt, active, at?.x ?? 0, at?.y ?? 0, at?.z ?? 0, carried, yaw, color);
+    // The marker floats above the flag, but not over our own head while we carry it.
+    const markAt = active && at && carrierId !== myId ? { x: at.x, y: at.y + 2.3, z: at.z } : null;
+    this.flagMarker.update(this.world.view.camera, markAt, cssColor(color ?? 0xffffff));
+
+    let objective = '';
+    if (phase === 'playing') {
+      const carrierTeam = state.players.get(carrierId)?.team;
+      if (carried && carrierId === myId) objective = 'You have the flag! Bring it to your base';
+      else if (carried && carrierTeam === myTeam) objective = 'Escort your flag carrier!';
+      else if (carried) objective = 'Stop the enemy flag carrier!';
+      else if (flagState === 'dropped')
+        objective = `The flag is down! It returns in ${state.flagTimer}`;
+      else if (flagState === 'away') objective = 'Flag coming back to the middle…';
+      else objective = 'Grab the flag in the middle!';
+    }
+    this.scoreboard.update(state.score0, state.score1, state.timeLeft, objective);
+  }
+
+  /** Flag news from the server, announced to everyone. */
+  private receiveFlag(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const event = payload as Partial<{ kind: string; by: string; team: number }>;
+    const name =
+      (typeof event.by === 'string' && this.room.state.players.get(event.by)?.name) || 'Someone';
+    const team = typeof event.team === 'number' ? event.team : -1;
+    const color = cssColor(TEAM_COLORS[team] ?? 0xffffff);
+    const teamName = team === 0 ? 'Pink' : 'Cyan';
+    if (event.kind === 'taken') {
+      this.announcer.show(`${name} took the flag!`, color);
+      this.world.sfx.fanfare(0.5);
+    } else if (event.kind === 'captured') {
+      this.announcer.show(`${name} scored for ${teamName}!`, color);
+      this.world.sfx.fanfare(1);
+    } else if (event.kind === 'dropped') {
+      this.announcer.show(`${name} dropped the flag!`, color);
+    } else if (event.kind === 'returned') {
+      this.announcer.show('The flag went back to the middle');
+    } else if (event.kind === 'reset') {
+      this.announcer.show('The flag is back in the middle');
+    }
   }
 
   private updateLobby(): void {

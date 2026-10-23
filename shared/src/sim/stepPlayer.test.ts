@@ -144,6 +144,26 @@ describe('stepPlayer', () => {
     }
     expect(jumped).toBe(false);
   });
+
+  it("can't swim while carrying the flag, and walks slower", () => {
+    const player = spawn(12, 0.05, -12);
+    player.state.carrying = true;
+    for (let i = 0; i < 3; i++) step(player);
+    for (let i = 0; i < 15; i++) step(player, { moveY: 1, swim: true });
+    expect(player.state.swimBlend).toBe(0);
+    const carrierSpeed = CONFIG.movement.walkSpeed * CONFIG.match.flagCarrierSpeedMultiplier;
+    expect(speed(player)).toBeCloseTo(carrierSpeed, 6);
+  });
+
+  it('does nothing while splatted', () => {
+    const player = spawn(-12, 0.05, 12);
+    for (let i = 0; i < 3; i++) step(player);
+    player.state.respawnTimer = 2;
+    const { x, z } = player.state;
+    for (let i = 0; i < 10; i++) step(player, { moveY: 1, jump: true });
+    expect(player.state.x).toBe(x);
+    expect(player.state.z).toBe(z);
+  });
 });
 
 describe('stepPlayer with paint', () => {

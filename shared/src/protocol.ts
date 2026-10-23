@@ -29,6 +29,12 @@ export const MSG_HIT = 'hit';
 /** Server → everyone: someone was splatted. Payload: a SplatEvent. */
 export const MSG_SPLAT = 'splat';
 
+/**
+ * Server → everyone: flag news ('taken', 'dropped', 'captured', 'returned' or 'reset'), for the
+ * announcements. Payload: a FlagEvent.
+ */
+export const MSG_FLAG = 'flag';
+
 export interface SplatEvent {
   /** Session ids; `by` is empty if the attacker already left. */
   victim: string;

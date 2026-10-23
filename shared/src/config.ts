@@ -53,6 +53,8 @@ export const CONFIG = {
     flagResetDelaySeconds: 3,
     /** The carrier can't swim and moves at this fraction of normal speed. */
     flagCarrierSpeedMultiplier: 0.8,
+    /** Standing this close to the flag picks it up (m, measured flat; height within 2 m). */
+    flagPickupRadius: 1.3,
   },
   paint: {
     /** Size of one paint-grid cell on floors and walls (m). */
@@ -201,7 +203,8 @@ export const CONFIG = {
       dripEvery: 1.5,
       dripRadius: 0.3,
       moveSpeedMultiplier: 1,
-      damage: 25,
+      // 3 hits (user decision): same as the machine gun; they differ in range.
+      damage: 34,
     },
     /** Few, slow, pinpoint long-range shots with a long paint trail. Fastest on foot. */
     sniper: {
@@ -217,8 +220,8 @@ export const CONFIG = {
       dripEvery: 0.9,
       dripRadius: 0.32,
       moveSpeedMultiplier: 1.1,
-      // One hit splats (user decision).
-      damage: 100,
+      // 2 hits (user decision).
+      damage: 50,
     },
     /** A short-range spray of small splats. Heaviest, so the slowest on foot. */
     machineGun: {
@@ -234,7 +237,8 @@ export const CONFIG = {
       dripEvery: 2,
       dripRadius: 0.25,
       moveSpeedMultiplier: 0.8,
-      damage: 12,
+      // 3 hits (user decision), but only up close: short range is its trade-off.
+      damage: 34,
     },
   },
 };

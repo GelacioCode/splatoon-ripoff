@@ -1,10 +1,13 @@
 import {
+  BoxGeometry,
   CircleGeometry,
   Color,
   DirectionalLight,
+  DoubleSide,
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
+  PlaneGeometry,
   REVISION,
   Scene,
   Vector3,
@@ -111,7 +114,8 @@ export class World {
   readonly killFeed = new KillFeed();
   readonly overlay: DevOverlay;
   private readonly roleChanged: (weapon: number) => void;
-  private readonly toonRamp = createToonRamp();
+  /** The cel-shading ramp every toon material shares. */
+  readonly toonRamp = createToonRamp();
   private readonly hud = createHud();
   private readonly menu: ReturnType<typeof createPauseMenu>;
   /** False while lobby screens are up: the menu then never appears (e.g. on Esc). */
@@ -179,6 +183,7 @@ export class World {
       }),
     );
     this.scene.add(this.shadow);
+    this.addBaseZones();
 
     this.menu = createPauseMenu(this.settings, this.touchDevice, {
       play: () => this.play(),
@@ -249,6 +254,31 @@ export class World {
     this.input.touch?.setVisible(false);
     if (document.pointerLockElement) document.exitPointerLock();
     this.menu.setVisible(false);
+  }
+
+  /** Each team's base (where the flag is brought to score): a glowing box in its color. */
+  private addBaseZones(): void {
+    ARENA.bases.forEach((zone, team) => {
+      const color = TEAM_COLORS[team];
+      const volume = new Mesh(
+        new BoxGeometry(zone.size.x, zone.size.y, zone.size.z),
+        new MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.1,
+          depthWrite: false,
+          side: DoubleSide,
+        }),
+      );
+      volume.position.set(zone.center.x, zone.center.y, zone.center.z);
+      const floor = new Mesh(
+        new PlaneGeometry(zone.size.x, zone.size.z),
+        new MeshBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }),
+      );
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set(zone.center.x, zone.center.y - zone.size.y / 2 + 0.03, zone.center.z);
+      this.scene.add(volume, floor);
+    });
   }
 
   /** Your shot hit an enemy: hit marker and tick. */

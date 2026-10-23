@@ -51,10 +51,10 @@ describe('shot hits', () => {
 });
 
 describe('damage', () => {
-  it('splats in 1 sniper hit, 4 assault hits and 9 machine gun hits', () => {
-    expect(hitsToSplat(weaponStats(SNIPER).damage)).toBe(1);
-    expect(hitsToSplat(weaponStats(ASSAULT).damage)).toBe(4);
-    expect(hitsToSplat(weaponStats(MACHINE_GUN).damage)).toBe(9);
+  it('splats in 2 sniper hits, 3 assault hits and 3 machine gun hits', () => {
+    expect(hitsToSplat(weaponStats(SNIPER).damage)).toBe(2);
+    expect(hitsToSplat(weaponStats(ASSAULT).damage)).toBe(3);
+    expect(hitsToSplat(weaponStats(MACHINE_GUN).damage)).toBe(3);
   });
 
   it('never hurts teammates, splatted players or anyone under spawn protection', () => {

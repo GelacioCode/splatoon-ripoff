@@ -2,7 +2,7 @@
 
 A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming through your own paint, and Capture the Flag. Players join from their phones by scanning a QR code.
 
-> **Status: Phase 3 (lobby) in progress.** Create a lobby, players join by QR code or code, the host starts, and teams are balanced automatically.
+> **Status: Phase 4 (Capture the Flag) in progress.** Lobbies with QR join, customization, health and splatting, and Capture the Flag with scoring and a match timer.
 
 ## Game modes (page address options)
 
@@ -49,6 +49,16 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
   - **Data:** KB/s down and up. Only shown in `pnpm dev`, or with `?debug` in the link.
 - `?debug` also opens the Colyseus netcode panel, which has a latency simulator for testing lag.
 
+## Capture the Flag
+
+- One neutral flag starts on the raised platform in the middle, with a light beam above it. An arrow at the screen edge points to it when it's off screen.
+- **Take it** by touching it while standing (not as a puddle). It rides on your back in your team colour.
+- **Carrier rules:** you can't swim and you move at 80 % speed, so your team has to escort you and paint a path.
+- **Score** by carrying it into **your own base**, the glowing area in your colour in front of your spawn. The flag reappears in the middle 3 seconds later.
+- **Splatted carrier:** the flag drops on the spot, and anyone can take it. Left untouched for 15 s, it goes back to the middle.
+- **Winning:** first team to 3 captures wins. When the host's match time runs out, the team with more captures wins; on a tie, the team that painted more of the map wins. An exact tie is a draw.
+- The scoreboard at top centre shows captures, time left, and what to do right now.
+
 ## Health and splatting
 
 - Everyone has 100 HP. Hits from the other team hurt; your own team's shots pass through you.
@@ -64,9 +74,9 @@ Pick a role on the start screen. Your pick is remembered on this device, and you
 
 | Role | Shots per reload | Damage per hit | Range | Walking speed |
 | --- | --- | --- | --- | --- |
-| Sniper | 5 | 100 (one hit splats) | Long, fast shots with a long trail | Fastest |
-| Assault | 20 | 25 (4 hits) | Medium (all-rounder) | Normal |
-| Machine gun | 40 | 12 (9 hits) | Short, wide spray | Slowest |
+| Sniper | 5 | 50 (2 hits) | Long, fast shots with a long trail | Fastest |
+| Assault | 20 | 34 (3 hits) | Medium (all-rounder) | Normal |
+| Machine gun | 40 | 34 (3 hits) | Short, wide spray | Slowest |
 
 Each role has its own blaster shape. All role values live in `CONFIG.weapons` in `shared/src/config.ts`, and the tuning panel has a folder per role.
 

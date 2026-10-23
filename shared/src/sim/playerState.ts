@@ -57,6 +57,8 @@ export interface PlayerState {
   respawnTimer: number;
   /** Seconds of spawn protection left (shots don't hurt). */
   protectTimer: number;
+  /** Carrying the flag: can't swim, and moves slower. Set by the server's flag rules. */
+  carrying: boolean;
 }
 
 export function createPlayerState(
@@ -94,5 +96,6 @@ export function createPlayerState(
     aiming: false,
     respawnTimer: 0,
     protectTimer: 0,
+    carrying: false,
   };
 }

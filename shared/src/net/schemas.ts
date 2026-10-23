@@ -49,6 +49,7 @@ export const NetPlayer = schema(
     hp: t.float32(),
     respawnTimer: t.float32(),
     protectTimer: t.float32(),
+    carrying: t.boolean(),
     // Owner only: what prediction needs on top of that.
     airTime: t.float32().view(),
     jumped: t.boolean().view(),
@@ -85,6 +86,27 @@ export const MatchState = schema(
     matchMinutes: t.uint8().default(5),
     /** Whole seconds left in a timed phase (the reveal, the 3-2-1 countdown). */
     countdown: t.uint8().default(0),
+    // Capture the Flag.
+    score0: t.uint8().default(0),
+    score1: t.uint8().default(0),
+    /** Whole seconds of match time left while playing. */
+    timeLeft: t.uint16().default(0),
+    /** A FlagState: 'home', 'carried', 'dropped' or 'away'. */
+    flagState: t.string().default('home'),
+    flagX: t.float32().default(0),
+    flagY: t.float32().default(0),
+    flagZ: t.float32().default(0),
+    /** Session id of the flag carrier, or ''. */
+    flagCarrier: t.string().default(''),
+    /** Whole seconds until a dropped flag returns home. */
+    flagTimer: t.uint8().default(0),
+    /** Once the match has ended: the winning team, or −1 for a draw. */
+    winner: t.int8().default(-1),
+    /** How it was won: a MatchResult reason ('captures', 'time', 'turf' or 'draw'). */
+    winReason: t.string().default(''),
+    /** Turf painted per team at the end (% of the paintable map). */
+    turf0: t.uint8().default(0),
+    turf1: t.uint8().default(0),
     players: t.map(NetPlayer),
   },
   'MatchState',

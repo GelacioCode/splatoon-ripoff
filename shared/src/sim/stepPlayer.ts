@@ -35,13 +35,15 @@ export function stepPlayer(
   }
 
   // Melt into a puddle while swim is held; pop back out when it's released.
+  // The flag carrier can't swim.
+  const wantsSwim = input.swim && !s.carrying;
   const blendStep = dt / Math.max(sw.transformTime, 1e-3);
-  s.swimBlend = input.swim
+  s.swimBlend = wantsSwim
     ? Math.min(1, s.swimBlend + blendStep)
     : Math.max(0, s.swimBlend - blendStep);
   const swimming = s.swimBlend >= 0.5;
   // Aim mode only while standing; holding swim cancels it.
-  s.aiming = input.aim && !input.swim && s.swimBlend === 0;
+  s.aiming = input.aim && !wantsSwim && s.swimBlend === 0;
 
   // Requested direction on the ground, relative to where the player aims.
   let moveX = input.moveX;
@@ -73,6 +75,8 @@ export function stepPlayer(
   if (s.aiming) maxSpeed *= m.aimSpeedMultiplier;
   // Heavier weapons slow you down (sniper fastest, machine gun slowest).
   maxSpeed *= weaponStats(s.weapon).moveSpeedMultiplier;
+  // Carrying the flag slows you, so teammates have to escort you and paint a path.
+  if (s.carrying) maxSpeed *= CONFIG.match.flagCarrierSpeedMultiplier;
   const accel = s.submerged ? sw.swimAccel : m.groundAccel;
   if (s.grounded || s.climbing) {
     approachVelocity(

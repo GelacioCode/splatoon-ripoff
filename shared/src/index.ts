@@ -5,6 +5,7 @@ export * from './lobby/names';
 export * from './lobby/phases';
 export * from './lobby/teams';
 export * from './maps/arena';
+export * from './match/ctf';
 export * from './maps/surfaces';
 export * from './maps/types';
 export * from './math';

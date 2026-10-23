@@ -114,7 +114,8 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 3A: user confirmed and committed, 2026-10-23.
   - [x] 3B customization (eyes, hat, goggles, shoes, body shape; live 3D preview; saved locally) plus names over players (user request): user confirmed, 2026-10-23.
 - [ ] Phase 4: Capture the Flag (plan approved 2026-10-23: 4A health/splat/respawn, 4B flag + timer + HUD, 4C minimap + end screen + Play Again)
-  - [ ] 4A: written 2026-10-23, awaiting the user's test.
+  - [x] 4A: user confirmed everything works (including the Fold 7 touch-controls fix), 2026-10-23.
+  - [ ] 4B: flag, scoring, timer, win conditions, HUD (written 2026-10-23, awaiting test).
 - [ ] Phase 5: 30-bot load test
 - [ ] Phase 6: deployment
 
@@ -189,11 +190,18 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - `LookPreview` is a separate small WebGLRenderer, disposed via `Screens.onClose` (with `forceContextLoss`).
   - Name tags: `NameLabel` (canvas-texture sprite, `sizeAttenuation: false`, depth-tested). Shown for remote players only, and hidden while melted.
 - Health (4A, user decisions 2026-10-23):
-  - Damage per role: sniper 100 (one-hit splat, user decision), assault 25, machine gun 12 (`CONFIG.weapons[*].damage`). No friendly fire.
+  - Damage per role (user decision, revised after testing): sniper 50 (2 hits), assault 34 and machine gun 34 (3 hits each; they differ only in range, mid vs close). Set in `CONFIG.weapons[*].damage`. No friendly fire.
   - Spawn protection 2 s. Submerged swimmers are hittable (puddle hit sphere: lower and wider).
   - Shared `sim/health.ts`: `playerHitSphere`, `segmentHitsSphere`, `applyShotDamage` ('ignored' | 'hit' | 'splatted') and `stepLife` (server only).
   - `PlayerState` has `respawnTimer` (>0 = splatted, so `stepPlayer`/`stepWeapon` do nothing) and `protectTimer`.
   - `stepProjectiles` takes an optional `ShotTargetCheck` (players are hit before the map, up to the map-hit distance).
   - Server: `allowRewindState` + `attachAll(players, x/y/z/swimBlend)`; shots are tested against `rewind.lastSeenBy(shooter)`. A `WeakMap` holds each projectile's shooter. Messages: `MSG_HIT` → shooter, `MSG_SPLAT` → everyone (plus a `splatPaintRadius` burst of the attacker's paint). `placeOnSpawn` sets protection.
   - Client: drawn shots stop at visible enemies (cosmetic only); a splatted remote is hidden until 300 ms after respawn; spawn protection blinks.
+- Capture the Flag (4B):
+  - Rules are in shared `match/ctf.ts`: `stepFlag` (states home/carried/dropped/away; events taken/dropped/captured/returned/reset) and `matchResult` (captures goal, then time → captures → turf %, else a draw).
+  - The server runs them in `stepMatch` while `playing`, mirrors the flag into flat `MatchState` fields (`flagState/X/Y/Z/Carrier/Timer`, `score0/1`, `timeLeft`, `winner`, `winReason`, `turf0/1`), and broadcasts `MSG_FLAG` events.
+  - `PlayerState.carrying` is set by the server; `stepPlayer` then blocks swimming and applies `flagCarrierSpeedMultiplier`.
+  - A dropped flag is settled onto the ground with a raycast. A carrier who falls off the map sends the flag home, so there's no free ride to their own base.
+  - New phase `ended` (players frozen, end banner); 4C adds the results screen and Play Again.
+  - Client: `FlagView` (pole, paint-drop banner and light beam; on the carrier's back in team color), `FlagMarker` (screen-edge arrow), `Scoreboard` (scores, timer, objective line), `Announcer`, and base zones drawn in `World`.
 - Netcode plan: Colyseus 0.18 ships prediction/reconciliation (`Predict` reconciler, `predict.sim` for Rapier), `setFixedTimestep`, `defineInput`, interpolation, lag compensation (`allowRewindState`) and quantized schema fields. Phase 2 starts with a spike on these; fall back to hand-written netcode in `/shared` if they fall short.

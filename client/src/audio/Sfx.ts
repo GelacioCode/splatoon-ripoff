@@ -64,6 +64,16 @@ export class Sfx {
     this.tone(ctx, t, 'sine', 320, 60, 0.25, 0.4 * volume);
   }
 
+  /** A short rising fanfare: a capture (or someone taking the flag, quieter). */
+  fanfare(volume = 1): void {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    [523, 659, 784].forEach((hz, i) => {
+      this.tone(ctx, t + i * 0.09, 'triangle', hz, hz * 1.01, 0.14, 0.2 * volume);
+    });
+  }
+
   /** Dry click when the ink tank is empty. */
   empty(): void {
     const ctx = this.ready();
