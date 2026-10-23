@@ -8,7 +8,11 @@ import { parseRoute } from './net/route';
 import { resolveServerUrl } from './net/serverUrl';
 import { createDevOverlay } from './ui/devOverlay';
 
-const overlay = createDevOverlay(requireElement('dev-overlay'));
+const overlayElement = requireElement('dev-overlay');
+const overlay = createDevOverlay(overlayElement);
+// The status panel is for development: on the real site it only shows with `?debug`.
+overlayElement.hidden =
+  !import.meta.env.DEV && !new URLSearchParams(window.location.search).has('debug');
 const container = requireElement('app');
 
 // The game (and Rapier, ~2 MB) loads as a separate chunk, so the page shows up right away.
@@ -31,6 +35,8 @@ const start = new URLSearchParams(window.location.search).has('offline')
     );
 start.catch((error: unknown) => {
   console.error(error);
+  // Shown even on the real site, so a broken start isn't just a blank page.
+  overlayElement.hidden = false;
   overlay.update({ renderer: 'failed to start (see the browser console)' });
 });
 

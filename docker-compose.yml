@@ -1,0 +1,35 @@
+# Paint Rush on a VPS: the game server, and Caddy in front of it for https / wss with
+# automatic certificates. Start (or update) with:  docker compose up -d --build
+# See docs/DEPLOY.md.
+services:
+  game:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 2567
+    # Only Caddy talks to it; nothing outside the VPS can reach this port directly.
+    expose:
+      - '2567'
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - game
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      # The server's public address (an A record pointing at this VPS).
+      GAME_DOMAIN: ${GAME_DOMAIN:-game.samuelgelacio.io}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Keeps the https certificates across restarts.
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

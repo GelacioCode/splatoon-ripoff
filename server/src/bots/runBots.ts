@@ -223,7 +223,8 @@ async function main(): Promise<void> {
     clearInterval(ticker);
     clearInterval(reporter);
     console.log('[bots] leaving…');
-    Promise.allSettled(bots.map((bot) => bot.room.leave())).finally(() => process.exit(0));
+    // allSettled never rejects, so there's nothing to catch; exit once every bot has left.
+    void Promise.allSettled(bots.map((bot) => bot.room.leave())).then(() => process.exit(0));
   });
 }
 

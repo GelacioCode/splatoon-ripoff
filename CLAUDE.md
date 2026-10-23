@@ -122,7 +122,11 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
   - [x] 4E + 4F: user installed the fonts and moved on to Phase 5, 2026-10-23 (`@fontsource/lilita-one` and `@fontsource/fredoka` 5.3.0, OFL, added for the user-approved bold font).
 - [ ] Phase 5: 30-bot load test (plan approved 2026-10-23, with `@colyseus/sdk` 0.18.6 as a server devDependency; 5A bots + measurements, 5B optimize from the numbers)
   - [ ] 5A: written 2026-10-23, awaiting the user's numbers.
-- [ ] Phase 6: deployment
+- [ ] Phase 6: deployment (plan approved 2026-10-23)
+  - Choices: page on Vercel, server on a Hostinger KVM 2 VPS (Ubuntu 26.04, Docker 29.9, Compose v5.6, IP 187.127.114.35, players in Malaysia). Domain `samuelgelacio.io` (free first year, renews at PHP 4,449/yr). The GitHub repo is public.
+  - DNS: `game` A → 187.127.114.35 (confirmed via 8.8.8.8 / 1.1.1.1). `paintrush` CNAME → Vercel (pending).
+  - Files written 2026-10-23: `Dockerfile` (node:24-slim, corepack pnpm, filtered install, runs via tsx), `docker-compose.yml` (game + caddy:2, restart unless-stopped), `deploy/Caddyfile` (`{$GAME_DOMAIN}` → game:2567), `client/vercel.json` (SPA rewrite), `docs/DEPLOY.md`. Awaiting the user's deployment.
+  - Production: the dev overlay is hidden unless `?debug`. Colyseus CORS echoes the origin, so nothing extra is needed. `NODE_ENV=production` disables `MSG_REQUEST_LAN` and `devArenaSize`.
 
 ## Decisions log
 - 2026-10-23: Versions (checked on the npm registry): Node >= 22.12 (dev machine has Node 24 LTS), pnpm 12, TypeScript ~6.0, Vite 8, three 0.186 with `WebGLRenderer` (WebGL2), Colyseus 0.18, `@colyseus/schema` 5, Rapier `@dimforge/rapier3d-compat` 0.21, tsx 4, ESLint 10 + typescript-eslint 8, Prettier 3, Vitest 5.

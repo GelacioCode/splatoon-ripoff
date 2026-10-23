@@ -1,0 +1,6 @@
+# Caddy gets and renews the https certificate for the game server's address by itself, and
+# passes everything (including the game's WebSocket connections) to the game container.
+{$GAME_DOMAIN} {
+	encode gzip
+	reverse_proxy game:2567
+}

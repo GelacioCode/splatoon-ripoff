@@ -150,6 +150,13 @@ pnpm --filter @paint-rush/server bots -- --create --start --count 30
 - **Data use:** the bots' terminal prints every 5 s how much data each bot receives and sends (KB/s).
 - **Stopping:** Ctrl+C in the bots' terminal makes them all leave.
 
+## Deployment
+
+- **Game page** on Vercel: `https://paintrush.samuelgelacio.io`.
+- **Game server** on a Hostinger VPS in Docker, behind Caddy for https/wss: `https://game.samuelgelacio.io`.
+- Step by step, including updates and troubleshooting: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+- Files involved: `Dockerfile`, `docker-compose.yml`, `deploy/Caddyfile` and `client/vercel.json`.
+
 ## Scripts (run from the repo root)
 
 | Command | What it does |

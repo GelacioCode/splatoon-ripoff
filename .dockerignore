@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+.git
+.vscode
+coverage
+client/src
+client/public
+docs
+*.md
