@@ -138,7 +138,7 @@ Rules while working: keep the code clean and modular, put tunable gameplay value
 - `/shared` is consumed as TypeScript source (no build step). Rapier sits behind the `@paint-rush/shared/physics` subpath so the client can lazy-load it.
 - Tunable gameplay values: `shared/src/config.ts`.
 - Client server-URL order: `?server=` link parameter, then `VITE_SERVER_URL`, then `http(s)://<page host>:2567`.
-- Git: repo at https://github.com/GelacioCode/splatter-ripoff (branch `main`). Commit messages are plain, with no Co-Authored-By trailer (user preference).
+- Git: repo at https://github.com/GelacioCode/splatoon-ripoff (branch `main`, public). An early message said "splatter-ripoff"; that repo exists but is empty. Commit messages are plain, with no Co-Authored-By trailer (user preference).
 - Phase 1 plan approved 2026-10-23: lil-gui for the dev tuning panel (lazy-loaded, backtick key); enemy paint damage stops at a 40 HP floor; milestones 1A–1E.
 - Simulation conventions: game rules live in `shared/src/sim` (`@paint-rush/shared/sim`, everything that needs Rapier) as step functions on flat `PlayerState` objects. The state stores the feet position; yaw 0 looks toward −Z. The capsule (radius 0.4, half-height 0.2) is only a probe for Rapier's character controller. Players don't collide with each other. `PhysicsWorld` steps Rapier once after building the map, because colliders aren't visible to queries before a step.
 - Arena "Drip Yard" (`shared/src/maps/arena.ts`): 36 × 64 m, built from boxes. It's defined for team 0's half and turned 180° for team 1, so both sides play alike.

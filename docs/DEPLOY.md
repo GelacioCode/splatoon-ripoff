@@ -30,7 +30,7 @@ Expect `Address: 187.127.114.35`.
 
 ## 2. Push the code to GitHub
 
-The VPS and Vercel both download the code from `https://github.com/GelacioCode/splatter-ripoff`, so commit and push first (from your PC):
+The VPS and Vercel both download the code from `https://github.com/GelacioCode/splatoon-ripoff`, so commit and push first (from your PC):
 
 ```powershell
 git add -A
@@ -50,7 +50,7 @@ Then, **on the VPS**:
 
 ```bash
 # get the code (first time only)
-git clone https://github.com/GelacioCode/splatter-ripoff.git /opt/paint-rush
+git clone https://github.com/GelacioCode/splatoon-ripoff.git /opt/paint-rush
 cd /opt/paint-rush
 
 # build and start the game server and Caddy in the background (first build takes a few minutes)
@@ -83,7 +83,7 @@ docker compose up -d --build
 ## 4. Game page on Vercel
 
 1. Go to [vercel.com](https://vercel.com) and sign up / log in **with GitHub**.
-2. **Add New… → Project**, then **Import** `GelacioCode/splatter-ripoff`.
+2. **Add New… → Project**, then **Import** `GelacioCode/splatoon-ripoff`.
 3. On the configure screen:
    - **Root Directory**: click **Edit** and choose `client`.
    - **Framework Preset**: Vite (usually picked automatically). Build and output settings come from `client/vercel.json`, so leave them as they are.
@@ -94,7 +94,7 @@ docker compose up -d --build
      | `VITE_SERVER_URL` | `https://game.samuelgelacio.io` | Where the game server is |
      | `ENABLE_EXPERIMENTAL_COREPACK` | `1` | Makes Vercel use the same pnpm version as the project (`packageManager` in `package.json`) |
 
-4. Click **Deploy**. When it's done, Vercel shows a test address like `splatter-ripoff.vercel.app`. Open it: you should see the Paint Rush start screen.
+4. Click **Deploy**. When it's done, Vercel shows a test address like `splatoon-ripoff.vercel.app`. Open it: you should see the Paint Rush start screen.
 5. Your own address: **Project → Settings → Domains → Add** `paintrush.samuelgelacio.io`. Vercel shows a **CNAME** value to add. In Hostinger DNS add: Type `CNAME`, Name `paintrush`, Points to *(that value)*. After a few minutes Vercel shows the domain as valid and sets up https for it.
 6. (If the build fails on the Node version) **Settings → General → Node.js Version**: pick **24.x**, then **Deployments → … → Redeploy**.
 
