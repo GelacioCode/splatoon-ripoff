@@ -17,6 +17,7 @@ import {
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
   MSG_PING,
+  MSG_PLAY_AGAIN,
   MSG_PONG,
   MSG_REQUEST_LAN,
   MSG_REQUEST_PAINT,
@@ -62,9 +63,12 @@ import { saveSettings } from '../settings';
 import { Announcer } from '../ui/announcer';
 import type { DevOverlay } from '../ui/devOverlay';
 import { FlagMarker } from '../ui/flagMarker';
+import { Minimap, type MinimapFrame, type MinimapPoint } from '../ui/minimap';
 import { qrCodeSvg } from '../ui/qrCode';
 import { Scoreboard } from '../ui/scoreboard';
 import { MatchBanner, Screens, type LobbyPlayer } from '../ui/screens';
+import { StatsOverlay } from '../ui/statsOverlay';
+import type { StatsRow } from '../ui/statsTable';
 import { FixedStep } from './fixedStep';
 import { NewShotFilter } from './newShotFilter';
 import { snapshotOf, World, type PlayerSnapshot } from './World';
@@ -82,6 +86,10 @@ const RESPAWN_HIDE_MS = 300;
 /** Losing at least this much HP at once (a shot, not enemy paint) flashes the screen. */
 const HURT_FLASH_HP = 5;
 const UP = { x: 0, y: 1, z: 0 };
+/** How often the minimap re-reads the paint (s). */
+const MINIMAP_PAINT_INTERVAL = 0.25;
+/** How long "Pink team wins!" shows before the results screen (ms). */
+const RESULTS_DELAY_MS = 2500;
 
 /** Byte messages arrive as Uint8Array; anything else means a server/client version mismatch. */
 function asBytes(payload: unknown): Uint8Array | null {
@@ -342,6 +350,8 @@ interface RemotePlayer {
   character: BlobCharacter;
   /** Kept hidden until this time (ms), just after a respawn. */
   hiddenUntil: number;
+  /** The team they're drawn in (teams change between matches). */
+  team: number;
 }
 
 /** Someone drawn on screen, where shots can stop. */
@@ -410,11 +420,21 @@ class NetSession {
   private splattedBy = 'someone';
   private wasSplatted = false;
   private lastHp: number = CONFIG.player.maxHp;
+  /** The team our own blob is drawn in. */
+  private myTeam = -1;
   // Capture the Flag on screen.
   private readonly flagView: FlagView;
   private readonly flagMarker = new FlagMarker();
   private readonly scoreboard = new Scoreboard();
   private readonly announcer = new Announcer();
+  private readonly minimap: Minimap;
+  private readonly statsOverlay: StatsOverlay;
+  /** Where the flag is on the minimap this frame. */
+  private flagOnMap: MinimapFrame['flag'] = null;
+  private paintRefreshTimer = 0;
+  /** When the match ended (ms), and whether the results screen is up yet. */
+  private endedAt = 0;
+  private resultsShown = false;
   private readonly saveToken = () => saveReconnectToken(this.room.reconnectionToken);
 
   constructor(
@@ -433,6 +453,8 @@ class NetSession {
     this.seed = seedFromString(room.sessionId);
     this.flagView = new FlagView(world.toonRamp);
     world.scene.add(this.flagView.root);
+    this.minimap = new Minimap(ARENA, world.surfaces, world.paint);
+    this.statsOverlay = new StatsOverlay(world.touchDevice);
     // Others are drawn slightly in the past, between two snapshots, so they move smoothly.
     this.predict = Predict.get(room, { mode: 'lerp', delay: CONFIG.net.interpolationDelayMs });
     this.netInput = room.input({ type: NetInput });
@@ -492,6 +514,8 @@ class NetSession {
     this.flagMarker.dispose();
     this.scoreboard.dispose();
     this.announcer.dispose();
+    this.minimap.dispose();
+    this.statsOverlay.dispose();
   }
 
   frame(timeMs: number): void {
@@ -500,13 +524,16 @@ class NetSession {
     this.updateScreens(phase);
     const me = this.me;
     const dt = world.beginFrame(timeMs, me?.state.aiming ?? false);
-    if (phase !== 'lobby') this.syncPlayers();
+    // Back in the lobby after a match, the arena stays empty until the next start.
+    const inArena = phase !== 'lobby';
+    if (inArena) this.syncPlayers();
 
     // One input per fixed server tick that's due, sent before reading anything to draw.
     const steps = this.predict.tick();
-    if (me) for (let i = 0; i < steps; i++) this.sendInput();
+    if (me && inArena) for (let i = 0; i < steps; i++) this.sendInput();
 
-    if (me && this.character) {
+    if (this.character && !inArena) this.character.root.visible = false;
+    if (me && this.character && inArena) {
       const s = me.state;
       // The smoothed value can be missing (NaN) before prediction has stepped; then use the
       // exact predicted state, so the camera never ends up pointing at nothing.
@@ -535,6 +562,11 @@ class NetSession {
         climbing: s.climbing,
       });
       this.character.setWeapon(s.weapon);
+      // Teams are shuffled again for every match.
+      if (s.team !== this.myTeam) {
+        this.myTeam = s.team;
+        this.character.setColor(TEAM_COLORS[s.team] ?? TEAM_COLORS[0]);
+      }
       world.weaponSounds(this.wasReloading, s, this.firing, dt);
       this.wasReloading = s.reloadTimer > 0;
       this.character.root.visible = s.respawnTimer <= 0 && !blinking(s.protectTimer, timeMs);
@@ -545,7 +577,7 @@ class NetSession {
 
     // Who on screen can stop a shot: everyone visible (shots only stop at enemies).
     this.targets.length = 0;
-    if (me && me.state.respawnTimer <= 0) {
+    if (me && inArena && me.state.respawnTimer <= 0) {
       const s = me.state;
       this.targets.push({
         x: this.feet.x,
@@ -556,9 +588,20 @@ class NetSession {
       });
     }
     for (const remote of this.remotes.values()) {
+      if (!inArena) {
+        remote.character.root.visible = false;
+        continue;
+      }
       const pose = this.remotePose(remote.player);
       remote.character.update(dt, pose);
       remote.character.setWeapon(remote.player.weapon);
+      if (remote.player.team !== remote.team) {
+        // A new match with new teams: recolor them and their name tag.
+        remote.team = remote.player.team;
+        const color = TEAM_COLORS[remote.team] ?? TEAM_COLORS[0];
+        remote.character.setColor(color);
+        remote.character.setName(remote.player.name, color);
+      }
       // Hidden while splatted, and a moment longer so the jump back to spawn isn't seen.
       const splatted = remote.player.respawnTimer > 0;
       if (splatted) remote.hiddenUntil = timeMs + RESPAWN_HIDE_MS;
@@ -580,6 +623,10 @@ class NetSession {
       );
     }
     this.updateFlag(dt, phase);
+    this.updateMinimap(dt, timeMs, phase);
+    this.statsOverlay.setEnabled(phase === 'countdown' || phase === 'playing');
+    this.statsOverlay.update(this.statsRows());
+    if (phase === 'ended') this.maybeShowResults();
     world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, this.shots, this.shotLoop.alpha);
     this.updateStatus(dt);
   }
@@ -646,11 +693,21 @@ class NetSession {
     this.shownPhase = phase;
     if (phase === 'lobby') {
       if (previous !== 'lobby') {
+        // Back from a match (Play Again): the results make way for the lobby.
         this.world.setMenuVisible(false);
         this.banner.hide();
+        this.scoreboard.setVisible(false);
+        this.world.killFeed.clear();
+        this.world.setSplatted(null);
+        this.lobbyKey = '';
+        this.resultsShown = false;
       }
       this.updateLobby();
       return;
+    }
+    if (phase === 'ended' && previous !== 'ended') {
+      this.endedAt = performance.now();
+      this.resultsShown = false;
     }
     if (previous === 'lobby' || previous === null) {
       // The match is on: menus away, and the pause menu's Play button to capture the mouse.
@@ -665,6 +722,7 @@ class NetSession {
     if (phase === 'reveal') this.banner.showReveal(this.teamNames(), secondsLeft);
     else if (phase === 'countdown') this.banner.showCountdown(secondsLeft);
     else if (phase === 'ended') {
+      if (this.resultsShown) return;
       this.banner.showEnd(
         state.winner,
         state.winReason,
@@ -709,6 +767,8 @@ class NetSession {
       at = { x: state.flagX, y: state.flagY, z: state.flagZ };
     }
     const active = phase !== 'lobby' && at !== null;
+    this.flagOnMap =
+      active && at ? { x: at.x, z: at.z, color: cssColor(color ?? 0xffffff), carried } : null;
     this.flagView.update(dt, active, at?.x ?? 0, at?.y ?? 0, at?.z ?? 0, carried, yaw, color);
     // The marker floats above the flag, but not over our own head while we carry it.
     const markAt = active && at && carrierId !== myId ? { x: at.x, y: at.y + 2.3, z: at.z } : null;
@@ -726,6 +786,82 @@ class NetSession {
       else objective = 'Grab the flag in the middle!';
     }
     this.scoreboard.update(state.score0, state.score1, state.timeLeft, objective);
+  }
+
+  /** The minimap while the match is on: paint refreshed a few times a second, moving bits every frame. */
+  private updateMinimap(dt: number, timeMs: number, phase: MatchPhase): void {
+    const visible = phase === 'countdown' || phase === 'playing';
+    this.minimap.setVisible(visible);
+    if (!visible) return;
+    const players = this.room.state.players;
+    const myId = this.room.sessionId;
+    const myTeam = players.get(myId)?.team ?? 0;
+    this.minimap.setTeam(myTeam);
+    this.paintRefreshTimer -= dt;
+    if (this.paintRefreshTimer <= 0) {
+      this.paintRefreshTimer = MINIMAP_PAINT_INTERVAL;
+      this.minimap.refreshPaint();
+    }
+    const mates: MinimapPoint[] = [];
+    for (const [id, remote] of this.remotes) {
+      const p = remote.player;
+      if (id === myId || p.team !== myTeam || p.respawnTimer > 0) continue;
+      mates.push({ x: this.predict.value(p, 'x'), z: this.predict.value(p, 'z') });
+    }
+    const alive = this.me && this.me.state.respawnTimer <= 0;
+    this.minimap.draw(
+      {
+        me: alive ? { x: this.feet.x, z: this.feet.z, yaw: this.world.view.yaw } : null,
+        mates,
+        flag: this.flagOnMap,
+      },
+      timeMs,
+    );
+  }
+
+  /** Everyone's numbers, for the live scoreboard and the results. */
+  private statsRows(): StatsRow[] {
+    const rows: StatsRow[] = [];
+    for (const [id, p] of this.room.state.players) {
+      rows.push({
+        id,
+        name: p.name,
+        team: p.team,
+        kills: p.kills,
+        deaths: p.deaths,
+        assists: p.assists,
+        captures: p.captures,
+        paint: p.paint,
+        me: id === this.room.sessionId,
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * After the "Pink team wins!" banner has had its moment, the results screen: everyone's
+   * stats, and Play Again for the host.
+   */
+  private maybeShowResults(): void {
+    if (this.resultsShown || performance.now() - this.endedAt < RESULTS_DELAY_MS) return;
+    this.resultsShown = true;
+    const state = this.room.state;
+    this.banner.hide();
+    // Free the mouse so the buttons can be clicked.
+    this.world.setMenuVisible(false);
+    this.screens.showResults({
+      winner: state.winner,
+      reason: state.winReason,
+      scores: [state.score0, state.score1],
+      turf: [state.turf0, state.turf1],
+      rows: this.statsRows(),
+      isHost: state.hostId === this.room.sessionId,
+      playAgain: () => this.room.send(MSG_PLAY_AGAIN),
+      leave: () => {
+        this.leaving = true;
+        this.room.leave().catch((error: unknown) => console.warn(error));
+      },
+    });
   }
 
   /** Flag news from the server, announced to everyone. */
@@ -935,11 +1071,12 @@ class NetSession {
       const character = world.createCharacter(player.team, player.weapon, parseLook(player));
       // Other players get their name overhead, in their team's color.
       character.setName(player.name, TEAM_COLORS[player.team] ?? TEAM_COLORS[0]);
-      this.remotes.set(sessionId, { player, character, hiddenUntil: 0 });
+      this.remotes.set(sessionId, { player, character, hiddenUntil: 0, team: player.team });
       return;
     }
     // Our own player: predicted locally with the same rules the server runs.
     this.character = world.createCharacter(player.team, player.weapon, parseLook(player));
+    this.myTeam = player.team;
     // The role may have been changed in the menu while we were still joining.
     if (player.weapon !== world.settings.weapon) this.chooseWeapon(world.settings.weapon);
     const body = world.physics.createCharacter(player);

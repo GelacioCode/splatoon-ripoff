@@ -71,6 +71,12 @@ export const NetPlayer = schema(
     goggles: t.uint8().default(0),
     shoes: t.uint8().default(0),
     body: t.uint8().default(0),
+    // Match stats (see PlayerStats), for the scoreboard and the results.
+    kills: t.uint16().default(0),
+    deaths: t.uint16().default(0),
+    assists: t.uint16().default(0),
+    captures: t.uint8().default(0),
+    paint: t.uint32().default(0),
   },
   'NetPlayer',
 );

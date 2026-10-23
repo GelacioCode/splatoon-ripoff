@@ -48,6 +48,15 @@ export class PaintGrid {
     return splats;
   }
 
+  /** Like `splat`, but returns how many cells became `team`'s (for paint points). */
+  splatCounting(center: Vec3, radius: number, team: number): number {
+    let changed = 0;
+    for (const splat of projectSplat(this.surfaces, center, radius)) {
+      changed += this.paintCircle(splat, team);
+    }
+    return changed;
+  }
+
   /** Team owning the paint at (u, v) on a surface, or NO_TEAM. */
   teamAtUv(surfaceId: number, u: number, v: number): number {
     const grid = this.cells[surfaceId];
@@ -142,9 +151,11 @@ export class PaintGrid {
     });
   }
 
-  private paintCircle({ surfaceId, u, v, radius }: SurfaceSplat, team: number): void {
+  /** Paints the cells inside a circle; returns how many changed to `team`. */
+  private paintCircle({ surfaceId, u, v, radius }: SurfaceSplat, team: number): number {
     const grid = this.cells[surfaceId];
-    if (!grid) return;
+    if (!grid) return 0;
+    let changed = 0;
     const size = this.cellSize;
     const columns = this.columns[surfaceId];
     const rows = grid.length / columns;
@@ -165,7 +176,9 @@ export class PaintGrid {
         if (previous !== 0) this.painted[previous - 1]--;
         grid[index] = value;
         this.painted[team]++;
+        changed++;
       }
     }
+    return changed;
   }
 }

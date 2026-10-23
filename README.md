@@ -59,10 +59,17 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 - **Winning:** first team to 3 captures wins. When the host's match time runs out, the team with more captures wins; on a tie, the team that painted more of the map wins. An exact tie is a draw.
 - The scoreboard at top centre shows captures, time left, and what to do right now.
 
+## Stats, minimap and results
+
+- **KDA:** splats (K), times splatted (D) and assists (A), meaning you damaged someone within 5 s before a teammate splatted them. Captures and paint points (ground you painted) are counted too. Hold **Tab** (or tap **📊** on touch) for the live scoreboard.
+- **Respawn time** grows each time you're splatted in a match: 3 s the first time, +1 s each time after, up to 10 s.
+- **Minimap** (top left): the arena from above with live team paint, you (arrow), your teammates (dots) and the flag. Enemies aren't shown. Tap it or press **M** for the big map.
+- **Results screen** when the match ends: the winner, captures, turf, and everyone's stats with "Most splats", "Most captures" and "Most paint" badges. The host's **Play again** takes everyone back to the lobby, with names and looks kept and paint wiped.
+
 ## Health and splatting
 
 - Everyone has 100 HP. Hits from the other team hurt; your own team's shots pass through you.
-- At 0 HP you're **splatted**: you burst into the attacker's paint, see "Splatted by …", and respawn on your team's pad after 5 seconds. For 2 seconds after respawning you blink and can't be hurt.
+- At 0 HP you're **splatted**: you burst into the attacker's paint, see "Splatted by …", and respawn on your team's pad (3–10 s, longer the more often you're splatted). For 2 seconds after respawning you blink and can't be hurt.
 - A small marker on the crosshair (red for a splat) and a tick sound tell you your shot hit. A red flash means you got hit.
 - The kill feed at top right shows who splatted whom.
 - Hits are checked against where the shooter saw the target, so what you hit on your screen counts even with some lag.

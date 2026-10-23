@@ -22,6 +22,14 @@ describe('PaintGrid', () => {
     expect(grid.paintedCells(0)).toBeLessThan(18);
   });
 
+  it('counts the cells a splat newly paints (painting your own paint again scores nothing)', () => {
+    const { grid } = createGrid();
+    const first = grid.splatCounting({ x: 0, y: 0, z: -5 }, 1, 0);
+    expect(first).toBe(grid.paintedCells(0));
+    expect(grid.splatCounting({ x: 0, y: 0, z: -5 }, 1, 0)).toBe(0);
+    expect(grid.splatCounting({ x: 0, y: 0, z: -5 }, 1, 1)).toBe(first);
+  });
+
   it('lets the other team paint over it', () => {
     const { grid, floor } = createGrid();
     grid.splat({ x: 0, y: 0, z: -5 }, 1, 0);

@@ -55,6 +55,12 @@ export const MSG_KICK = 'kick';
 /** Server → a kicked player, just before closing their connection. No payload. */
 export const MSG_KICKED = 'kicked';
 
+/**
+ * Host → server, once a match has ended: everyone back to the lobby (names and looks kept,
+ * paint wiped, teams shuffled again on the next start). No payload.
+ */
+export const MSG_PLAY_AGAIN = 'playAgain';
+
 /** Host → server: match length. Payload: minutes, one of CONFIG.lobby.matchMinuteOptions. */
 export const MSG_MATCH_LENGTH = 'matchLength';
 

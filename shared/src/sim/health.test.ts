@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../config';
 import { weaponStats } from '../weapons';
-import { applyShotDamage, playerHitSphere, segmentHitsSphere, stepLife } from './health';
+import {
+  applyShotDamage,
+  playerHitSphere,
+  respawnSeconds,
+  segmentHitsSphere,
+  stepLife,
+} from './health';
 import { createPlayerState } from './playerState';
 
 const ASSAULT = 0;
@@ -75,7 +81,16 @@ describe('damage', () => {
     expect(target.sinceDamage).toBe(0);
     expect(applyShotDamage(target, 0, 100)).toBe('splatted');
     expect(target.hp).toBe(0);
-    expect(target.respawnTimer).toBe(CONFIG.player.respawnSeconds);
+    expect(target.respawnTimer).toBe(respawnSeconds(1));
+  });
+
+  it('makes you wait longer the more often you are splatted: 3 s up to 10 s', () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 20].map(respawnSeconds)).toEqual([
+      3, 4, 5, 6, 7, 8, 9, 10, 10, 10,
+    ]);
+    const target = enemy();
+    applyShotDamage(target, 0, 100, respawnSeconds(6));
+    expect(target.respawnTimer).toBe(8);
   });
 });
 

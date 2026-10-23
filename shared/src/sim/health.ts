@@ -54,13 +54,24 @@ export function isVulnerable(s: PlayerState): boolean {
 export type DamageResult = 'ignored' | 'hit' | 'splatted';
 
 /**
+ * How long a player waits after their `splats`-th splat of the match (1 = the first):
+ * 3 s, then 1 s more each time, at most 10 s (see CONFIG.player).
+ */
+export function respawnSeconds(splats: number): number {
+  const p = CONFIG.player;
+  const extra = Math.max(0, splats - 1) * p.respawnStepSeconds;
+  return Math.min(p.respawnMaxSeconds, p.respawnBaseSeconds + extra);
+}
+
+/**
  * A shot from `shooterTeam` hitting `target`. Teammates, splatted players and freshly
- * respawned ones aren't hurt. At 0 HP the target is splatted: out until the respawn.
+ * respawned ones aren't hurt. At 0 HP the target is splatted: out for `respawnWait` seconds.
  */
 export function applyShotDamage(
   target: PlayerState,
   shooterTeam: number,
   damage: number,
+  respawnWait = respawnSeconds(1),
 ): DamageResult {
   if (target.team === shooterTeam || !isVulnerable(target)) return 'ignored';
   target.hp -= damage;
@@ -70,7 +81,7 @@ export function applyShotDamage(
   target.swimBlend = 0;
   target.submerged = false;
   target.climbing = false;
-  target.respawnTimer = CONFIG.player.respawnSeconds;
+  target.respawnTimer = respawnWait;
   return 'splatted';
 }
 

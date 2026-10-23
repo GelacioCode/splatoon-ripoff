@@ -34,7 +34,15 @@ export const CONFIG = {
   },
   player: {
     maxHp: 100,
-    respawnSeconds: 5,
+    /**
+     * Respawn wait (user decision): 3 s for your first splat of the match, 1 s longer for each
+     * one after, never more than 10 s.
+     */
+    respawnBaseSeconds: 3,
+    respawnStepSeconds: 1,
+    respawnMaxSeconds: 10,
+    /** Damaging an enemy this long before a teammate splats them counts as an assist (s). */
+    assistWindowSeconds: 5,
     /** After respawning, shots can't hurt you for this long (no spawn camping). */
     spawnProtectSeconds: 2,
     /** Shots hit a player inside this ball around their body (m). */

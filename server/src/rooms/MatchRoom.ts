@@ -7,6 +7,7 @@ import {
   cleanName,
   CONFIG,
   createFlag,
+  DamageLog,
   decodePaintEvents,
   defaultMatchMinutes,
   DEFAULT_WEAPON,
@@ -28,6 +29,7 @@ import {
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
   MSG_PING,
+  MSG_PLAY_AGAIN,
   MSG_PONG,
   MSG_REQUEST_LAN,
   MSG_REQUEST_PAINT,
@@ -62,6 +64,7 @@ import {
 import {
   applyShotDamage,
   createPlayerState,
+  respawnSeconds,
   frozenInput,
   isVulnerable,
   PhysicsWorld,
@@ -115,6 +118,12 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private readonly shooters = new WeakMap<Projectile, string>();
   /** Paint landing this tick, sent to everyone at the end of it. */
   private readonly landed: PaintEvent[] = [];
+  /** Who gets the paint points for each `landed` event ('' for nobody). */
+  private readonly landedBy: string[] = [];
+  /** Recent hits, for assists. */
+  private readonly damageLog = new DamageLog();
+  /** Seconds since the room started (timestamps for the damage log). */
+  private elapsed = 0;
   /**
    * Lag compensation: recent player positions, so a shot is checked against where the
    * shooter saw everyone (other players are drawn ~100 ms in the past, plus the ping).
@@ -164,6 +173,9 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     },
     [MSG_START]: (client: Client) => {
       if (this.isHost(client) && this.phase === 'lobby') this.startMatch();
+    },
+    [MSG_PLAY_AGAIN]: (client: Client) => {
+      if (this.isHost(client) && this.phase === 'ended') this.backToLobby();
     },
     [MSG_KICK]: (client: Client, payload: unknown) => {
       if (!this.isHost(client) || typeof payload !== 'string' || payload === client.sessionId) {
@@ -221,6 +233,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     if (body) this.physics.removeCharacter(body);
     this.bodies.delete(id);
     this.state.players.delete(id);
+    this.damageLog.forget(id);
     const index = this.joinOrder.indexOf(id);
     if (index >= 0) this.joinOrder.splice(index, 1);
     if (this.state.hostId === id) this.state.hostId = this.joinOrder[0] ?? '';
@@ -248,16 +261,46 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       player.team = teams.get(id) ?? 0;
       this.placeOnSpawn(player);
       if (!this.bodies.has(id)) this.bodies.set(id, this.physics.createCharacter(player));
+      // Fresh stats (this also resets the respawn wait, which grows with deaths).
+      player.kills = 0;
+      player.deaths = 0;
+      player.assists = 0;
+      player.captures = 0;
+      player.paint = 0;
     }
     // A fresh match: no captures, the flag in the middle.
     this.state.score0 = 0;
     this.state.score1 = 0;
     this.state.winner = -1;
     this.state.winReason = '';
+    this.damageLog.clear();
     this.flag = createFlag(ARENA.flagSpawn);
     this.syncFlag();
     this.setPhase('reveal');
     console.log(`[match] ${this.roomId}: started with ${this.state.players.size} players`);
+  }
+
+  /**
+   * Play Again: everyone back in the lobby with their names and looks, the arena emptied and
+   * its paint wiped on every screen. The next Start shuffles teams again.
+   */
+  private backToLobby(): void {
+    for (const body of this.bodies.values()) this.physics.removeCharacter(body);
+    this.bodies.clear();
+    this.projectiles.length = 0;
+    this.landed.length = 0;
+    this.landedBy.length = 0;
+    for (const player of this.state.players.values()) {
+      player.respawnTimer = 0;
+      player.protectTimer = 0;
+      player.carrying = false;
+    }
+    this.flag = createFlag(ARENA.flagSpawn);
+    this.syncFlag();
+    this.paint.clear();
+    this.broadcastBytes(MSG_PAINT_SNAPSHOT, encodePaintSnapshot(this.paint.exportCells()), {});
+    this.setPhase('lobby');
+    console.log(`[match] ${this.roomId}: back to the lobby`);
   }
 
   private setPhase(phase: MatchPhase): void {
@@ -305,6 +348,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     if (event.kind === 'captured') {
       if (event.team === 0) this.state.score0++;
       else this.state.score1++;
+      const carrier = this.state.players.get(event.by);
+      if (carrier) carrier.captures++;
     }
     if (event.kind === 'dropped') {
       // Settle a flag dropped in mid-air (a carrier splatted while jumping) onto the ground.
@@ -374,6 +419,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
    * everyone. Before GO, players can only look around.
    */
   private step(ctx: StepContext): void {
+    this.elapsed += ctx.dt;
     this.advancePhase(ctx.dt);
     const canMove = this.phase === 'playing';
     for (const [sessionId, player] of this.state.players) {
@@ -399,20 +445,23 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       this.physics,
       this.projectiles,
       ctx.dt,
-      (hit) =>
+      (hit, shot) => {
         this.landed.push({
           point: hit.point,
           radius: hit.radius,
           team: hit.team,
           drip: hit.drip,
           direction: hit.direction,
-        }),
+        });
+        this.landedBy.push(this.shooters.get(shot) ?? '');
+      },
       (shot, from, direction, distance) => this.hitPlayer(shot, from, direction, distance),
     );
     this.physics.step();
     if (this.landed.length > 0) {
       this.applyPaint(this.landed);
       this.landed.length = 0;
+      this.landedBy.length = 0;
     }
     if (this.phase === 'playing') this.stepMatch(ctx.dt);
   }
@@ -434,8 +483,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         seen ? seen.value(target, 'swimBlend') : target.swimBlend,
       );
       if (!segmentHitsSphere(from, direction, distance, sphere.center, sphere.radius)) continue;
-      const result = applyShotDamage(target, shot.team, shot.damage);
+      // The respawn wait grows with how often they've been splatted this match.
+      const wait = respawnSeconds(target.deaths + 1);
+      const result = applyShotDamage(target, shot.team, shot.damage, wait);
       if (result === 'ignored') continue;
+      if (shooterId) this.damageLog.record(id, shooterId, this.elapsed);
       this.clients.getById(shooterId)?.send(MSG_HIT, result === 'splatted');
       if (result === 'splatted') this.onSplatted(id, target, shooterId, shot.team);
       return true;
@@ -443,7 +495,10 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     return false;
   }
 
-  /** A burst of the attacker's paint where the player was, and the news for everyone. */
+  /**
+   * A burst of the attacker's paint where the player was, the stats (a splat for the attacker,
+   * assists for whoever else hurt them recently), and the news for everyone.
+   */
   private onSplatted(victimId: string, victim: NetPlayer, byId: string, team: number): void {
     this.landed.push({
       point: { x: victim.x, y: victim.y + 0.3, z: victim.z },
@@ -452,6 +507,14 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       drip: false,
       direction: { x: 0, y: -1, z: 0 },
     });
+    this.landedBy.push(byId);
+    victim.deaths++;
+    const attacker = this.state.players.get(byId);
+    if (attacker) attacker.kills++;
+    for (const helper of this.damageLog.takeAssists(victimId, byId, this.elapsed)) {
+      const player = this.state.players.get(helper);
+      if (player && player.team !== victim.team) player.assists++;
+    }
     const event: SplatEvent = { victim: victimId, by: byId, team };
     this.broadcast(MSG_SPLAT, event);
     const by = this.state.players.get(byId)?.name ?? 'someone';
@@ -521,9 +584,12 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
    */
   private applyPaint(landed: PaintEvent[]): void {
     const bytes = encodePaintEvents(landed);
-    for (const event of decodePaintEvents(bytes)) {
-      this.paint.splat(event.point, event.radius, event.team);
-    }
+    decodePaintEvents(bytes).forEach((event, i) => {
+      const cells = this.paint.splatCounting(event.point, event.radius, event.team);
+      // Paint points for whoever's shot (or splat burst) it was.
+      const painter = this.state.players.get(this.landedBy[i] ?? '');
+      if (painter && cells > 0) painter.paint += cells;
+    });
     this.broadcastBytes(MSG_PAINT, bytes, {});
   }
 

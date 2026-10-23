@@ -121,7 +121,7 @@ export function stepProjectiles(
   physics: PhysicsWorld,
   projectiles: Projectile[],
   dt: number,
-  onHit: (hit: ProjectileHit) => void,
+  onHit: (hit: ProjectileHit, shot: Projectile) => void,
   hitsTarget?: ShotTargetCheck,
 ): void {
   const w = CONFIG.weapon;
@@ -146,15 +146,18 @@ export function stepProjectiles(
       continue;
     }
     if (hit) {
-      onHit({
-        point: hit.point,
-        normal: hit.normal,
-        blockIndex: hit.blockIndex,
-        team: p.team,
-        radius: p.splatRadius,
-        drip: false,
-        direction,
-      });
+      onHit(
+        {
+          point: hit.point,
+          normal: hit.normal,
+          blockIndex: hit.blockIndex,
+          team: p.team,
+          radius: p.splatRadius,
+          drip: false,
+          direction,
+        },
+        p,
+      );
       continue;
     }
     p.x += dx;
@@ -166,15 +169,18 @@ export function stepProjectiles(
       p.sinceDrip -= p.dripEvery;
       const floor = physics.raycast(p, DOWN, w.dripMaxHeight);
       if (floor && floor.normal.y > 0.5) {
-        onHit({
-          point: floor.point,
-          normal: floor.normal,
-          blockIndex: floor.blockIndex,
-          team: p.team,
-          radius: p.dripRadius,
-          drip: true,
-          direction,
-        });
+        onHit(
+          {
+            point: floor.point,
+            normal: floor.normal,
+            blockIndex: floor.blockIndex,
+            team: p.team,
+            radius: p.dripRadius,
+            drip: true,
+            direction,
+          },
+          p,
+        );
       }
     }
 

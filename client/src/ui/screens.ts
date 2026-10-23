@@ -2,6 +2,7 @@ import { CONFIG, LOBBY_CODE_LENGTH, parseLobbyCode, type Look } from '@paint-rus
 import { TEAM_COLORS } from '../render/palette';
 import { createLookPicker } from './lookPicker';
 import { createRoleCards } from './roleCards';
+import { createStatsTable, type StatsRow } from './statsTable';
 
 /** One row of the lobby's player list. */
 export interface LobbyPlayer {
@@ -259,6 +260,43 @@ export class Screens {
     return customize.preview;
   }
 
+  /**
+   * The end of a match: who won, the final score and turf, and everyone's stats. The host can
+   * start the next one (Play Again: back to the lobby); everyone can leave.
+   */
+  showResults(view: {
+    winner: number;
+    reason: string;
+    scores: [number, number];
+    turf: [number, number];
+    rows: StatsRow[];
+    isHost: boolean;
+    playAgain: () => void;
+    leave: () => void;
+  }): void {
+    const title =
+      view.winner < 0 ? "It's a draw!" : `${view.winner === 0 ? 'Pink' : 'Cyan'} team wins!`;
+    const heading = element('h1', 'results-title', title);
+    if (view.winner >= 0) heading.style.color = cssColor(TEAM_COLORS[view.winner]);
+    const summary = element(
+      'p',
+      'results-summary',
+      `Captures ${view.scores[0]} – ${view.scores[1]} · Turf ${view.turf[0]}% – ${view.turf[1]}%` +
+        (view.reason === 'turf' ? ' (decided by turf)' : ''),
+    );
+    const next = view.isHost
+      ? button('Play again', 'menu-play', view.playAgain)
+      : element('p', 'screen-waiting', 'Waiting for the host to play again…');
+    this.show(
+      heading,
+      summary,
+      createStatsTable(view.rows, true),
+      next,
+      button('Leave lobby', 'screen-link-button', view.leave),
+    );
+    this.card.classList.add('results-card');
+  }
+
   /** A message with one button, e.g. "You were removed by the host". */
   showMessage(title: string, text: string, action: { label: string; run: () => void }): void {
     this.show(
@@ -270,6 +308,7 @@ export class Screens {
 
   private show(...children: HTMLElement[]): void {
     this.runCleanup();
+    this.card.classList.remove('results-card');
     this.card.replaceChildren(...children);
     this.root.hidden = false;
   }
