@@ -4,6 +4,7 @@ import {
   Color,
   DirectionalLight,
   DoubleSide,
+  Fog,
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
@@ -13,6 +14,7 @@ import {
   Vector3,
   WebGLRenderer,
   type Material,
+  type Object3D,
   type ShaderMaterial,
 } from 'three';
 import {
@@ -25,10 +27,12 @@ import {
   DEFAULT_WEAPON,
   lerp,
   PaintGrid,
+  seedFromString,
   weaponName,
   weaponStats,
   type Look,
   type MapDef,
+  type MapTheme,
   type PaintEvent,
   type Vec3,
 } from '@paint-rush/shared';
@@ -53,10 +57,12 @@ import { DynamicResolution } from '../render/DynamicResolution';
 import { createMapMesh } from '../render/mapMesh';
 import { packAtlas } from '../render/paint/atlasPacker';
 import { PaintAtlas } from '../render/paint/PaintAtlas';
-import { HEMISPHERE_GROUND_COLOR, SKY_COLOR, SUN_DIRECTION, TEAM_COLORS } from '../render/palette';
+import { SUN_DIRECTION, TEAM_COLORS } from '../render/palette';
 import { Particles } from '../render/Particles';
 import { ProjectileView } from '../render/ProjectileView';
 import { QUALITY_PRESETS, resolveQuality, type QualityLevel } from '../render/quality';
+import { createScenery, disposeScenery } from '../render/scenery';
+import { THEME_LOOKS } from '../render/themes';
 import { createToonRamp } from '../render/toon';
 import { loadSettings, saveSettings, type Settings } from '../settings';
 import { showStatsPanel, type DevOverlay } from '../ui/devOverlay';
@@ -119,12 +125,16 @@ export class World {
   map: MapDef = ARENA;
   /** What `map` was built from, as "seed:size" (see arenaFor); Drip Yard is "0:0". */
   mapKey = '0:0';
+  /** How the arena looks (colors, sky, scenery); see setTheme. */
+  theme: MapTheme = 'yard';
   physics = new PhysicsWorld(ARENA.blocks);
   surfaces = buildSurfaces(ARENA.blocks);
   paint = new PaintGrid(this.surfaces);
   atlas: PaintAtlas;
-  /** Scene objects that belong to the current arena (its mesh and base zones). */
-  private mapObjects: Mesh[] = [];
+  /** Scene objects that belong to the current arena (its mesh, base zones and scenery). */
+  private mapObjects: Object3D[] = [];
+  private readonly hemisphere: HemisphereLight;
+  private readonly sun: DirectionalLight;
   /** The base zones' meshes (also in mapObjects), and whether they're shown. */
   private baseZones: Mesh[] = [];
   private basesVisible = true;
@@ -156,6 +166,8 @@ export class World {
   private aimBlend = 0;
   /** The role the local player had last frame (how far aiming zooms, and if it's a scope). */
   private aimWeapon = DEFAULT_WEAPON;
+  /** Reloading or splatted last frame (aim was let go of when that started). */
+  private aimBlocked = false;
   private swimTrailTimer = 0;
   private emptyClickCooldown = 0;
   private lastFrameMs = 0;
@@ -190,11 +202,13 @@ export class World {
     this.sfx.setVolume(this.settings.volume, this.settings.effectsVolume);
     this.music.setVolume(this.settings.musicVolume);
 
-    this.scene.background = new Color(SKY_COLOR);
-    this.scene.add(new HemisphereLight(0xffffff, HEMISPHERE_GROUND_COLOR, 1.4));
-    const sun = new DirectionalLight(0xffffff, 2);
-    sun.position.set(...SUN_DIRECTION).multiplyScalar(30);
-    this.scene.add(sun);
+    const look = THEME_LOOKS[this.theme];
+    this.scene.background = new Color(look.sky);
+    this.hemisphere = new HemisphereLight(0xffffff, look.groundLight, 1.4);
+    this.scene.add(this.hemisphere);
+    this.sun = new DirectionalLight(look.sunColor, 2);
+    this.sun.position.set(...SUN_DIRECTION).multiplyScalar(30);
+    this.scene.add(this.sun);
 
     this.paintTextureSize = preset.paintTextureSize;
     this.atlas = this.createAtlas();
@@ -296,15 +310,13 @@ export class World {
    * physics, paint grid and paint texture start fresh, so the old paint is gone. Anything
    * made in the old physics world (e.g. our own body) has to be made again.
    */
-  loadMap(map: MapDef, key: string): void {
-    if (key === this.mapKey && map === this.map) return;
-    for (const object of this.mapObjects) {
-      this.scene.remove(object);
-      object.geometry.dispose();
-      (object.material as Material).dispose();
+  loadMap(map: MapDef, key: string, theme: MapTheme = this.theme): void {
+    if (key === this.mapKey && map === this.map) {
+      this.setTheme(theme);
+      return;
     }
-    this.mapObjects = [];
-    this.baseZones = [];
+    this.applyThemeLook(theme);
+    this.removeMapObjects();
     this.atlas.dispose();
     this.physics.dispose();
     this.map = map;
@@ -322,13 +334,55 @@ export class World {
     return new PaintAtlas(this.renderer, this.surfaces, layout);
   }
 
-  /** The arena mesh and the base zones of the current map. */
+  /**
+   * Changes how the arena looks (online: the host's map, possibly a new one every round). Only
+   * the looks change: colors, ground pattern, sky, light and the scenery outside the walls.
+   * The layout, physics and paint stay as they are.
+   */
+  setTheme(theme: MapTheme): void {
+    if (theme === this.theme) return;
+    this.applyThemeLook(theme);
+    this.removeMapObjects();
+    this.addMapObjects();
+  }
+
+  /** The theme's sky, fog and light (the arena itself is rebuilt by the caller). */
+  private applyThemeLook(theme: MapTheme): void {
+    this.theme = theme;
+    const look = THEME_LOOKS[theme];
+    (this.scene.background as Color).setHex(look.sky);
+    this.scene.fog = look.fog ? new Fog(look.fog.color, look.fog.near, look.fog.far) : null;
+    this.hemisphere.groundColor.setHex(look.groundLight);
+    this.sun.color.setHex(look.sunColor);
+  }
+
+  /** The arena mesh, the base zones and the scenery of the current map, in the theme's look. */
   private addMapObjects(): void {
-    const mesh = createMapMesh(this.map, this.surfaces, this.atlas);
+    const mesh = createMapMesh(this.map, this.surfaces, this.atlas, THEME_LOOKS[this.theme]);
     this.mapMaterial = mesh.material as ShaderMaterial;
     this.scene.add(mesh);
     this.mapObjects.push(mesh);
     this.addBaseZones();
+    // The same layout always gets the same scenery; low quality gets less of it.
+    const density = this.quality === 'low' ? 0.55 : 1;
+    const seed = seedFromString(`${this.mapKey}:${this.theme}`);
+    const scenery = createScenery(this.theme, this.map, this.toonRamp, seed, density);
+    this.scene.add(scenery);
+    this.mapObjects.push(scenery);
+  }
+
+  private removeMapObjects(): void {
+    for (const object of this.mapObjects) {
+      this.scene.remove(object);
+      if (object instanceof Mesh) {
+        object.geometry.dispose();
+        (object.material as Material).dispose();
+      } else {
+        disposeScenery(object);
+      }
+    }
+    this.mapObjects = [];
+    this.baseZones = [];
   }
 
   /**
@@ -404,11 +458,6 @@ export class World {
   /** A shot hit you. */
   flashHurt(): void {
     this.hud.flashHurt();
-  }
-
-  /** "Splatted by …" while waiting to respawn; null hides it. */
-  setSplatted(text: string | null): void {
-    this.hud.setSplatted(text);
   }
 
   /** Starts calling `frame` once per display refresh. */
@@ -578,7 +627,11 @@ export class World {
     });
     this.hud.updateHealth(s.hp / CONFIG.player.maxHp, cssColor(TEAM_COLORS[1 - s.team]));
     this.hud.setAiming(s.aiming);
-    this.hud.setScope(role.scope ? this.aimBlend : 0);
+    this.hud.setSights(role.scope ? this.aimBlend : 0, role.optic ? this.aimBlend : 0);
+    // Out of shots (a reload starts) or splatted: aim lets go until it's pressed again.
+    const aimBlocked = s.reloadTimer > 0 || s.respawnTimer > 0;
+    if (aimBlocked && !this.aimBlocked) this.input.releaseAim();
+    this.aimBlocked = aimBlocked;
     // Widen the view while swimming fast, for a sense of speed.
     const swimSpeedRatio = clamp(Math.hypot(s.vx, s.vz) / CONFIG.swim.swimSpeed, 0, 1);
     const fovBoost = s.submerged ? CONFIG.camera.swimFovBoost * swimSpeedRatio : 0;

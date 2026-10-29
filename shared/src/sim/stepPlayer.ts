@@ -27,11 +27,12 @@ export function stepPlayer(
   const sw = CONFIG.swim;
   const h = CONFIG.health;
   s.yaw = input.aimYaw;
-  // Splatted: nothing to move until the respawn.
+  // Splatted: nothing to move (or aim) until the respawn.
   if (s.respawnTimer > 0) {
     s.vx = 0;
     s.vy = 0;
     s.vz = 0;
+    s.aiming = false;
     return;
   }
 
@@ -43,8 +44,9 @@ export function stepPlayer(
     ? Math.min(1, s.swimBlend + blendStep)
     : Math.max(0, s.swimBlend - blendStep);
   const swimming = s.swimBlend >= 0.5;
-  // Aim mode only while standing; holding swim cancels it.
-  s.aiming = input.aim && !wantsSwim && s.swimBlend === 0;
+  // Aim mode only while standing; holding swim cancels it, and so does reloading (an empty
+  // tank lets go of the zoom, so you notice you're out of shots).
+  s.aiming = input.aim && !wantsSwim && s.swimBlend === 0 && s.reloadTimer <= 0;
 
   // Requested direction on the ground, relative to where the player aims.
   let moveX = input.moveX;

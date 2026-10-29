@@ -8,6 +8,12 @@ describe('looks', () => {
     expect(parseLook(look)).toEqual(look);
   });
 
+  it('keep the newest options (the last of each part)', () => {
+    const last = { eyes: 7, hat: 9, goggles: 5, shoes: 6, body: 5 };
+    expect(parseLook(last)).toEqual(last);
+    for (const part of LOOK_PARTS) expect(last[part]).toBe(LOOK_OPTIONS[part].length - 1);
+  });
+
   it('replace anything invalid with the default, part by part', () => {
     expect(parseLook({ eyes: 9, hat: -1, goggles: 1.5, shoes: '2', body: 1 })).toEqual({
       ...DEFAULT_LOOK,

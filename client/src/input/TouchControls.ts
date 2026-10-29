@@ -129,6 +129,11 @@ export class TouchControls {
     return this.aimOn;
   }
 
+  /** Switches the AIM toggle off (out of shots, or splatted). */
+  releaseAim(): void {
+    this.setAim(false);
+  }
+
   private setAim(on: boolean): void {
     this.aimOn = on;
     this.aimButton?.classList.toggle('pressed', on);

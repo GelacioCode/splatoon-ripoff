@@ -1,4 +1,5 @@
 import {
+  BoxGeometry,
   CircleGeometry,
   ConeGeometry,
   CylinderGeometry,
@@ -62,6 +63,15 @@ function starShape(outer: number, inner: number): Shape {
   return shape;
 }
 
+/** A heart, point down, about `size` tall from its middle (flat, in the XY plane). */
+function heartShape(size: number): Shape {
+  const shape = new Shape();
+  shape.moveTo(0, -size);
+  shape.bezierCurveTo(size * 1.25, -size * 0.15, size * 0.8, size * 1.05, 0, size * 0.4);
+  shape.bezierCurveTo(-size * 0.8, size * 1.05, -size * 1.25, -size * 0.15, 0, -size);
+  return shape;
+}
+
 // --- Eyes -----------------------------------------------------------------------------------
 
 function whiteEye(m: PartMaterials, side: number): Mesh {
@@ -115,11 +125,70 @@ function starEyes(m: PartMaterials): Object3D {
   });
 }
 
+/** One closed eye ("^") and one open (the left one winks). */
+function winkEyes(m: PartMaterials): Object3D {
+  const group = new Group();
+  const open = whiteEye(m, 1);
+  const pupil = new Mesh(new SphereGeometry(0.05, 10, 8), m.ink);
+  pupil.position.z = -0.07;
+  open.add(pupil);
+  const closed = new Mesh(new TorusGeometry(0.065, 0.022, 8, 16, Math.PI), m.ink);
+  closed.position.set(-EYE_X, EYE_Y - 0.02, EYE_Z - 0.04);
+  group.add(open, closed);
+  return group;
+}
+
+/** Fierce: small pupils under brows slanting down toward the middle. */
+function angryEyes(m: PartMaterials): Object3D {
+  const brow = new BoxGeometry(0.15, 0.035, 0.04);
+  return pair((side) => {
+    const eye = whiteEye(m, side);
+    const pupil = new Mesh(new SphereGeometry(0.042, 10, 8), m.ink);
+    pupil.position.set(-side * 0.015, -0.01, -0.075);
+    const lid = new Mesh(brow, m.ink);
+    // The end toward the middle of the face sits lower.
+    lid.rotation.z = side * 0.45;
+    lid.position.set(0, 0.1, -0.06);
+    eye.add(pupil, lid);
+    return eye;
+  });
+}
+
+/** Smitten: white eyes with pink heart pupils. */
+function heartEyes(m: PartMaterials): Object3D {
+  const pink = new MeshBasicMaterial({ color: 0xff4f9a, side: DoubleSide });
+  const heart = new ShapeGeometry(heartShape(0.055));
+  return pair((side) => {
+    const eye = whiteEye(m, side);
+    const pupil = new Mesh(heart, pink);
+    pupil.position.z = -0.102;
+    eye.add(pupil);
+    return eye;
+  });
+}
+
+/** Little beady dots with a shine, no whites. */
+function dotEyes(m: PartMaterials): Object3D {
+  return pair((side) => {
+    const dot = new Mesh(new SphereGeometry(0.055, 12, 8), m.ink);
+    dot.scale.y = 1.25;
+    dot.position.set(EYE_X * side * 0.9, EYE_Y, EYE_Z - 0.03);
+    const shine = new Mesh(new SphereGeometry(0.016, 8, 6), m.white);
+    shine.position.set(0.018, 0.022, -0.045);
+    dot.add(shine);
+    return dot;
+  });
+}
+
 export const EYE_PARTS: ((m: PartMaterials) => Object3D)[] = [
   roundEyes,
   sleepyEyes,
   happyEyes,
   starEyes,
+  winkEyes,
+  angryEyes,
+  heartEyes,
+  dotEyes,
 ];
 
 // --- Hats -----------------------------------------------------------------------------------
@@ -187,6 +256,108 @@ function bow(m: PartMaterials): Object3D {
   return group;
 }
 
+/** A tall dark top hat with a red band, worn a little tilted. */
+function topHat(m: PartMaterials): Object3D {
+  const group = new Group();
+  const felt = toon(0x2b2140, m);
+  const radius = 0.2;
+  const y = BODY_CENTER_Y + heightAtRadius(0.27) - 0.02;
+  const brim = new Mesh(new CylinderGeometry(0.31, 0.31, 0.035, 22), felt);
+  brim.position.y = y;
+  const crownPart = new Mesh(new CylinderGeometry(radius, radius * 0.95, 0.32, 20), felt);
+  crownPart.position.y = y + 0.17;
+  const band = new Mesh(
+    new CylinderGeometry(radius * 0.97, radius * 0.97, 0.06, 20),
+    toon(0xe63946, m),
+  );
+  band.position.y = y + 0.05;
+  group.add(brim, crownPart, band);
+  group.rotation.z = -0.12;
+  return group;
+}
+
+/** A beanie cap with a little two-bladed propeller on top. */
+function propeller(m: PartMaterials): Object3D {
+  const group = new Group();
+  const radius = 0.32;
+  const y = BODY_CENTER_Y + heightAtRadius(radius) - 0.02;
+  const dome = new Mesh(
+    new SphereGeometry(radius, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    toon(0x06d6a0, m),
+  );
+  dome.position.y = y;
+  const stem = new Mesh(new CylinderGeometry(0.018, 0.018, 0.12, 8), m.ink);
+  stem.position.y = y + radius + 0.04;
+  const blades = new Group();
+  blades.position.y = y + radius + 0.1;
+  blades.rotation.y = 0.5;
+  for (const [side, color] of [
+    [-1, 0xff5964],
+    [1, 0xffd166],
+  ] as const) {
+    const blade = new Mesh(new BoxGeometry(0.17, 0.015, 0.06), toon(color, m));
+    blade.position.x = side * 0.09;
+    blade.rotation.x = side * 0.3;
+    blades.add(blade);
+  }
+  group.add(dome, stem, blades);
+  return group;
+}
+
+/** A striped-pink party cone with a pompom, tipped to one side. */
+function partyCone(m: PartMaterials): Object3D {
+  const group = new Group();
+  const cone = new Mesh(new ConeGeometry(0.15, 0.38, 18), toon(0xff5fa2, m));
+  cone.position.y = 0.19;
+  const pompom = new Mesh(new SphereGeometry(0.06, 10, 8), toon(0xffffff, m));
+  pompom.position.y = 0.4;
+  const trim = new Mesh(new TorusGeometry(0.145, 0.025, 8, 20), toon(0xffd166, m));
+  trim.rotation.x = Math.PI / 2;
+  trim.position.y = 0.02;
+  group.add(cone, pompom, trim);
+  group.position.set(0.06, BODY_CENTER_Y + BODY_RADIUS - 0.06, 0);
+  group.rotation.z = -0.22;
+  return group;
+}
+
+/** A little green sprout growing out of the top of the head. */
+function sprout(m: PartMaterials): Object3D {
+  const group = new Group();
+  const green = toon(0x52b947, m);
+  const stem = new Mesh(new CylinderGeometry(0.018, 0.022, 0.16, 8), green);
+  stem.position.y = 0.08;
+  group.add(stem);
+  for (const side of [-1, 1]) {
+    const leaf = new Mesh(new SphereGeometry(0.1, 12, 8), green);
+    leaf.scale.set(1, 0.22, 0.55);
+    leaf.position.set(side * 0.09, 0.17, 0);
+    leaf.rotation.z = side * 0.45;
+    group.add(leaf);
+  }
+  group.position.y = BODY_CENTER_Y + BODY_RADIUS - 0.03;
+  return group;
+}
+
+/** Big comfy headphones: a band over the head and a cup on each side. */
+function headphones(m: PartMaterials): Object3D {
+  const group = new Group();
+  const shell = toon(0xf7f5ff, m);
+  const band = new Mesh(new TorusGeometry(BODY_RADIUS + 0.04, 0.03, 8, 28, Math.PI), m.ink);
+  band.position.y = BODY_CENTER_Y + 0.02;
+  group.add(band);
+  for (const side of [-1, 1]) {
+    const cup = new Mesh(new CylinderGeometry(0.12, 0.12, 0.09, 18), shell);
+    cup.rotation.z = Math.PI / 2;
+    cup.position.set(side * (BODY_RADIUS + 0.02), BODY_CENTER_Y + 0.02, 0);
+    const pad = new Mesh(new CylinderGeometry(0.08, 0.08, 0.1, 14), toon(0xff5964, m));
+    pad.rotation.z = Math.PI / 2;
+    pad.position.copy(cup.position);
+    pad.position.x += side * 0.012;
+    group.add(cup, pad);
+  }
+  return group;
+}
+
 /** Index 0 is "None". */
 export const HAT_PARTS: ((m: PartMaterials) => Object3D | null)[] = [
   () => null,
@@ -194,6 +365,11 @@ export const HAT_PARTS: ((m: PartMaterials) => Object3D | null)[] = [
   beanie,
   crown,
   bow,
+  topHat,
+  propeller,
+  partyCone,
+  sprout,
+  headphones,
 ];
 
 // --- Goggles --------------------------------------------------------------------------------
@@ -248,11 +424,77 @@ function visor(m: PartMaterials): Object3D {
   return group;
 }
 
+/** Star-shaped pink party shades. */
+function starShades(): Object3D {
+  const frame = new MeshBasicMaterial({ color: 0xff4f9a, side: DoubleSide });
+  const lens = new MeshBasicMaterial({
+    color: 0x1d1135,
+    transparent: true,
+    opacity: 0.75,
+    side: DoubleSide,
+  });
+  const outer = new ShapeGeometry(starShape(0.15, 0.075));
+  const inner = new ShapeGeometry(starShape(0.11, 0.055));
+  const group = pair((side) => {
+    const star = new Group();
+    const rim = new Mesh(outer, frame);
+    const glass = new Mesh(inner, lens);
+    glass.position.z = -0.004;
+    star.add(rim, glass);
+    star.position.set(EYE_X * side * 1.1, EYE_Y, EYE_Z - 0.09);
+    return star;
+  });
+  const bridge = new Mesh(new BoxGeometry(0.1, 0.025, 0.02), frame);
+  bridge.position.set(0, EYE_Y + 0.02, EYE_Z - 0.09);
+  group.add(bridge);
+  return group;
+}
+
+/** A fancy gold monocle over one eye, with a little chain. */
+function monocle(m: PartMaterials): Object3D {
+  const group = new Group();
+  const gold = toon(0xffc23c, m);
+  const rim = new Mesh(new TorusGeometry(0.1, 0.02, 8, 20), gold);
+  rim.position.set(EYE_X, EYE_Y, EYE_Z - 0.07);
+  const glass = new Mesh(
+    new CircleGeometry(0.09, 20),
+    new MeshBasicMaterial({ color: 0xdff6ff, transparent: true, opacity: 0.3 }),
+  );
+  glass.rotation.y = Math.PI;
+  glass.position.copy(rim.position);
+  const chain = new Mesh(new CylinderGeometry(0.008, 0.008, 0.24, 6), gold);
+  chain.position.set(EYE_X + 0.07, EYE_Y - 0.17, EYE_Z + 0.01);
+  chain.rotation.z = 0.35;
+  group.add(rim, glass, chain);
+  return group;
+}
+
+/** Wide ski goggles: a white frame around an orange mirrored lens. */
+function skiGoggles(m: PartMaterials): Object3D {
+  const group = new Group();
+  // Cylinder angles start at +Z; the front of the face is −Z (angle π).
+  const frame = new Mesh(
+    new CylinderGeometry(0.5, 0.5, 0.21, 28, 1, true, Math.PI - 1.05, 2.1),
+    new MeshToonMaterial({ color: 0xffffff, gradientMap: m.toonRamp, side: DoubleSide }),
+  );
+  frame.position.y = EYE_Y;
+  const lens = new Mesh(
+    new CylinderGeometry(0.515, 0.515, 0.15, 28, 1, true, Math.PI - 0.92, 1.84),
+    new MeshBasicMaterial({ color: 0xff8a3d, transparent: true, opacity: 0.85, side: DoubleSide }),
+  );
+  lens.position.y = EYE_Y;
+  group.add(strap(m), frame, lens);
+  return group;
+}
+
 /** Index 0 is "None". */
 export const GOGGLE_PARTS: ((m: PartMaterials) => Object3D | null)[] = [
   () => null,
   roundGoggles,
   visor,
+  starShades,
+  monocle,
+  skiGoggles,
 ];
 
 // --- Shoes (one foot; the character has two) -----------------------------------------------
@@ -305,13 +547,69 @@ function sandal(m: PartMaterials): Object3D {
   return group;
 }
 
-export const SHOE_PARTS: ((m: PartMaterials) => Object3D)[] = [sneaker, boot, flipper, sandal];
+/** A red skate boot on a plate with two yellow wheels. */
+function rollerSkate(m: PartMaterials): Object3D {
+  const group = new Group();
+  const toe = footBall(toon(0xe63946, m));
+  toe.position.y = 0.02;
+  const plate = new Mesh(new BoxGeometry(0.14, 0.025, 0.3), m.ink);
+  plate.position.y = -0.04;
+  group.add(toe, plate);
+  const wheel = new CylinderGeometry(0.045, 0.045, 0.1, 12);
+  const rubber = toon(0xffd166, m);
+  for (const z of [-0.1, 0.1]) {
+    const w = new Mesh(wheel, rubber);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(0, -0.08, z);
+    group.add(w);
+  }
+  return group;
+}
+
+/** Tall shiny yellow rain boots. */
+function rainBoot(m: PartMaterials): Object3D {
+  const group = new Group();
+  const rubber = toon(0xffd23f, m);
+  const shaft = new Mesh(new CylinderGeometry(0.11, 0.115, 0.3, 14), rubber);
+  shaft.position.y = 0.1;
+  const toe = footBall(rubber);
+  toe.position.set(0, -0.01, -0.05);
+  const sole = new Mesh(new CylinderGeometry(0.125, 0.125, 0.03, 14), m.ink);
+  sole.scale.z = 1.35;
+  sole.position.set(0, -0.06, -0.03);
+  group.add(shaft, toe, sole);
+  return group;
+}
+
+/** Fluffy pink slippers with a pompom on top. */
+function slipper(m: PartMaterials): Object3D {
+  const group = new Group();
+  const fluff = footBall(toon(0xffb3d1, m));
+  fluff.scale.multiplyScalar(1.15);
+  const pompom = new Mesh(new SphereGeometry(0.05, 10, 8), toon(0xffffff, m));
+  pompom.position.set(0, 0.07, -0.08);
+  group.add(fluff, pompom);
+  return group;
+}
+
+export const SHOE_PARTS: ((m: PartMaterials) => Object3D)[] = [
+  sneaker,
+  boot,
+  flipper,
+  sandal,
+  rollerSkate,
+  rainBoot,
+  slipper,
+];
 
 // --- Body shape -----------------------------------------------------------------------------
 
-/** Proportions of the body (and how far apart the feet are): round, tall, wide. */
+/** Proportions of the body (and how far apart the feet are), in LOOK_OPTIONS.body order. */
 export const BODY_SHAPES: { width: number; height: number }[] = [
-  { width: 1, height: 1 },
-  { width: 0.9, height: 1.15 },
-  { width: 1.14, height: 0.88 },
+  { width: 1, height: 1 }, // round
+  { width: 0.9, height: 1.15 }, // tall
+  { width: 1.14, height: 0.88 }, // wide
+  { width: 0.8, height: 1.28 }, // bean
+  { width: 1.28, height: 0.76 }, // chunky
+  { width: 0.84, height: 0.84 }, // tiny
 ];

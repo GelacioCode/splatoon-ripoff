@@ -5,6 +5,8 @@ import {
   arenaFor,
   canSwitchTeam,
   CONFIG,
+  damp,
+  dampAngle,
   decodePaintEvents,
   decodePaintSnapshot,
   decodeShotEvents,
@@ -18,6 +20,7 @@ import {
   MSG_KICK,
   MSG_KICKED,
   MSG_LAN_ADDRESSES,
+  MSG_MAP_THEME,
   MSG_MATCH_LENGTH,
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
@@ -40,6 +43,8 @@ import {
   parseFlagState,
   parseGameMode,
   parseLook,
+  parseMapChoice,
+  parseMapTheme,
   parsePhase,
   parseStageMode,
   ROOM_MATCH,
@@ -83,6 +88,7 @@ import { Minimap, type MinimapFrame, type MinimapPoint } from '../ui/minimap';
 import { qrCodeSvg } from '../ui/qrCode';
 import { Scoreboard } from '../ui/scoreboard';
 import { MatchBanner, Screens, type LobbyPlayer } from '../ui/screens';
+import { SpectateBar } from '../ui/spectateBar';
 import { StatsOverlay } from '../ui/statsOverlay';
 import type { StatsRow } from '../ui/statsTable';
 import { FixedStep } from './fixedStep';
@@ -107,6 +113,9 @@ const UP = { x: 0, y: 1, z: 0 };
 const MINIMAP_PAINT_INTERVAL = 0.25;
 /** How long "Pink team wins!" shows before the results screen (ms). */
 const RESULTS_DELAY_MS = 2500;
+/** Watching a teammate: how quickly the camera turns with them, and its gentle downward tilt. */
+const SPECTATE_TURN = 8;
+const SPECTATE_PITCH = -0.18;
 
 /** Byte messages arrive as Uint8Array; anything else means a server/client version mismatch. */
 function asBytes(payload: unknown): Uint8Array | null {
@@ -444,6 +453,11 @@ class NetSession {
   private readonly netInput: InputHandle<NetInput>;
   private readonly remotes = new Map<string, RemotePlayer>();
   private readonly feet = new Vector3();
+  /** What the camera follows: our feet, or a teammate's while we wait to respawn. */
+  private readonly cameraFeet = new Vector3();
+  /** While splatted: the "YOU WERE SPLATTED" screen, and which teammate we watch. */
+  private readonly spectate: SpectateBar;
+  private watchingId: string | null = null;
   private me: OwnReconciler | null = null;
   private body: Collider | null = null;
   private character: BlobCharacter | null = null;
@@ -522,6 +536,7 @@ class NetSession {
     world.scene.add(this.arrow.root);
     this.minimap = new Minimap(world.map, world.surfaces, world.paint);
     this.statsOverlay = new StatsOverlay(world.touchDevice);
+    this.spectate = new SpectateBar(world.touchDevice, (by) => this.watchNext(by));
     // Others are drawn slightly in the past, between two snapshots, so they move smoothly.
     this.predict = Predict.get(room, { mode: 'lerp', delay: CONFIG.net.interpolationDelayMs });
     this.netInput = room.input({ type: NetInput });
@@ -586,14 +601,15 @@ class NetSession {
     this.world.paint.clear();
     this.world.atlas.clear();
     this.world.killFeed.clear();
-    this.world.setSplatted(null);
+    this.spectate.dispose();
     this.world.scene.remove(this.flagView.root);
     this.world.scene.remove(this.hillView.root);
     this.hillView.dispose();
     this.world.setBasesVisible(true);
     this.world.setMatchActions(null);
-    // Back to the usual colors behind the start screen.
+    // Back to the usual colors and look behind the start screen.
     if (setTeamPalette(0)) this.world.applyTeamColors();
+    this.world.setTheme('yard');
     this.world.scene.remove(this.arrow.root);
     this.arrow.dispose();
     this.scoreboard.dispose();
@@ -718,7 +734,9 @@ class NetSession {
     this.statsOverlay.setEnabled(phase === 'countdown' || phase === 'playing');
     this.statsOverlay.update(this.statsRows());
     if (phase === 'ended') this.maybeShowResults();
-    world.drawFrame(dt, this.feet, me?.state ?? WAITING_STATE, this.shots, this.shotLoop.alpha);
+    this.updateSpectate(dt, phase);
+    const s = me?.state ?? WAITING_STATE;
+    world.drawFrame(dt, this.cameraFeet, s, this.shots, this.shotLoop.alpha);
     this.updateStatus(dt);
   }
 
@@ -745,25 +763,83 @@ class NetSession {
     return false;
   }
 
-  /** Our own splat and respawn: the "Splatted by" message, the hurt flash, the camera. */
+  /** Our own splat and respawn: the hurt flash, and the camera back on us after a respawn. */
   private updateLife(s: PlayerState): void {
     const splatted = s.respawnTimer > 0;
-    const left = Math.ceil(s.respawnTimer);
-    this.world.setSplatted(
-      !splatted
-        ? null
-        : this.switching
-          ? `Switching to ${teamName(s.team)} · in ${left}…`
-          : `Splatted by ${this.splattedBy} · back in ${left}…`,
-    );
     // Back on the spawn pad: look the way the spawn faces (toward the middle).
     if (this.wasSplatted && !splatted) {
       this.world.view.yaw = s.yaw;
+      this.world.view.pitch = SPECTATE_PITCH;
       this.switching = false;
+      this.watchingId = null;
     }
     this.wasSplatted = splatted;
     if (this.lastHp - s.hp >= HURT_FLASH_HP) this.world.flashHurt();
     this.lastHp = s.hp;
+  }
+
+  /**
+   * While we wait to respawn: the "YOU WERE SPLATTED · respawning in N" screen, and the
+   * camera following a living teammate (switch with ◀ ▶). Otherwise the camera is on us.
+   */
+  private updateSpectate(dt: number, phase: MatchPhase): void {
+    this.cameraFeet.copy(this.feet);
+    const s = this.me?.state;
+    if (!s || s.respawnTimer <= 0 || phase === 'lobby' || phase === 'ended') {
+      this.spectate.hide();
+      return;
+    }
+    const left = Math.ceil(s.respawnTimer);
+    const watched = this.watchedTeammate(s.team);
+    if (watched) {
+      // Their spot and the way they're facing: we see what they see.
+      const pose = this.remotePose(watched.player);
+      if (Number.isFinite(pose.x + pose.y + pose.z)) this.cameraFeet.set(pose.x, pose.y, pose.z);
+      const view = this.world.view;
+      if (Number.isFinite(pose.yaw)) view.yaw = dampAngle(view.yaw, pose.yaw, SPECTATE_TURN, dt);
+      view.pitch = damp(view.pitch, SPECTATE_PITCH, SPECTATE_TURN, dt);
+    }
+    this.spectate.show({
+      title: this.switching
+        ? `🔁 SWITCHING TO ${teamName(s.team).toUpperCase()}`
+        : '💀 YOU WERE SPLATTED',
+      detail: this.switching
+        ? `Back in ${left}…`
+        : `Splatted by ${this.splattedBy} · respawning in ${left}…`,
+      watching: watched?.player.name ?? null,
+      color: cssColor(teamTextColor(s.team)),
+    });
+  }
+
+  /** Living teammates we could watch, in join order. */
+  private watchableTeammates(team: number): string[] {
+    const ids: string[] = [];
+    for (const [id, remote] of this.remotes) {
+      if (remote.player.team === team && remote.player.respawnTimer <= 0) ids.push(id);
+    }
+    return ids;
+  }
+
+  /** The teammate we're watching; if they went down (or left), the next one up. */
+  private watchedTeammate(team: number): RemotePlayer | null {
+    const ids = this.watchableTeammates(team);
+    if (ids.length === 0) {
+      this.watchingId = null;
+      return null;
+    }
+    const id = this.watchingId !== null && ids.includes(this.watchingId) ? this.watchingId : ids[0];
+    this.watchingId = id;
+    return this.remotes.get(id) ?? null;
+  }
+
+  /** ◀ ▶ while splatted: watch the previous (−1) or next (+1) teammate. */
+  private watchNext(by: number): void {
+    const s = this.me?.state;
+    if (!s || s.respawnTimer <= 0) return;
+    const ids = this.watchableTeammates(s.team);
+    if (ids.length === 0) return;
+    const at = this.watchingId === null ? 0 : Math.max(0, ids.indexOf(this.watchingId));
+    this.watchingId = ids[(at + by + ids.length) % ids.length];
   }
 
   /** Someone changed sides mid-match, or our lobby pick couldn't be kept at Start. */
@@ -827,7 +903,7 @@ class NetSession {
         this.banner.hide();
         this.scoreboard.setVisible(false);
         this.world.killFeed.clear();
-        this.world.setSplatted(null);
+        this.spectate.hide();
         this.lobbyKey = '';
         this.resultsShown = false;
       }
@@ -854,6 +930,7 @@ class NetSession {
         secondsLeft,
         state.score0 + state.score1 + 1,
         parseStageMode(state.stageMode),
+        parseMapTheme(state.mapTheme),
       );
     } else if (phase === 'ended') {
       if (this.resultsShown) return;
@@ -1104,7 +1181,7 @@ class NetSession {
     if (this.editingLook) return;
     const state = this.room.state;
     const isHost = state.hostId === this.room.sessionId;
-    if (isHost && !this.askedForLan && isLocalPage(window.location.hostname)) {
+    if (!this.askedForLan && isLocalPage(window.location.hostname)) {
       // The QR code needs this computer's network address; the server knows it.
       this.askedForLan = true;
       this.room.send(MSG_REQUEST_LAN);
@@ -1123,15 +1200,18 @@ class NetSession {
       });
     }
     const link = joinUrl(window.location, this.room.roomId, this.lanAddresses);
-    if (isHost && this.qr?.url !== link) this.qr = { url: link, svg: qrCodeSvg(link) };
+    // Everyone can invite more players (the popup behind "Lobby: CODE").
+    if (this.qr?.url !== link) this.qr = { url: link, svg: qrCodeSvg(link) };
 
     const gameMode = parseGameMode(state.gameMode);
+    const mapChoice = parseMapChoice(state.mapChoice);
     const key = JSON.stringify([
       players,
       isHost,
       state.matchMinutes,
       state.capturesToWin,
       gameMode,
+      mapChoice,
       state.teamColors,
       link,
     ]);
@@ -1148,8 +1228,9 @@ class NetSession {
         matchMinutes: state.matchMinutes,
         capturesToWin: state.capturesToWin,
         gameMode,
+        mapChoice,
         teamColors: state.teamColors,
-        qrSvg: isHost ? (this.qr?.svg ?? null) : null,
+        qrSvg: this.qr?.svg ?? null,
         joinLink: link,
       },
       {
@@ -1159,6 +1240,7 @@ class NetSession {
         setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
         setCaptureGoal: (captures) => this.room.send(MSG_CAPTURE_GOAL, captures),
         setGameMode: (mode) => this.room.send(MSG_GAME_MODE, mode),
+        setMap: (choice) => this.room.send(MSG_MAP_THEME, choice),
         setTeamColors: (index) => this.room.send(MSG_TEAM_COLORS, index),
         setBots: (count) => this.room.send(MSG_SET_BOTS, count),
         editLook: () => this.openLookEditor(),
@@ -1246,9 +1328,14 @@ class NetSession {
   private ensureMap(): void {
     const { mapSeed, arenaSize } = this.room.state;
     const key = `${mapSeed}:${arenaSize}`;
-    if (key === this.world.mapKey) return;
+    // The host's map theme can change on its own (in the lobby): just the looks then.
+    const theme = parseMapTheme(this.room.state.mapTheme);
+    if (key === this.world.mapKey) {
+      this.world.setTheme(theme);
+      return;
+    }
     const world = this.world;
-    world.loadMap(arenaFor(mapSeed, arenaSize), key);
+    world.loadMap(arenaFor(mapSeed, arenaSize), key, theme);
     this.shots.length = 0;
     if (this.body && this.me) this.body = world.physics.createCharacter(this.me.state);
     this.minimap.setMap(world.map, world.surfaces, world.paint);

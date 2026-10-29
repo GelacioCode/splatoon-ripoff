@@ -6,12 +6,15 @@ import { createToonRamp } from './toon';
 
 /** Neutral lavender until the team (and so the color) is known. */
 const PREVIEW_COLOR = 0xb39cff;
-/** Turning speed of the preview (radians per second). */
-const TURN_SPEED = 0.7;
+/** Radians of turn per pixel dragged across the preview. */
+const DRAG_TURN = 0.012;
+/** How quickly a flick's spin dies down after letting go (per second; higher stops sooner). */
+const SPIN_FRICTION = 4;
 
 /**
- * A small turning 3D view of your blob for the customize screen. It has its own little
- * renderer, which only exists while the screen is open: call `dispose` when leaving it.
+ * A small 3D view of your blob for the customize screen: drag it (mouse or finger) to turn
+ * it, and a flick keeps it spinning for a moment. It has its own little renderer, which only
+ * exists while the screen is open: call `dispose` when leaving it.
  */
 export class LookPreview {
   private readonly renderer: WebGLRenderer;
@@ -22,6 +25,10 @@ export class LookPreview {
   private lastTime = 0;
   // Start facing the camera (the blob faces −Z, the camera looks from +Z).
   private yaw = Math.PI;
+  /** Turning speed left from a flick (radians per second). */
+  private spin = 0;
+  /** The dragging pointer and where it was last, or null when not dragging. */
+  private drag: { id: number; x: number; time: number } | null = null;
 
   constructor(host: HTMLElement, look: Look, weapon: number) {
     this.renderer = new WebGLRenderer({ antialias: true, alpha: true });
@@ -29,6 +36,7 @@ export class LookPreview {
     const size = Math.max(120, Math.round(host.clientWidth) || 180);
     this.renderer.setSize(size, size);
     host.replaceChildren(this.renderer.domElement);
+    this.listenForDrags(this.renderer.domElement);
 
     this.scene.add(new HemisphereLight(0xffffff, HEMISPHERE_GROUND_COLOR, 1.4));
     const sun = new DirectionalLight(0xffffff, 2);
@@ -59,10 +67,43 @@ export class LookPreview {
     this.renderer.domElement.remove();
   }
 
+  /** Dragging sideways turns the blob; letting go mid-drag keeps it spinning, slowing down. */
+  private listenForDrags(canvas: HTMLCanvasElement): void {
+    canvas.classList.add('look-preview-canvas');
+    canvas.title = 'Drag to turn';
+    canvas.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      canvas.setPointerCapture(event.pointerId);
+      this.drag = { id: event.pointerId, x: event.clientX, time: event.timeStamp };
+      this.spin = 0;
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      const drag = this.drag;
+      if (!drag || drag.id !== event.pointerId) return;
+      const turn = (event.clientX - drag.x) * DRAG_TURN;
+      const seconds = Math.max((event.timeStamp - drag.time) / 1000, 1e-3);
+      this.yaw += turn;
+      this.spin = turn / seconds;
+      drag.x = event.clientX;
+      drag.time = event.timeStamp;
+    });
+    const release = (event: PointerEvent) => {
+      if (this.drag?.id !== event.pointerId) return;
+      // Holding still before letting go means no flick.
+      if (event.timeStamp - this.drag.time > 80) this.spin = 0;
+      this.drag = null;
+    };
+    canvas.addEventListener('pointerup', release);
+    canvas.addEventListener('pointercancel', release);
+  }
+
   private readonly frame = (timeMs: number): void => {
     const dt = this.lastTime === 0 ? 0 : Math.min((timeMs - this.lastTime) / 1000, 0.1);
     this.lastTime = timeMs;
-    this.yaw += TURN_SPEED * dt;
+    if (!this.drag) {
+      this.yaw += this.spin * dt;
+      this.spin *= Math.exp(-SPIN_FRICTION * dt);
+    }
     this.character.update(dt, {
       x: 0,
       y: 0,

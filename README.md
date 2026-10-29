@@ -11,7 +11,7 @@ A browser-based multiplayer paint shooter: two teams, a 3D arena, swimming throu
 | `http://localhost:5173` | **Start screen** (needs `pnpm dev` running): **Create Lobby**, or join one with its code. |
 | `…/join/K7QX` | **Join screen** for lobby `K7QX`: this is the link in the lobby's QR code. |
 | `…/?quick` | Dev shortcut: creates a lobby and starts it at once (solo testing of online play). |
-| `…/?offline` | **Offline sandbox**: play solo without the server (handy for tuning the feel). |
+| `…/?offline` | **Offline sandbox**: play solo without the server (handy for tuning the feel). Add `&map=forest`, `&map=desert` or `&map=office` to try a map theme. |
 | `…/?debug` | Online, plus Colyseus' netcode panel: prediction drift and a **latency simulator** to test lag. Works together with the others, e.g. `?quick&debug`. |
 
 ## Arena size
@@ -28,9 +28,10 @@ Heights stay the same, so jumps and walls feel the same. Bigger arenas get more 
 
 ## Lobbies
 
-1. The host clicks **Create Lobby**, enters a name and picks a role. The lobby shows a big **QR code** and a 4-character **code**.
-2. Players scan the QR code (or open the site and type the code), enter a name, design their blob (eyes, hat, goggles, shoes, body shape, with a turning 3D preview), pick a role and join. Name, look and role are remembered on each device. **Edit look** in the lobby changes it for everyone at once.
-3. The host sees everyone in the list. They can remove a player (✕), set the match length (3 / 5 / 7 minutes) and the captures to win (3 / 5 / 7), and press **Start**, which needs 2 players. The host plays too.
+1. The host clicks **Create Lobby**, enters a name and picks a role. The top of the lobby says **Lobby: K7QX**. Click or tap it to open the **invite popup**: a big QR code, plus **Copy code**, **Copy link**, **Copy QR image** and, on phones, **Share**. With a mouse, hovering it shows a small QR preview. Everyone in the lobby can open it, not just the host.
+   - Copying the QR image needs a secure page (the live site or `localhost`). On `http://192.168…` the button becomes **Save QR image** and downloads a PNG instead.
+2. Players scan the QR code (or open the site and type the code), enter a name, design their blob (8 eyes, 10 hats, 6 goggles, 7 shoes and 6 body shapes, with a 3D preview you drag to turn), pick a role and join. Name, look and role are remembered on each device. **Edit look** in the lobby changes it for everyone at once.
+3. The host sees everyone in the list. They can remove a player (✕), pick the map, set the match length (3 / 5 / 7 minutes) and the rounds to win (3 / 5 / 7), and press **Start**, which needs 2 players. The host plays too.
 4. On Start, players are shuffled into two even teams. A **team reveal** shows, then **3 · 2 · 1 · GO!** while everyone waits on their spawn pad. Then click or tap to play.
 5. Players who join while a match is on go straight in, on the smaller team.
 6. In the arena, other players' names float over their heads in their team's colour. Names hide behind walls and disappear while a player is a puddle, so hiding in paint still works.
@@ -64,6 +65,20 @@ Open http://localhost:5173. The game server listens on http://localhost:2567 and
 ## Team colours
 
 The host picks the two teams' colours in the lobby: **Pink vs Cyan** (the default) or **Red vs Violet** (CGI's brand colours). Everyone's lobby shows the choice straight away, and in the match the blobs, paint, shots, bases, hill, minimap, HUD and team names ("Red team wins!") all follow it. Very dark colours are brightened a little for names and text, so they stay readable.
+
+## Maps
+
+The host picks the map in the lobby. A map is a look, not a layout: every map plays on the same random layouts with the same walls and collision, so nothing changes gameplay-wise.
+
+| Map | Look |
+| --- | --- |
+| Drip Yard | The original: lavender blocks, a faint grid, blue sky |
+| Forest | Grass with soft patches, mossy stone cover; round trees, pines, bushes, rocks, logs and mushrooms outside the walls |
+| Desert | Rippled sand and layered sandstone under a peach sky; mesas, cacti, rocks, crates and dunes around |
+| Office | Carpet tiles, desk-white cover; desks, chairs, plants, water coolers and filing cabinets, big windows with a city skyline |
+| Random | A different map every round |
+
+The arena behind the lobby shows the chosen map right away. The countdown names the map too ("Round 2 · King of the Hill · Desert"). Low quality draws about half the scenery.
 
 ## Game modes
 
@@ -126,7 +141,8 @@ The host picks one in the lobby:
 ## Health and splatting
 
 - Everyone has 100 HP. Hits from the other team hurt; your own team's shots pass through you.
-- At 0 HP you're **splatted**: you burst into the attacker's paint, see "Splatted by …", and respawn on your team's pad (3–10 s, longer the more often you're splatted). For 2 seconds after respawning you blink and can't be hurt.
+- At 0 HP you're **splatted**: you burst into the attacker's paint and respawn on your team's pad (3–10 s, longer the more often you're splatted). For 2 seconds after respawning you blink and can't be hurt.
+- **While you wait,** a big **💀 YOU WERE SPLATTED** banner shows who got you and the respawn countdown, so it's clear you're not playing. Your HUD steps back and the camera **follows a living teammate**: **◀ Watching NAME ▶** switches between them (the arrows on touch; Q / E, A / D, or a left / right click on desktop). Teammates only, so nobody can scout the enemy.
 - A small marker on the crosshair (red for a splat) and a tick sound tell you your shot hit. A red flash means you got hit.
 - The kill feed at top right shows who splatted whom.
 - Hits are checked against where the shooter saw the target, so what you hit on your screen counts even with some lag.
@@ -143,10 +159,10 @@ Aiming (right mouse, or the AIM button) works differently per role:
 | Role | Aim |
 | --- | --- |
 | Sniper | A real **4× scope**: the view goes to your blob's eye, with a round scope and reticle |
-| Assault | **2×** aim-down-sights over the shoulder |
-| Machine gun | A light **1.25×** aim-down-sights |
+| Assault | A **2× sight**: over the shoulder, through a big lens with a gold rim and a glowing red dot; the view around it dims |
+| Machine gun | A light **1.25×** zoom with the normal crosshair |
 
-Turning slows down with the zoom, and you walk slower while aiming.
+Turning slows down with the zoom, and you walk slower while aiming. When your tank runs out (or any reload starts), or you're splatted, aiming lets go by itself so you notice. Press aim again (or tap AIM again) after the reload to zoom back in.
 
 | Role | Shots per reload | Damage per hit | Range | Walking speed |
 | --- | --- | --- | --- | --- |

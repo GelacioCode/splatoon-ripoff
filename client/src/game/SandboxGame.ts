@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { ARENA, CONFIG, weaponStats, type Vec3 } from '@paint-rush/shared';
+import { ARENA, CONFIG, parseMapTheme, weaponStats, type Vec3 } from '@paint-rush/shared';
 import {
   createPlayerState,
   initPhysics,
@@ -77,6 +77,8 @@ class SandboxGame {
         this.character.setWeapon(weapon);
       },
     );
+    // `?offline&map=forest` (or desert, office) tries a map theme.
+    this.world.setTheme(parseMapTheme(new URLSearchParams(window.location.search).get('map')));
     const weapon = this.world.settings.weapon;
     this.character = this.world.createCharacter(START_TEAM, weapon, this.world.settings.look);
     this.player = createPlayerState(this.spawnPoint(), SPAWN_YAW, START_TEAM, weapon);

@@ -17,6 +17,8 @@ export class InputManager {
   /** Set by the game: input only counts while actually playing (not paused). */
   playing = false;
   private readonly input: PlayerInput = createInput();
+  /** Aim was let go of (see releaseAim): the held right button doesn't count until released. */
+  private aimReleased = false;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -46,6 +48,15 @@ export class InputManager {
     return { x: m.x + t.x + g.x, y: m.y + t.y + g.y };
   }
 
+  /**
+   * Lets go of aim (a reload started, or splatted): the AIM toggle switches off, and a held
+   * right button has to be released and pressed again to aim.
+   */
+  releaseAim(): void {
+    this.touch?.releaseAim();
+    if (this.keyboardMouse.aimHeld) this.aimReleased = true;
+  }
+
   /** Builds this tick's input. The aim comes from the camera. */
   sampleTick(aimYaw: number, aimPitch: number): PlayerInput {
     const km = this.keyboardMouse;
@@ -70,7 +81,9 @@ export class InputManager {
     input.fire = on && (km.fireHeld || (touch?.fireHeld ?? false) || firePressed);
     input.swim = on && (km.swimHeld || (touch?.swimHeld ?? false));
     input.reload = on && reloadPressed;
-    input.aim = on && (km.aimHeld || (touch?.aimToggled ?? false));
+    if (!km.aimHeld) this.aimReleased = false;
+    const mouseAim = km.aimHeld && !this.aimReleased;
+    input.aim = on && (mouseAim || (touch?.aimToggled ?? false));
     input.aimYaw = aimYaw;
     input.aimPitch = aimPitch;
     return input;

@@ -3,11 +3,22 @@
  * isn't here: it's always the team color. Body shape is looks only (collision stays the same).
  */
 export const LOOK_OPTIONS = {
-  eyes: ['Round', 'Sleepy', 'Happy', 'Star'],
-  hat: ['None', 'Cap', 'Beanie', 'Crown', 'Bow'],
-  goggles: ['None', 'Round', 'Visor'],
-  shoes: ['Sneakers', 'Boots', 'Flippers', 'Sandals'],
-  body: ['Round', 'Tall', 'Wide'],
+  eyes: ['Round', 'Sleepy', 'Happy', 'Star', 'Wink', 'Angry', 'Heart', 'Dot'],
+  hat: [
+    'None',
+    'Cap',
+    'Beanie',
+    'Crown',
+    'Bow',
+    'Top hat',
+    'Propeller',
+    'Party cone',
+    'Sprout',
+    'Headphones',
+  ],
+  goggles: ['None', 'Round', 'Visor', 'Star shades', 'Monocle', 'Ski goggles'],
+  shoes: ['Sneakers', 'Boots', 'Flippers', 'Sandals', 'Roller skates', 'Rain boots', 'Slippers'],
+  body: ['Round', 'Tall', 'Wide', 'Bean', 'Chunky', 'Tiny'],
 } as const;
 
 export type LookPart = keyof typeof LOOK_OPTIONS;

@@ -24,6 +24,7 @@ import {
   isCaptureGoal,
   canSwitchTeam,
   isGameMode,
+  isMapChoice,
   isTeamPalette,
   isTeamPick,
   isMatchLength,
@@ -37,6 +38,7 @@ import {
   MSG_KICK,
   MSG_KICKED,
   MSG_LAN_ADDRESSES,
+  MSG_MAP_THEME,
   MSG_MATCH_LENGTH,
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
@@ -61,11 +63,14 @@ import {
   PaintGrid,
   parseGameMode,
   parseLook,
+  parseMapChoice,
+  parseMapTheme,
   parsePhase,
   parseStageMode,
   parseWeaponChoice,
   phaseSeconds,
   pickStageMode,
+  pickStageTheme,
   randomLook,
   randomMiddleSpot,
   seedFromString,
@@ -298,6 +303,13 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         this.state.gameMode = payload;
       }
     },
+    // The map: a theme (also shown behind the lobby right away), or a new one every round.
+    [MSG_MAP_THEME]: (client: Client, payload: unknown) => {
+      if (this.isHost(client) && this.phase === 'lobby' && isMapChoice(payload)) {
+        this.state.mapChoice = payload;
+        if (payload !== 'random') this.state.mapTheme = payload;
+      }
+    },
     [MSG_SET_BOTS]: (client: Client, payload: unknown) => {
       if (this.isHost(client) && this.phase === 'lobby') this.setBotCount(payload);
     },
@@ -519,10 +531,17 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   /**
    * This stage: Capture the Flag or King of the Hill (by the host's game mode; random flips a
    * coin), with its objective at a fresh random spot on the middle line. The flag stays
-   * hidden and still during a hill stage.
+   * hidden and still during a hill stage. The map's look is the host's theme, or on random a
+   * different one from the last round.
    */
   private setupStage(): void {
     this.state.stageMode = pickStageMode(parseGameMode(this.state.gameMode), Math.random);
+    const previous = parseMapTheme(this.state.mapTheme);
+    this.state.mapTheme = pickStageTheme(
+      parseMapChoice(this.state.mapChoice),
+      Math.random,
+      previous,
+    );
     this.flagSpot = randomMiddleSpot(this.map, Math.random);
     this.flag = createFlag(this.flagSpot);
     this.syncFlag();
@@ -548,7 +567,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       if (this.bodies.has(id)) this.placeOnSpawn(player);
     }
     this.setupStage();
-    console.log(`[match] ${this.roomId}: new ${this.stageMode} stage on ${this.map.name}`);
+    const where = `${this.map.name} (${this.state.mapTheme})`;
+    console.log(`[match] ${this.roomId}: new ${this.stageMode} stage on ${where}`);
   }
 
   /**

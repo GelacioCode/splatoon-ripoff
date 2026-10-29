@@ -4,15 +4,20 @@ import {
   GAME_MODE_NAMES,
   GAME_MODES,
   LOBBY_CODE_LENGTH,
+  MAP_CHOICE_NAMES,
+  MAP_CHOICES,
   parseLobbyCode,
   STAGE_MODE_NAMES,
   TEAM_PALETTES,
   type GameMode,
   type Look,
+  type MapChoice,
+  type MapTheme,
   type StageMode,
 } from '@paint-rush/shared';
 import { TEAM_COLORS, teamName, teamTextColor, textOnTeam } from '../render/palette';
 import { createHowToPlay } from './howToPlay';
+import { InvitePopup } from './invitePopup';
 import { createLookPicker } from './lookPicker';
 import { createRoleCards } from './roleCards';
 import { createStatsTable, type StatsRow } from './statsTable';
@@ -42,9 +47,11 @@ export interface LobbyView {
   /** Stages (rounds) to win (3, 5 or 7). */
   capturesToWin: number;
   gameMode: GameMode;
+  /** The map: a theme, or a new random one every round. */
+  mapChoice: MapChoice;
   /** The team color pair (index in TEAM_PALETTES). */
   teamColors: number;
-  /** SVG markup of the join QR code (host only), or null while it's being made. */
+  /** SVG markup of the join QR code, or null while it's being made. */
   qrSvg: string | null;
   joinLink: string;
 }
@@ -56,6 +63,7 @@ export interface LobbyActions {
   setMinutes: (minutes: number) => void;
   setCaptureGoal: (captures: number) => void;
   setGameMode: (mode: GameMode) => void;
+  setMap: (choice: MapChoice) => void;
   setTeamColors: (index: number) => void;
   setBots: (count: number) => void;
   editLook: () => void;
@@ -154,19 +162,22 @@ export class Screens {
   private shownKind = '';
   /** The lobby's open tab on phones, kept while the lobby updates. */
   private lobbyTab = 'teams';
+  /** The lobby's invite popup (QR code, copy and share), kept open while the lobby updates. */
+  private readonly invite = new InvitePopup();
 
   constructor() {
     // Decorative paint splats behind the cards.
     const splats = element('div', 'screen-splats');
     splats.setAttribute('aria-hidden', 'true');
     for (let i = 0; i < 6; i++) splats.append(element('span', `splat splat-${i}`));
-    this.root.append(splats, this.card);
+    this.root.append(splats, this.card, this.invite.element);
     this.root.hidden = true;
     document.body.append(this.root);
   }
 
   hide(): void {
     this.runCleanup();
+    this.invite.close();
     this.root.hidden = true;
     this.shownKind = '';
   }
@@ -293,19 +304,17 @@ export class Screens {
   }
 
   /**
-   * The lobby: the teams (pick yours: team A, auto or team B), the match settings (the
-   * host's controls), and the invite (QR code and code). Side by side on wide screens, as
-   * tabs on phones.
+   * The lobby: the teams (pick yours: team A, auto or team B) and the match settings (the
+   * host's controls). Side by side on wide screens, as tabs on phones. The "Lobby: CODE" chip
+   * at the top opens the invite popup (QR code, copy code / link / picture).
    */
   showLobby(view: LobbyView, actions: LobbyActions): void {
     const teamsPage = this.lobbyTeams(view, actions);
     const matchPage = this.lobbyMatch(view, actions);
-    const invitePage = this.lobbyInvite(view);
     const tabs = createTabs(
       [
         { id: 'teams', label: `👥 Teams (${view.players.length})`, content: teamsPage },
         { id: 'match', label: '⚙ Match', content: matchPage },
-        { id: 'invite', label: '📱 Invite', content: invitePage },
       ],
       'lobby-tabs',
       (id) => {
@@ -336,10 +345,33 @@ export class Screens {
     );
     footer.append(small);
 
-    const header = element('div', 'lobby-header');
-    header.append(element('h1', undefined, 'Lobby'), element('span', 'lobby-code-chip', view.code));
-    this.show('lobby', header, tabs.element, footer);
+    this.show('lobby', this.lobbyHeader(view), tabs.element, footer);
     this.card.classList.add('lobby-card');
+    this.invite.update({ code: view.code, link: view.joinLink, qrSvg: view.qrSvg });
+  }
+
+  /**
+   * "Lobby: CODE" as one big button: it opens the invite popup. With a mouse, hovering it
+   * also peeks at the QR code.
+   */
+  private lobbyHeader(view: LobbyView): HTMLElement {
+    const header = element('div', 'lobby-header');
+    const chip = button('', 'lobby-chip', () => this.invite.open());
+    chip.setAttribute('aria-label', `Lobby ${view.code}: invite players`);
+    chip.append(
+      element('span', 'lobby-chip-label', 'Lobby:'),
+      element('span', 'lobby-chip-code', view.code),
+      element('span', 'lobby-chip-hint', '📱 Invite'),
+    );
+    if (view.qrSvg) {
+      const peek = element('span', 'lobby-chip-peek');
+      peek.setAttribute('aria-hidden', 'true');
+      // Our own SVG (from qrCodeSvg), never anything a player typed.
+      peek.innerHTML = view.qrSvg;
+      chip.append(peek);
+    }
+    header.append(chip);
+    return header;
   }
 
   /** Three columns (team A · auto · team B) of players, and your own pick buttons. */
@@ -410,8 +442,8 @@ export class Screens {
         element(
           'p',
           'lobby-summary',
-          `${GAME_MODE_NAMES[view.gameMode]} · ${view.matchMinutes} min · ` +
-            `first to ${view.capturesToWin} rounds`,
+          `${GAME_MODE_NAMES[view.gameMode]} · ${MAP_CHOICE_NAMES[view.mapChoice]} · ` +
+            `${view.matchMinutes} min · first to ${view.capturesToWin} rounds`,
         ),
       );
       return page;
@@ -422,6 +454,12 @@ export class Screens {
         view.gameMode,
         GAME_MODES.map((mode): [GameMode, string] => [mode, GAME_MODE_NAMES[mode]]),
         actions.setGameMode,
+      ),
+      select<MapChoice>(
+        'Map',
+        view.mapChoice,
+        MAP_CHOICES.map((choice): [MapChoice, string] => [choice, MAP_CHOICE_NAMES[choice]]),
+        actions.setMap,
       ),
       this.colorPicker(view, actions),
       select<number>(
@@ -438,25 +476,6 @@ export class Screens {
       ),
       this.botStepper(view, actions),
     );
-    return page;
-  }
-
-  /** The QR code and the code (the host), or just the code (everyone else). */
-  private lobbyInvite(view: LobbyView): HTMLElement {
-    const page = element('div', 'lobby-invite');
-    const code = element('p', 'screen-code', view.code);
-    if (view.isHost) {
-      const qr = element('div', 'screen-qr');
-      if (view.qrSvg) qr.innerHTML = view.qrSvg;
-      page.append(
-        qr,
-        element('p', 'menu-heading', 'Scan to join, or enter the code'),
-        code,
-        element('p', 'screen-join-link', view.joinLink),
-      );
-    } else {
-      page.append(element('p', 'menu-heading', 'Lobby code'), code);
-    }
     return page;
   }
 
@@ -568,6 +587,7 @@ export class Screens {
    */
   private show(kind: string, ...children: HTMLElement[]): void {
     this.runCleanup();
+    if (kind !== 'lobby') this.invite.close();
     this.card.classList.remove('results-card', 'home-card', 'lobby-card');
     this.card.replaceChildren(...children);
     const fresh = kind !== this.shownKind || this.root.hidden;
@@ -619,11 +639,12 @@ export class MatchBanner {
     this.root.replaceChildren(columns, element('p', 'banner-sub', `Starting in ${secondsLeft}…`));
   }
 
-  /** 3 · 2 · 1, with which stage this is and what it's played as. */
-  showCountdown(secondsLeft: number, stage: number, mode: StageMode): void {
-    if (this.update(`count|${secondsLeft}|${stage}|${mode}`)) {
+  /** 3 · 2 · 1, with which stage this is, what it's played as, and on which map. */
+  showCountdown(secondsLeft: number, stage: number, mode: StageMode, theme: MapTheme): void {
+    if (this.update(`count|${secondsLeft}|${stage}|${mode}|${theme}`)) {
+      const title = `Round ${stage} · ${STAGE_MODE_NAMES[mode]} · ${MAP_CHOICE_NAMES[theme]}`;
       this.root.replaceChildren(
-        element('p', 'banner-sub banner-stage', `Round ${stage} · ${STAGE_MODE_NAMES[mode]}`),
+        element('p', 'banner-sub banner-stage', title),
         element('p', 'banner-big', String(Math.max(1, secondsLeft))),
       );
     }

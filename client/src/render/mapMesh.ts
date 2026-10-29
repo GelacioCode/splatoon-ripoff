@@ -1,13 +1,8 @@
 import { BufferAttribute, BufferGeometry, Color, Mesh, ShaderMaterial, Vector3 } from 'three';
 import type { MapDef, Surface } from '@paint-rush/shared';
 import type { PaintAtlas } from './paint/PaintAtlas';
-import {
-  BLOCK_COLORS,
-  HEMISPHERE_GROUND_COLOR,
-  SKY_COLOR,
-  SUN_DIRECTION,
-  TEAM_COLORS,
-} from './palette';
+import { SUN_DIRECTION, TEAM_COLORS } from './palette';
+import { THEME_LOOKS, type ThemeLook } from './themes';
 
 const VERTEX_SHADER = /* glsl */ `
 attribute vec2 aPaintUv;
@@ -38,6 +33,8 @@ uniform sampler2D uPaint;
 uniform float uTexel;
 uniform vec3 uTeamColor0;
 uniform vec3 uTeamColor1;
+// The theme's bare-ground pattern: 0 grid, 1 grass, 2 sand, 3 carpet (see PATTERN).
+uniform float uPattern;
 
 varying vec3 vColor;
 varying vec3 vNormal;
@@ -52,16 +49,64 @@ float gridLine(vec2 p) {
   return 1.0 - clamp(min(distanceToLine.x, distanceToLine.y), 0.0, 1.0);
 }
 
+// 1 on lines across one axis only (horizontal bands on walls).
+float bandLine(float p) {
+  return 1.0 - clamp(abs(fract(p - 0.5) - 0.5) / max(fwidth(p), 1e-4), 0.0, 1.0);
+}
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// Smooth value noise, 0…1.
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// How the theme marks bare surfaces: a multiplier on the base color.
+float pattern(vec3 p, bool top, vec2 gridPosition) {
+  if (uPattern < 0.5) {
+    // Grid: a faint 1 m grid everywhere.
+    return 1.0 - 0.08 * gridLine(gridPosition);
+  }
+  if (uPattern < 1.5) {
+    // Grass: soft light and dark patches on top; stone courses on the sides.
+    if (top) return mix(0.9, 1.06, noise(p.xz * 0.45)) * mix(0.96, 1.03, noise(p.xz * 3.1));
+    return 1.0 - 0.07 * gridLine(vec2(p.y * 2.0, (p.x + p.z) * 1.0));
+  }
+  if (uPattern < 2.5) {
+    // Sand: wind ripples on top; layered sandstone bands on the sides.
+    if (top) {
+      float wave = sin(dot(p.xz, vec2(0.9, 0.4)) * 3.0 + noise(p.xz * 0.6) * 4.0);
+      return 1.0 + 0.045 * wave - 0.04 * noise(p.xz * 0.3);
+    }
+    return 1.0 - 0.09 * bandLine(p.y * 1.6 + noise(p.xz * 0.8) * 0.4);
+  }
+  // Carpet: 1 m tiles in two soft shades with seams; plain panels on the sides.
+  if (top) {
+    float checker = mod(floor(p.x) + floor(p.z), 2.0);
+    return (0.95 + 0.05 * checker) * (1.0 - 0.1 * gridLine(p.xz)) * mix(0.97, 1.02, hash(floor(p.xz * 12.0)));
+  }
+  return 1.0 - 0.05 * bandLine(p.y * 0.5);
+}
+
 void main() {
   vec3 n = normalize(vNormal);
   vec3 ambient = mix(uGroundColor, uSkyColor, n.y * 0.5 + 0.5);
 
-  // Bare surface: two chunky toon bands with a soft edge, plus a faint 1 m grid.
+  // Bare surface: two chunky toon bands with a soft edge, plus the theme's pattern.
   float sunlit = smoothstep(0.0, 0.08, dot(n, uSunDirection));
   vec3 color = vColor * (ambient * 0.5 + uSunColor * mix(0.35, 0.6, sunlit));
   vec3 a = abs(n);
   vec2 gridPosition = a.y > 0.5 ? vWorldPosition.xz : (a.x > 0.5 ? vWorldPosition.zy : vWorldPosition.xy);
-  color *= 1.0 - 0.08 * gridLine(gridPosition);
+  color *= pattern(vWorldPosition, n.y > 0.5, gridPosition);
 
   // Paint. Sampled everywhere (screen-space derivatives need it outside branches), then
   // switched off on unpaintable surfaces, whose paint UV is (−1, −1).
@@ -100,10 +145,15 @@ const CORNERS: [number, number][] = [
 ];
 
 /**
- * Builds the whole map as a single mesh (one draw call). It's toon-lit with a faint grid, and
- * draws the paint stored in the paint atlas on top.
+ * Builds the whole map as a single mesh (one draw call). It's toon-lit in the theme's colors
+ * with its ground pattern, and draws the paint stored in the paint atlas on top.
  */
-export function createMapMesh(map: MapDef, surfaces: Surface[], atlas: PaintAtlas): Mesh {
+export function createMapMesh(
+  map: MapDef,
+  surfaces: Surface[],
+  atlas: PaintAtlas,
+  look: ThemeLook = THEME_LOOKS.yard,
+): Mesh {
   const vertexCount = surfaces.length * 4;
   const positions = new Float32Array(vertexCount * 3);
   const normals = new Float32Array(vertexCount * 3);
@@ -115,7 +165,7 @@ export function createMapMesh(map: MapDef, surfaces: Surface[], atlas: PaintAtla
 
   surfaces.forEach((surface, i) => {
     const { origin, uAxis, vAxis, normal, width, height } = surface;
-    color.setHex(BLOCK_COLORS[map.blocks[surface.blockIndex].kind]);
+    color.setHex(look.blocks[map.blocks[surface.blockIndex].kind]);
     CORNERS.forEach(([u, v], corner) => {
       const vertex = i * 4 + corner;
       const k = vertex * 3;
@@ -146,9 +196,10 @@ export function createMapMesh(map: MapDef, surfaces: Surface[], atlas: PaintAtla
     vertexColors: true,
     uniforms: {
       uSunDirection: { value: new Vector3(...SUN_DIRECTION).normalize() },
-      uSunColor: { value: new Color(0xffffff) },
-      uSkyColor: { value: new Color(SKY_COLOR) },
-      uGroundColor: { value: new Color(HEMISPHERE_GROUND_COLOR) },
+      uSunColor: { value: new Color(look.sunColor) },
+      uSkyColor: { value: new Color(look.sky) },
+      uGroundColor: { value: new Color(look.groundLight) },
+      uPattern: { value: look.pattern },
       uPaint: { value: atlas.texture },
       uTexel: { value: 1 / atlas.layout.size },
       uTeamColor0: { value: new Color(TEAM_COLORS[0]) },

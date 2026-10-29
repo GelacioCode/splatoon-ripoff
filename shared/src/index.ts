@@ -14,6 +14,7 @@ export * from './match/modes';
 export * from './match/multiKill';
 export * from './match/stats';
 export * from './maps/surfaces';
+export * from './maps/themes';
 export * from './maps/types';
 export * from './math';
 export * from './math3d';

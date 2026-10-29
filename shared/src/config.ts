@@ -254,7 +254,8 @@ export const CONFIG = {
    * - moveSpeedMultiplier: walking and swimming speed (heavier guns are slower)
    * - damage: HP taken from an enemy per hit (players have CONFIG.player.maxHp)
    * - zoom: how much aiming magnifies (2 = 2×); scope: aim through a scope from the eye
-   *   (first person) instead of over the shoulder; aimSpeedMultiplier: walking speed while aiming
+   *   (first person) instead of over the shoulder; optic: show a 2× sight's lens over the
+   *   view while aiming (over the shoulder); aimSpeedMultiplier: walking speed while aiming
    */
   weapons: {
     /** Balanced all-rounder. */
@@ -273,9 +274,10 @@ export const CONFIG = {
       moveSpeedMultiplier: 1,
       // 3 hits (user decision): same as the machine gun; they differ in range.
       damage: 34,
-      // 2× aim-down-sights (user decision).
+      // 2× aim-down-sights through a sight's lens (user decision: 2× only).
       zoom: 2,
       scope: false,
+      optic: true,
       aimSpeedMultiplier: 0.65,
     },
     /** Few, slow, pinpoint long-range shots with a long paint trail. Fastest on foot. */
@@ -297,6 +299,7 @@ export const CONFIG = {
       // A real scope (user decision): 4×, seen from the eye.
       zoom: 4,
       scope: true,
+      optic: false,
       aimSpeedMultiplier: 0.5,
     },
     /** A short-range spray of small splats. Heaviest, so the slowest on foot. */
@@ -315,9 +318,10 @@ export const CONFIG = {
       moveSpeedMultiplier: 0.8,
       // 3 hits (user decision), but only up close: short range is its trade-off.
       damage: 34,
-      // A light aim-down-sights (user decision).
+      // A light aim-down-sights, just the crosshair (user decision).
       zoom: 1.25,
       scope: false,
+      optic: false,
       aimSpeedMultiplier: 0.75,
     },
   },

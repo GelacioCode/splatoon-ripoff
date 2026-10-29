@@ -125,6 +125,10 @@ export const MatchState = schema(
     gameMode: t.string().default('ctf'),
     /** What this stage is played as: a StageMode ('ctf' or 'koth'); read it with parseStageMode. */
     stageMode: t.string().default('ctf'),
+    /** The host's map setting: a MapChoice (a theme or 'random'); read it with parseMapChoice. */
+    mapChoice: t.string().default('yard'),
+    /** How the arena looks this round: a MapTheme; read it with parseMapTheme. */
+    mapTheme: t.string().default('yard'),
     // King of the Hill (koth stages): the circle, and the tug-of-war bar (see Hill).
     hillX: t.float32().default(0),
     hillY: t.float32().default(0),

@@ -165,6 +165,27 @@ describe('stepPlayer', () => {
     expect(player.state.x).toBe(x);
     expect(player.state.z).toBe(z);
   });
+
+  it('stops aiming when splatted, so a scope never stays up', () => {
+    const player = spawn(-12, 0.05, 8);
+    for (let i = 0; i < 3; i++) step(player, { aim: true });
+    expect(player.state.aiming).toBe(true);
+    player.state.respawnTimer = 2;
+    step(player, { aim: true });
+    expect(player.state.aiming).toBe(false);
+  });
+
+  it("can't aim while reloading (an empty tank lets go of the zoom)", () => {
+    const player = spawn(-12, 0.05, 4);
+    for (let i = 0; i < 3; i++) step(player, { aim: true });
+    expect(player.state.aiming).toBe(true);
+    player.state.reloadTimer = 1;
+    step(player, { aim: true });
+    expect(player.state.aiming).toBe(false);
+    player.state.reloadTimer = 0;
+    step(player, { aim: true });
+    expect(player.state.aiming).toBe(true);
+  });
 });
 
 describe('stepPlayer with paint', () => {

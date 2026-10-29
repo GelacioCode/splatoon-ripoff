@@ -39,6 +39,12 @@ export function createHud(touch: boolean) {
   scope.className = 'scope';
   scope.innerHTML = `<div class="scope-reticle"></div>`;
 
+  // The assault's 2× sight: a big lens with a chunky rim and a glowing dot, the view around it
+  // dimmed but still visible (over the shoulder, not first person).
+  const optic = document.createElement('div');
+  optic.className = 'optic';
+  optic.innerHTML = `<div class="optic-lens"><div class="optic-dot"></div></div>`;
+
   // Bottom bar: health (left) and ammo (right).
   const bar = document.createElement('div');
   bar.className = `hud-bar${touch ? ' touch' : ''}`;
@@ -72,13 +78,7 @@ export function createHud(touch: boolean) {
   const flash = document.createElement('div');
   flash.className = 'hurt-flash';
 
-  // "Splatted by …" while waiting to respawn.
-  const splatted = document.createElement('div');
-  splatted.className = 'splatted';
-  splatted.hidden = true;
-  let splattedText = '';
-
-  document.body.append(scope, vignette, flash, hud, bar, splatted);
+  document.body.append(scope, optic, vignette, flash, hud, bar);
   let shown = '';
 
   /** Restarts a CSS animation by toggling its class. */
@@ -94,7 +94,10 @@ export function createHud(touch: boolean) {
     setVisible(visible: boolean): void {
       hud.hidden = !visible;
       bar.hidden = !visible;
-      if (!visible) scope.style.opacity = '0';
+      if (!visible) {
+        scope.style.opacity = '0';
+        optic.style.opacity = '0';
+      }
     },
     /** Your shot hit someone (bigger and red when it splatted them). */
     showHit(splat: boolean): void {
@@ -106,22 +109,22 @@ export function createHud(touch: boolean) {
       replay(flash, 'show');
       replay(healthBox, 'hit');
     },
-    /** Shows "Splatted by NAME · back in N" (or hides it with null). */
-    setSplatted(text: string | null): void {
-      if ((text ?? '') === splattedText) return;
-      splattedText = text ?? '';
-      splatted.hidden = text === null;
-      splatted.textContent = splattedText;
-    },
     /** Aim mode tightens the crosshair. */
     setAiming(aiming: boolean): void {
       hud.classList.toggle('aiming', aiming);
     },
-    /** How far into the sniper's scope view we are (0 none … 1 fully scoped). */
-    setScope(blend: number): void {
-      const opacity = blend < 0.5 ? 0 : Math.min(1, (blend - 0.5) * 2.5);
-      scope.style.opacity = String(opacity);
-      hud.classList.toggle('scoped', opacity > 0.5);
+    /**
+     * How far into the sniper's scope view (`scopeBlend`) or the assault's 2× sight
+     * (`opticBlend`) we are, each 0 none … 1 fully in. Either one replaces the crosshair.
+     */
+    setSights(scopeBlend: number, opticBlend: number): void {
+      const scopeOpacity = scopeBlend < 0.5 ? 0 : Math.min(1, (scopeBlend - 0.5) * 2.5);
+      scope.style.opacity = String(scopeOpacity);
+      // The lens grows into place as the zoom comes in.
+      const opticOpacity = Math.min(1, opticBlend * 1.6);
+      optic.style.opacity = String(opticOpacity);
+      optic.style.setProperty('--grow', String(0.82 + 0.18 * opticBlend));
+      hud.classList.toggle('scoped', scopeOpacity > 0.5 || opticOpacity > 0.6);
     },
     /** `health` from 0 to 1; `enemyColor` tints the edges while hurt. */
     updateHealth(health: number, enemyColor: string): void {
