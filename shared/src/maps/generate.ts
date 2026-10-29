@@ -1,14 +1,17 @@
 import { CONFIG } from '../config';
-import { createRng } from '../rng';
+import { createRng, seedFromString } from '../rng';
 import {
   ARENA,
   ARENA_HALF_LENGTH,
   ARENA_HALF_WIDTH,
   box,
+  CLASSIC_COVER,
   composeArena,
   ramp,
   spawnPadFront,
 } from './arena';
+import { PROP_SIZES, THEME_PROPS } from './props';
+import type { MapTheme } from './themes';
 import type { BlockDef, MapDef } from './types';
 
 /** An area on the ground (x, z), in team 0's half. */
@@ -179,21 +182,66 @@ export function randomCover(seed: number, scale = 1): BlockDef[] {
   return placed;
 }
 
+/** Objects stand at least this far from other pieces (m): a little closer than cover does. */
+const PROP_GAP = 1.4;
+
+/**
+ * The theme's objects for team 0's half (see THEME_PROPS), around the layout's `cover`: each
+ * tried at random spots, clear of the spawn, base, center and every other piece, sometimes
+ * turned 90°. Mirrored for team 1 like the rest of the half, so it stays fair. Their own
+ * random stream (from the seed and theme), so the cover is the same for every theme.
+ */
+export function themeProps(
+  theme: MapTheme,
+  cover: readonly BlockDef[],
+  seed: number,
+  scale = 1,
+): BlockDef[] {
+  const { kinds, perHalf } = THEME_PROPS[theme];
+  if (kinds.length === 0) return [];
+  const random = createRng((seed ^ seedFromString(`props:${theme}`)) >>> 0 || 1);
+  const area = areaFor(scale);
+  const taken: Rect[] = [...keepClear(scale), ...cover.map(footprint)];
+  const [least, most] = perHalf;
+  const count = Math.round((least + Math.floor(random() * (most - least + 1))) * scale * scale);
+  const placed: BlockDef[] = [];
+  for (let i = 0; i < count; i++) {
+    const kind = kinds[Math.floor(random() * kinds.length)];
+    for (let attempt = 0; attempt < TRIES; attempt++) {
+      const turned = random() < 0.5;
+      const [sx, sy, sz] = PROP_SIZES[kind];
+      const [x, z] = spot(random, scale, 2);
+      const block: BlockDef = {
+        ...box('block', [x, sy / 2, z], turned ? [sz, sy, sx] : [sx, sy, sz], false),
+        prop: { kind, turned },
+      };
+      const rect = footprint(block);
+      if (!inside(rect, area) || taken.some((other) => overlaps(rect, other, PROP_GAP))) continue;
+      placed.push(block);
+      taken.push(rect);
+      break;
+    }
+  }
+  return placed;
+}
+
 /** The fixed layout used for round 1 in arenas bigger than Drip Yard. */
 const BIG_FIRST_ROUND_SEED = 0x5eed;
 
 /**
- * The arena for a round, in size step `size` (see arenaSizeFor). Seed 0 is the first round:
- * the hand-made Drip Yard at normal size, or a fixed layout in bigger arenas (Drip Yard is
- * made for the normal size). Any other seed is a fresh random layout, the same on every
- * screen.
+ * The arena for a round, in size step `size` (see arenaSizeFor), with the objects of map
+ * `theme`. Seed 0 is the first round: the hand-made Drip Yard layout at normal size, or a
+ * fixed layout in bigger arenas (Drip Yard is made for the normal size). Any other seed is a
+ * fresh random layout. The same arguments give the same arena on every screen.
  */
-export function arenaFor(seed: number, size = 0): MapDef {
+export function arenaFor(seed: number, size = 0, theme: MapTheme = 'yard'): MapDef {
   const scale = arenaScale(size);
-  if (seed === 0 && scale === 1) return ARENA;
+  const classic = seed === 0 && scale === 1;
+  if (classic && theme === 'yard') return ARENA;
   const layoutSeed = seed === 0 ? BIG_FIRST_ROUND_SEED : seed;
-  const name = seed === 0 ? 'Big Yard' : `Layout ${seed.toString(36)}`;
-  return composeArena(name, randomCover(layoutSeed, scale), scale);
+  const name = classic ? 'Drip Yard' : seed === 0 ? 'Big Yard' : `Layout ${seed.toString(36)}`;
+  const cover = classic ? CLASSIC_COVER : randomCover(layoutSeed, scale);
+  return composeArena(name, [...cover, ...themeProps(theme, cover, seed, scale)], scale);
 }
 
 /** A seed for a new random layout (never 0, which means Drip Yard). */

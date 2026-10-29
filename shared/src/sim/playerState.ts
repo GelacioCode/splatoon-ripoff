@@ -59,7 +59,23 @@ export interface PlayerState {
   protectTimer: number;
   /** Carrying the flag: can't swim, and moves slower. Set by the server's flag rules. */
   carrying: boolean;
+  /** What's in hand: PRIMARY_SLOT (the role's weapon) or BOMB_SLOT. */
+  slot: number;
+  /** Bombs left (see CONFIG.bomb), and seconds until the next may be thrown. */
+  bombs: number;
+  bombCooldown: number;
+  /** Bombs thrown so far: numbers each bomb, so a replayed throw isn't shown twice. */
+  bombsThrown: number;
+  /**
+   * The trigger has been held since the last throw (or since switching what's in hand): it
+   * must be let go first, so one click is one throw.
+   */
+  fireLatch: boolean;
 }
+
+/** What a player can hold: their role's weapon (key 1) or a bomb (key 2). */
+export const PRIMARY_SLOT = 0;
+export const BOMB_SLOT = 1;
 
 export function createPlayerState(
   feet: Vec3,
@@ -97,5 +113,10 @@ export function createPlayerState(
     respawnTimer: 0,
     protectTimer: 0,
     carrying: false,
+    slot: PRIMARY_SLOT,
+    bombs: CONFIG.bomb.max,
+    bombCooldown: 0,
+    bombsThrown: 0,
+    fireLatch: false,
   };
 }

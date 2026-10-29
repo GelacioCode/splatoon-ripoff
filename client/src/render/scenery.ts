@@ -29,7 +29,7 @@ import { THEME_LOOKS } from './themes';
 // one for its ink outline), so a whole forest is a couple dozen draw calls.
 
 /** One piece of a prop, placed in the prop's own space (feet at y = 0). */
-interface Part {
+export interface Part {
   geometry: BufferGeometry;
   color: number;
   at?: [number, number, number];
@@ -40,7 +40,7 @@ interface Part {
 }
 
 /** Where one copy of a prop stands. */
-interface Placement {
+export interface Placement {
   x: number;
   z: number;
   y?: number;
@@ -55,7 +55,7 @@ const OUTLINE_GROW = 1.07;
 const TAU = Math.PI * 2;
 
 /** Shared toon materials per color, and the ink outline. */
-class Materials {
+export class Materials {
   private readonly toon = new Map<number, MeshToonMaterial>();
   readonly ink = new MeshBasicMaterial({ color: OUTLINE_COLOR, side: BackSide });
   private readonly ramp: DataTexture;
@@ -88,7 +88,12 @@ const ZERO: Triple = [0, 0, 0];
 const ONE: Triple = [1, 1, 1];
 
 /** Adds every part of `prop` at all `placements`, as instanced meshes. */
-function addProps(group: Group, prop: Part[], placements: Placement[], materials: Materials) {
+export function addProps(
+  group: Group,
+  prop: Part[],
+  placements: Placement[],
+  materials: Materials,
+): void {
   if (placements.length === 0) return;
   for (const part of prop) {
     const mesh = new InstancedMesh(part.geometry, materials.of(part.color), placements.length);

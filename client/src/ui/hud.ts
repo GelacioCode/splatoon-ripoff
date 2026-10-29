@@ -13,6 +13,10 @@ export interface HudStatus {
   color: string;
   /** "Assault", "Sniper", "Machine gun". */
   role: string;
+  /** Bombs left and the most you can carry, and whether one is in hand (key 2). */
+  bombs: number;
+  maxBombs: number;
+  bombInHand: boolean;
 }
 
 /** Below this share of health the number turns red and pulses. */
@@ -60,7 +64,9 @@ export function createHud(touch: boolean) {
       </div>
       <div class="hud-ammo-role"></div>
       <div class="hud-meter"><div class="hud-meter-fill"></div></div>
-    </div>`;
+    </div>
+    <div class="hud-bombs" aria-label="Bombs"></div>`;
+  const bombsBox = bar.querySelector<HTMLDivElement>('.hud-bombs');
   const healthValue = bar.querySelector<HTMLSpanElement>('.hud-health-value');
   const healthBox = bar.querySelector<HTMLDivElement>('.hud-health');
   const healthFill = bar.querySelector<HTMLDivElement>('.hud-health .hud-meter-fill');
@@ -135,9 +141,25 @@ export function createHud(touch: boolean) {
     update(s: HudStatus): void {
       const hp = Math.ceil(Math.max(0, s.hp));
       const ammo = Math.floor(Math.max(0, s.ammo));
-      const key = `${hp}|${s.maxHp}|${s.recovering}|${ammo}|${s.magazine}|${s.reload?.toFixed(2)}|${s.color}|${s.role}`;
+      const key = `${hp}|${s.maxHp}|${s.recovering}|${ammo}|${s.magazine}|${s.reload?.toFixed(2)}|${s.color}|${s.role}|${s.bombs}|${s.bombInHand}`;
       if (key === shown) return;
       shown = key;
+      // Bombs: one icon per bomb you can carry (empty ones faded), with the key to press.
+      if (bombsBox) {
+        bombsBox.replaceChildren();
+        for (let i = 0; i < s.maxBombs; i++) {
+          const icon = document.createElement('span');
+          icon.className = `hud-bomb${i < s.bombs ? '' : ' used'}`;
+          icon.textContent = '💣';
+          bombsBox.append(icon);
+        }
+        const hint = document.createElement('span');
+        hint.className = 'hud-bomb-key';
+        hint.textContent = s.bombInHand ? '1 weapon' : '2 bomb';
+        if (!touch) bombsBox.append(hint);
+        bombsBox.classList.toggle('in-hand', s.bombInHand);
+      }
+      hud.classList.toggle('bomb-in-hand', s.bombInHand);
       const hpShare = s.maxHp > 0 ? hp / s.maxHp : 0;
       if (healthValue) healthValue.textContent = String(hp);
       if (healthFill) healthFill.style.width = `${hpShare * 100}%`;

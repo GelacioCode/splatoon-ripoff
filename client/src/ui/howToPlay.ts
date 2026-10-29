@@ -67,10 +67,12 @@ function cards(touchDevice: boolean): HowCard[] {
         ? [
             'Left thumb: move. Right thumb: drag to aim (drag SHOOT to aim too).',
             'AIM zooms · SWIM melts · JUMP · R reloads · II pauses.',
+            '💣 takes out a bomb: SHOOT throws it (it pops after 3 s). Crates refill bombs.',
           ]
         : [
             'WASD move · Mouse aim · Click shoot · Right-click zoom/scope.',
             'Shift swim · Space jump · R reload · Tab scores · M map · Esc pause.',
+            '2 bomb, then click to throw (it pops after 3 s) · 1 back to your weapon. Crates refill bombs.',
           ],
     },
   ];

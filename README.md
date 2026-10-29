@@ -68,7 +68,14 @@ The host picks the two teams' colours in the lobby: **Pink vs Cyan** (the defaul
 
 ## Maps
 
-The host picks the map in the lobby. A map is a look, not a layout: every map plays on the same random layouts with the same walls and collision, so nothing changes gameplay-wise.
+The host picks the map in the lobby. Every map uses the same random layouts (walls, ledges, ramps), plus **its own objects standing in the arena as real cover**: you bump into them and they stop shots, but paint doesn't stick to them. They're placed the same way in both halves (mirrored), clear of paths, spawns, bases and the middle line.
+
+| Map | Objects in the arena |
+| --- | --- |
+| Drip Yard | none (the original) |
+| Forest | tree stumps, boulders, log piles, big trees (the leaves are high overhead) |
+| Desert | barrels, crates, cacti, sandstone rocks |
+| Office | desks with laptops, filing cabinets, water coolers, potted plants, printers |
 
 | Map | Look |
 | --- | --- |
@@ -150,6 +157,14 @@ The host picks one in the lobby:
 - **HUD:** health (left) and ammo (right) sit at the bottom of the screen, with a reload bar and a green glow while you heal.
 - **Multi-kills:** splats within 6 s of each other build a streak: **DOUBLE, TRIPLE, QUADRA, PENTA KILL**. You get a big bouncy callout, a jingle and a squeaky announcer voice (your device's own speech voice, pitched up); everyone sees the tag in the kill feed. Being splatted ends your streak.
 
+## Bombs and bomb crates
+
+- Everyone carries **2 paint bombs**. Press **2** to take one out (the 💣 button on phones), then **left click** (SHOOT) to throw it; **1** puts your weapon back. One click is one throw, and after your last bomb the weapon is back in hand.
+- A bomb flies in an arc, bounces and rolls, and **goes off 3 seconds after the throw** with a **wide splat** (about 7 m across) of your paint. A blinking fuse, a ticking sound and a ring on the ground in the thrower's colour warn everyone nearby.
+- The blast hurts enemies within 4 m: 100 right on top of it (a splat), down to 30 at the edge. Walls and objects block it, and it never hurts teammates.
+- **Refills:** back to 2 bombs on every respawn and every new round, and at **bomb crates**: wooden crates with a bomb badge that appear at random spots (up to 3 at a time, more in bigger arenas, a new one every 10 s). Walk into one while missing a bomb to refill.
+- The bottom bar shows your bombs next to the ammo. Bots throw bombs too, and go fetch crates when they're out.
+
 ## Roles
 
 Pick a role on the start screen's **Customize** tab. Your pick is remembered on this device, and you can switch any time from the pause menu (switching refills your tank).
@@ -186,6 +201,7 @@ Each role has its own blaster shape. All role values live in `CONFIG.weapons` in
 | Reload (2.5–3 s depending on role, no shooting meanwhile) | R |
 | Aim: zoom (sniper: scope) for precise long shots, walk slower (hold) | Right mouse button |
 | Swim: melt into a puddle (fast and hidden in your own paint, climbs painted walls, refills ink) | Shift (hold) |
+| Hold your weapon / a bomb (then left click throws it) | 1 / 2 |
 | Pause (frees the mouse) | Esc |
 | Live tuning panel (for development) | `` ` `` (backtick, left of 1) |
 
@@ -193,7 +209,7 @@ Each role has its own blaster shape. All role values live in `CONFIG.weapons` in
 
 - **Left thumb:** touch anywhere on the left half and drag to move (the joystick appears where you touch).
 - **Right thumb:** drag on the right half to aim. You can also drag the **SHOOT** button to aim while shooting.
-- **Buttons:** SHOOT (hold), SWIM (hold), JUMP, R (reload), AIM (tap to toggle zoom), II (pause).
+- **Buttons:** SHOOT (hold), SWIM (hold), JUMP, R (reload), AIM (tap to toggle zoom), 💣 (take out a bomb, then SHOOT throws it; the badge shows how many are left), II (pause).
 - **Which controls you get:** phones, tablets and foldables (like the Galaxy Fold) get touch controls; computers, including touchscreen laptops, get mouse and keyboard.
   - If a device guesses wrong, tapping the screen with a finger before playing switches to touch controls.
   - You can also choose in the pause menu (**Controls: Auto / Touch / Mouse & keyboard**), or add `?touch` / `?desktop` to the link.

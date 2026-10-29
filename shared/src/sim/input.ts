@@ -14,14 +14,17 @@ export interface PlayerInput {
   reload: boolean;
   /** Aim mode: zoomed, accurate long-range shots, slower walking. Swimming cancels it. */
   aim: boolean;
+  /** What to hold: 0 the role's weapon, 1 a bomb (PRIMARY_SLOT / BOMB_SLOT). */
+  slot: number;
 }
 
 /**
- * The input with everything but looking around switched off: for the countdown before a
- * match, when players stand on their spawn pads. Server and prediction both use it.
+ * The input with everything but looking around (and picking what to hold) switched off: for
+ * the countdown before a match, when players stand on their spawn pads. Server and
+ * prediction both use it.
  */
 export function frozenInput(input: PlayerInput): PlayerInput {
-  return { ...createInput(), aimYaw: input.aimYaw, aimPitch: input.aimPitch };
+  return { ...createInput(), aimYaw: input.aimYaw, aimPitch: input.aimPitch, slot: input.slot };
 }
 
 export function createInput(): PlayerInput {
@@ -35,5 +38,6 @@ export function createInput(): PlayerInput {
     jump: false,
     reload: false,
     aim: false,
+    slot: 0,
   };
 }

@@ -18,6 +18,7 @@ export const NetInput = schema(
     jump: t.boolean(),
     reload: t.boolean(),
     aim: t.boolean(),
+    slot: t.uint8(),
   },
   'NetInput',
 );
@@ -50,7 +51,13 @@ export const NetPlayer = schema(
     respawnTimer: t.float32(),
     protectTimer: t.float32(),
     carrying: t.boolean(),
+    /** Holding the role's weapon (0) or a bomb (1). */
+    slot: t.uint8(),
     // Owner only: what prediction needs on top of that.
+    bombs: t.uint8().view(),
+    bombCooldown: t.float32().view(),
+    bombsThrown: t.uint16().view(),
+    fireLatch: t.boolean().view(),
     airTime: t.float32().view(),
     jumped: t.boolean().view(),
     jumpBuffer: t.float32().view(),
@@ -85,6 +92,17 @@ export const NetPlayer = schema(
   'NetPlayer',
 );
 export type NetPlayer = SchemaType<typeof NetPlayer>;
+
+/** A bomb crate lying in the arena (touch it to refill your bombs). */
+export const BombCrate = schema(
+  {
+    x: t.float32(),
+    y: t.float32(),
+    z: t.float32(),
+  },
+  'BombCrate',
+);
+export type BombCrate = SchemaType<typeof BombCrate>;
 
 /** Everything a match room syncs. Players are keyed by session id. */
 export const MatchState = schema(
@@ -145,6 +163,8 @@ export const MatchState = schema(
     /** Arena size step for this match, from the head count at Start (see arenaSizeFor). */
     arenaSize: t.uint8().default(0),
     players: t.map(NetPlayer),
+    /** Bomb crates in the arena now, by id. */
+    crates: t.map(BombCrate),
   },
   'MatchState',
 );

@@ -10,6 +10,7 @@ export function initPhysics(): Promise<string> {
 
 export { RAPIER };
 export type { Collider } from '@dimforge/rapier3d-compat';
+export * from './bombs';
 export * from './health';
 export * from './input';
 export * from './physicsWorld';

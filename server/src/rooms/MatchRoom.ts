@@ -4,7 +4,9 @@ import { StateView } from '@colyseus/schema';
 import {
   ARENA,
   arenaFor,
+  arenaScale,
   arenaSizeFor,
+  BombCrate,
   buildSurfaces,
   cleanName,
   CONFIG,
@@ -30,8 +32,12 @@ import {
   isMatchLength,
   matchResult,
   MatchState,
+  maxCrates,
+  MSG_BLAST,
+  MSG_BOMB,
   MSG_CAPTURE_GOAL,
   MSG_CHOOSE_WEAPON,
+  MSG_CRATE,
   MSG_FLAG,
   MSG_GAME_MODE,
   MSG_HIT,
@@ -71,6 +77,7 @@ import {
   phaseSeconds,
   pickStageMode,
   pickStageTheme,
+  randomCrateSpot,
   randomLook,
   randomMiddleSpot,
   seedFromString,
@@ -79,10 +86,15 @@ import {
   smallerTeam,
   stepFlag,
   stepHill,
+  takesCrate,
   teamsWithPicks,
   WEAPON_KINDS,
+  type BombBlast,
+  type BombThrow,
+  type CrateTaken,
   type Flag,
   type FlagEvent,
+  type MapTheme,
   type FlagPlayer,
   type Hill,
   type HillEvent,
@@ -101,6 +113,7 @@ import {
 } from '@paint-rush/shared';
 import {
   applyShotDamage,
+  blastDamage,
   createPlayerState,
   respawnSeconds,
   frozenInput,
@@ -109,14 +122,18 @@ import {
   playerHitSphere,
   segmentHitsSphere,
   setWeapon,
+  stepBombs,
+  stepBombThrow,
   stepLife,
   stepPlayer,
   stepProjectiles,
   stepWeapon,
+  type Bomb,
   type Collider,
   type PlayerInput,
   type Projectile,
 } from '@paint-rush/shared/sim';
+import { createBombHabit, useBombs, type BombHabit } from '../bots/botBombs';
 import { createBotMind, think, type BotMind } from '../bots/botBrain';
 import { botViewOf } from '../bots/botView';
 import { TickStats } from '../perf/tickStats';
@@ -132,6 +149,8 @@ const BOT_EYE = 0.9;
 interface Bot {
   mind: BotMind;
   random: () => number;
+  /** Where it is in throwing a bomb. */
+  bombs: BombHabit;
 }
 /** How often the `[perf]` line is printed (s). */
 const PERF_LOG_SECONDS = 5;
@@ -158,6 +177,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
 
   /** This round's arena (a new random one after every capture), with its physics and paint. */
   private map: MapDef = ARENA;
+  /** What `map` was built from: "seed:size:theme" (see loadMap). */
+  private mapKey = '0:0:yard';
   private physics = new PhysicsWorld(ARENA.blocks);
   private paint = new PaintGrid(buildSurfaces(ARENA.blocks));
   /** Each team's paint points this match (paint is wiped every round; this isn't). */
@@ -206,6 +227,12 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private hillAnnounced = HILL_FREE;
   /** Seconds of match time left while playing. */
   private matchTimer = 0;
+  /** Every bomb in flight (the real ones), and the ones thrown this tick (scratch). */
+  private readonly bombs: Bomb[] = [];
+  private readonly thrown: Bomb[] = [];
+  /** Seconds until the next bomb crate may appear, and crates made so far (their ids). */
+  private crateTimer: number = CONFIG.crates.firstAfterSeconds;
+  private crateCount = 0;
   /** Bots the room plays itself, by player id ("bot-1", …); they're in `state.players` too. */
   private readonly bots = new Map<string, Bot>();
   private nextBotNumber = 1;
@@ -440,7 +467,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     player.bot = true;
     Object.assign(player, randomLook(random));
     this.state.players.set(id, player);
-    this.bots.set(id, { mind: createBotMind(random), random });
+    this.bots.set(id, { mind: createBotMind(random), random, bombs: createBombHabit() });
     if (inArena) this.bodies.set(id, this.physics.createCharacter(player));
   }
 
@@ -466,8 +493,10 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   /** Balances everyone into two teams, puts them on their spawn pads, and starts the reveal. */
   private startMatch(): void {
     // The arena's size fits the head count now (and stays for the whole match); the first
-    // round is Drip Yard at normal size.
-    this.loadMap(0, this.forcedArenaSize ?? arenaSizeFor(this.state.players.size));
+    // round is the Drip Yard layout at normal size, with the host's map theme.
+    const size = this.forcedArenaSize ?? arenaSizeFor(this.state.players.size);
+    this.loadMap(0, size, this.nextTheme());
+    this.clearBombs();
     // Lobby picks are kept as far as the sides stay even; whoever picked last gives way.
     const choices = [...this.state.players].map(([id, p]) => ({ id, pick: p.teamPick }));
     const pickedAt = (id: string) => this.pickedAt.get(id) ?? Infinity;
@@ -502,18 +531,26 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.timeLeft = Math.ceil(this.matchTimer);
     this.setPhase('reveal');
     console.log(`[match] ${this.roomId}: started with ${this.state.players.size} players`);
+    // Who's on which side, and where they stand (team 0 spawns at −z, team 1 at +z).
+    for (const team of [0, 1]) {
+      const members = [...this.state.players.values()].filter((p) => p.team === team);
+      const where = members.map((p) => `${p.name} (z ${p.z.toFixed(0)})`).join(', ');
+      console.log(`[match] ${this.roomId}: team ${team}: ${members.length} · ${where}`);
+    }
   }
 
   /**
-   * Switches to the layout for `seed` in size step `size` (see arenaFor): new physics and an
-   * empty paint grid. Everyone in the arena gets a body in the new world. Every screen
-   * rebuilds the same layout when it sees the new `mapSeed` / `arenaSize`.
+   * Switches to the layout for `seed` in size step `size`, with the objects of map `theme`
+   * (see arenaFor): new physics and an empty paint grid. Everyone in the arena gets a body in
+   * the new world. Every screen rebuilds the same arena when it sees the new `mapSeed` /
+   * `arenaSize` / `mapTheme`.
    */
-  private loadMap(seed: number, size: number): void {
-    // Drip Yard at normal size is the one layout that's already built when nothing changed.
-    const same = seed === this.state.mapSeed && size === this.state.arenaSize;
-    if (same && this.map === arenaFor(seed, size)) return;
-    this.map = arenaFor(seed, size);
+  private loadMap(seed: number, size: number, theme: MapTheme): void {
+    this.state.mapTheme = theme;
+    const key = `${seed}:${size}:${theme}`;
+    if (key === this.mapKey) return;
+    this.mapKey = key;
+    this.map = arenaFor(seed, size, theme);
     this.physics.dispose();
     this.physics = new PhysicsWorld(this.map.blocks);
     this.paint = new PaintGrid(buildSurfaces(this.map.blocks));
@@ -524,6 +561,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.projectiles.length = 0;
     this.landed.length = 0;
     this.landedBy.length = 0;
+    this.clearBombs();
     this.state.mapSeed = seed;
     this.state.arenaSize = size;
   }
@@ -531,17 +569,10 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   /**
    * This stage: Capture the Flag or King of the Hill (by the host's game mode; random flips a
    * coin), with its objective at a fresh random spot on the middle line. The flag stays
-   * hidden and still during a hill stage. The map's look is the host's theme, or on random a
-   * different one from the last round.
+   * hidden and still during a hill stage.
    */
   private setupStage(): void {
     this.state.stageMode = pickStageMode(parseGameMode(this.state.gameMode), Math.random);
-    const previous = parseMapTheme(this.state.mapTheme);
-    this.state.mapTheme = pickStageTheme(
-      parseMapChoice(this.state.mapChoice),
-      Math.random,
-      previous,
-    );
     this.flagSpot = randomMiddleSpot(this.map, Math.random);
     this.flag = createFlag(this.flagSpot);
     this.syncFlag();
@@ -556,12 +587,18 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     return parseStageMode(this.state.stageMode);
   }
 
+  /** The next round's map: the host's theme, or on random a different one from the last. */
+  private nextTheme(): MapTheme {
+    const choice = parseMapChoice(this.state.mapChoice);
+    return pickStageTheme(choice, Math.random, parseMapTheme(this.state.mapTheme));
+  }
+
   /**
    * After a stage is won: the next one on a brand-new random layout, everyone back on their
    * spawn with fresh state, a new objective on the middle line, no paint. Then a fresh 3-2-1.
    */
   private startRound(): void {
-    this.loadMap(newLayoutSeed(Math.random), this.state.arenaSize);
+    this.loadMap(newLayoutSeed(Math.random), this.state.arenaSize, this.nextTheme());
     // Their new bodies follow the state on the next step.
     for (const [id, player] of this.state.players) {
       if (this.bodies.has(id)) this.placeOnSpawn(player);
@@ -578,6 +615,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private backToLobby(): void {
     for (const body of this.bodies.values()) this.physics.removeCharacter(body);
     this.bodies.clear();
+    this.clearBombs();
     this.projectiles.length = 0;
     this.landed.length = 0;
     this.landedBy.length = 0;
@@ -605,6 +643,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
    * the hill), and whether someone has won the stage or the match.
    */
   private stepMatch(dt: number): void {
+    this.stepCrates(dt);
     this.matchTimer = Math.max(0, this.matchTimer - dt);
     const left = Math.ceil(this.matchTimer);
     if (left !== this.state.timeLeft) this.state.timeLeft = left;
@@ -789,6 +828,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       },
       (shot, from, direction, distance) => this.hitPlayer(shot, from, direction, distance),
     );
+    stepBombs(this.physics, this.bombs, ctx.dt, (bomb) => this.blast(bomb));
     this.physics.step();
     if (this.landed.length > 0) {
       this.applyPaint(this.landed);
@@ -889,6 +929,8 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     const view = botViewOf(this.state, id, this.map, this.canSee);
     if (!view) return;
     const input = think(view, bot.mind, dt, bot.random);
+    const crates = this.state.crates.values();
+    useBombs(input, player, view.enemies, crates, bot.bombs, bot.random, dt);
     this.stepPlayerTick(id, player, body, canMove ? input : frozenInput(input), dt);
   }
 
@@ -915,6 +957,15 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   ): void {
     stepPlayer(this.physics, body, player, input, dt, this.paint);
 
+    // A bomb in hand: a click throws it (before the weapon, which then holds fire).
+    this.thrown.length = 0;
+    if (stepBombThrow(player, input, dt, sessionId, this.thrown) > 0) {
+      for (const bomb of this.thrown) {
+        this.bombs.push(bomb);
+        this.sendBomb(sessionId, bomb);
+      }
+    }
+
     const firstNew = this.projectiles.length;
     // Seeded by session id: the shooter's screen predicts exactly the same spread.
     const fired = stepWeapon(player, input, dt, seedFromString(sessionId), this.projectiles);
@@ -940,8 +991,9 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
    * protected from shots so nobody can be spawn-camped.
    */
   private placeOnSpawn(player: NetPlayer): void {
-    // Shot numbers keep counting, so the player's screen never mistakes new shots for old.
-    const { shotCount } = player;
+    // Shot and bomb numbers keep counting, so the player's screen never mistakes new ones for
+    // old. The fresh state brings a full set of bombs (user decision: refilled on respawn).
+    const { shotCount, bombsThrown } = player;
     Object.assign(
       player,
       createPlayerState(
@@ -952,7 +1004,96 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
       ),
     );
     player.shotCount = shotCount;
+    player.bombsThrown = bombsThrown;
     player.protectTimer = CONFIG.player.spawnProtectSeconds;
+  }
+
+  /** Tells everyone but the thrower about a new bomb, so their screens can fly it too. */
+  private sendBomb(throwerId: string, b: Bomb): void {
+    const message: BombThrow = {
+      owner: b.owner,
+      number: b.number,
+      x: b.x,
+      y: b.y,
+      z: b.z,
+      vx: b.vx,
+      vy: b.vy,
+      vz: b.vz,
+      team: b.team,
+    };
+    const thrower = this.clients.getById(throwerId);
+    this.broadcast(MSG_BOMB, message, thrower ? { except: thrower } : {});
+  }
+
+  /**
+   * A bomb going off: a wide splat of the thrower's paint, and damage to every enemy in range
+   * that isn't behind a wall (more up close). Splats count for the thrower like a shot's.
+   */
+  private blast(b: Bomb): void {
+    const at = { x: b.x, y: b.y, z: b.z };
+    this.landed.push({
+      point: at,
+      radius: CONFIG.bomb.paintRadius,
+      team: b.team,
+      drip: false,
+      direction: { x: 0, y: -1, z: 0 },
+      trail: 0,
+    });
+    this.landedBy.push(b.owner);
+    for (const [id, target] of this.state.players) {
+      if (target.team === b.team || !this.bodies.has(id) || !isVulnerable(target)) continue;
+      const { center } = playerHitSphere(target.x, target.y, target.z, target.swimBlend);
+      const dx = center.x - at.x;
+      const dy = center.y - at.y;
+      const dz = center.z - at.z;
+      const distance = Math.hypot(dx, dy, dz);
+      const damage = blastDamage(distance);
+      if (damage <= 0) continue;
+      // Cover in between soaks up the blast.
+      if (distance > 0.01) {
+        const direction = { x: dx / distance, y: dy / distance, z: dz / distance };
+        const wall = this.physics.raycast(at, direction, distance);
+        if (wall && wall.distance < distance - 0.3) continue;
+      }
+      const result = applyShotDamage(target, b.team, damage, respawnSeconds(target.deaths + 1));
+      if (result === 'ignored') continue;
+      this.damageLog.record(id, b.owner, this.elapsed);
+      this.clients.getById(b.owner)?.send(MSG_HIT, result === 'splatted');
+      if (result === 'splatted') this.onSplatted(id, target, b.owner, b.team);
+    }
+    const blast: BombBlast = { owner: b.owner, number: b.number, ...at, team: b.team };
+    this.broadcast(MSG_BLAST, blast);
+  }
+
+  /**
+   * Bomb crates while playing: a new one at a random spot every so often (while there's
+   * room), and touching one refills a player's bombs.
+   */
+  private stepCrates(dt: number): void {
+    const crates = this.state.crates;
+    for (const [id, crate] of crates) {
+      for (const [playerId, player] of this.state.players) {
+        if (!this.bodies.has(playerId) || !takesCrate(player, crate)) continue;
+        player.bombs = CONFIG.bomb.max;
+        const taken: CrateTaken = { by: playerId, x: crate.x, y: crate.y, z: crate.z };
+        this.broadcast(MSG_CRATE, taken);
+        crates.delete(id);
+        break;
+      }
+    }
+    this.crateTimer -= dt;
+    if (this.crateTimer > 0) return;
+    this.crateTimer = CONFIG.crates.spawnEverySeconds;
+    if (crates.size >= maxCrates(arenaScale(this.state.arenaSize))) return;
+    const spot = randomCrateSpot(this.map, Math.random, [...crates.values()]);
+    if (spot) crates.set(String(++this.crateCount), new BombCrate(spot));
+  }
+
+  /** No crates or bombs left over (a new round, or back to the lobby). */
+  private clearBombs(): void {
+    this.bombs.length = 0;
+    this.state.crates.clear();
+    this.crateTimer = CONFIG.crates.firstAfterSeconds;
   }
 
   /** Tells everyone but the shooter about new shots, so their screens can fly them too. */

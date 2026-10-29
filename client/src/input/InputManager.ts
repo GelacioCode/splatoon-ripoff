@@ -1,5 +1,5 @@
 import { CONFIG } from '@paint-rush/shared';
-import { createInput, type PlayerInput } from '@paint-rush/shared/sim';
+import { BOMB_SLOT, createInput, PRIMARY_SLOT, type PlayerInput } from '@paint-rush/shared/sim';
 import type { Settings } from '../settings';
 import { Gyro } from './Gyro';
 import { KeyboardMouse } from './KeyboardMouse';
@@ -19,6 +19,8 @@ export class InputManager {
   private readonly input: PlayerInput = createInput();
   /** Aim was let go of (see releaseAim): the held right button doesn't count until released. */
   private aimReleased = false;
+  /** What the player wants in hand: the weapon (PRIMARY_SLOT, key 1) or a bomb (key 2, 💣). */
+  slot = PRIMARY_SLOT;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -66,6 +68,11 @@ export class InputManager {
     const firePressed = km.consumeFirePress() || (touch?.consumeFirePress() ?? false);
     const reloadPressed = km.consumeReloadPress() || (touch?.consumeReloadPress() ?? false);
     const on = this.playing;
+    const pick = km.consumeSlotPress();
+    if (on && pick !== null) this.slot = pick;
+    if (touch?.consumeSlotToggle() && on) {
+      this.slot = this.slot === BOMB_SLOT ? PRIMARY_SLOT : BOMB_SLOT;
+    }
 
     const input = this.input;
     let moveX = km.moveX + (touch?.moveX ?? 0);
@@ -84,6 +91,7 @@ export class InputManager {
     if (!km.aimHeld) this.aimReleased = false;
     const mouseAim = km.aimHeld && !this.aimReleased;
     input.aim = on && (mouseAim || (touch?.aimToggled ?? false));
+    input.slot = this.slot;
     input.aimYaw = aimYaw;
     input.aimPitch = aimPitch;
     return input;

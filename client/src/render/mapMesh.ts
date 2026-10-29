@@ -146,14 +146,16 @@ const CORNERS: [number, number][] = [
 
 /**
  * Builds the whole map as a single mesh (one draw call). It's toon-lit in the theme's colors
- * with its ground pattern, and draws the paint stored in the paint atlas on top.
+ * with its ground pattern, and draws the paint stored in the paint atlas on top. A theme's
+ * objects (props) are left out: they're drawn as themselves (see arenaProps).
  */
 export function createMapMesh(
   map: MapDef,
-  surfaces: Surface[],
+  allSurfaces: Surface[],
   atlas: PaintAtlas,
   look: ThemeLook = THEME_LOOKS.yard,
 ): Mesh {
+  const surfaces = allSurfaces.filter((s) => !map.blocks[s.blockIndex].prop);
   const vertexCount = surfaces.length * 4;
   const positions = new Float32Array(vertexCount * 3);
   const normals = new Float32Array(vertexCount * 3);

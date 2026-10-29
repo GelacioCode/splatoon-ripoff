@@ -12,8 +12,11 @@ import {
   decodeShotEvents,
   inHill,
   MatchState,
+  MSG_BLAST,
+  MSG_BOMB,
   MSG_CAPTURE_GOAL,
   MSG_CHOOSE_WEAPON,
+  MSG_CRATE,
   MSG_FLAG,
   MSG_GAME_MODE,
   MSG_HIT,
@@ -50,6 +53,9 @@ import {
   ROOM_MATCH,
   seedFromString,
   wrapAngle,
+  type BombBlast,
+  type BombThrow,
+  type CrateTaken,
   type MatchJoinOptions,
   type MatchPhase,
   type NetPlayer,
@@ -64,9 +70,12 @@ import {
   initPhysics,
   playerHitSphere,
   segmentHitsSphere,
+  stepBombs,
+  stepBombThrow,
   stepPlayer,
   stepProjectiles,
   stepWeapon,
+  type Bomb,
   type Collider,
   type PlayerInput,
   type PlayerState,
@@ -76,10 +85,12 @@ import { clearReconnectToken, loadReconnectToken, saveReconnectToken } from '../
 import { isLocalPage, joinPath, joinUrl, type Route } from '../net/route';
 import { meterRoomTraffic, TrafficMeter } from '../net/trafficMeter';
 import type { BlobCharacter, CharacterPose } from '../render/BlobCharacter';
+import { CrateView } from '../render/CrateView';
 import { FlagView } from '../render/FlagView';
 import { HillView } from '../render/HillView';
 import { LookPreview } from '../render/LookPreview';
 import { ObjectiveArrow } from '../render/ObjectiveArrow';
+import { OBJECTIVE_YELLOW } from '../render/objectiveIcons';
 import { setTeamPalette, TEAM_COLORS, teamName, teamTextColor } from '../render/palette';
 import { saveSettings } from '../settings';
 import { Announcer } from '../ui/announcer';
@@ -94,7 +105,7 @@ import type { StatsRow } from '../ui/statsTable';
 import { FixedStep } from './fixedStep';
 import { NewShotFilter } from './newShotFilter';
 import { flagObjective, hillObjective, type Objective } from './objective';
-import { snapshotOf, World, type PlayerSnapshot } from './World';
+import { DRIP_YARD_KEY, snapshotOf, World, type PlayerSnapshot } from './World';
 
 /** How often the dev overlay's connection line refreshes (s). */
 const STATUS_INTERVAL = 0.5;
@@ -113,6 +124,8 @@ const UP = { x: 0, y: 1, z: 0 };
 const MINIMAP_PAINT_INTERVAL = 0.25;
 /** How long "Pink team wins!" shows before the results screen (ms). */
 const RESULTS_DELAY_MS = 2500;
+/** Another player drawn this far (m) from where the server has them jumped there (a teleport). */
+const TELEPORT_DISTANCE = 6;
 /** Watching a teammate: how quickly the camera turns with them, and its gentle downward tilt. */
 const SPECTATE_TURN = 8;
 const SPECTATE_PITCH = -0.18;
@@ -468,6 +481,11 @@ class NetSession {
   private readonly shotLoop = new FixedStep(1 / CONFIG.net.tickRate);
   /** Scratch list for the shots one predicted tick fires. */
   private readonly fired: Projectile[] = [];
+  /** Bombs drawn on screen (ours predicted, everyone else's from the server), and scratch. */
+  private readonly bombs: Bomb[] = [];
+  private readonly thrown: Bomb[] = [];
+  /** The bomb crates lying in the arena. */
+  private readonly crateView: CrateView;
   /** Same seed as the server uses for us, so predicted spread matches the real shots. */
   private readonly seed: number;
   private wasReloading = false;
@@ -534,6 +552,8 @@ class NetSession {
     world.scene.add(this.flagView.root);
     this.arrow = new ObjectiveArrow(world.toonRamp);
     world.scene.add(this.arrow.root);
+    this.crateView = new CrateView(world.toonRamp);
+    world.scene.add(this.crateView.root);
     this.minimap = new Minimap(world.map, world.surfaces, world.paint);
     this.statsOverlay = new StatsOverlay(world.touchDevice);
     this.spectate = new SpectateBar(world.touchDevice, (by) => this.watchNext(by));
@@ -551,6 +571,9 @@ class NetSession {
     room.onMessage(MSG_SPLAT, (payload: unknown) => this.receiveSplat(payload));
     room.onMessage(MSG_FLAG, (payload: unknown) => this.receiveFlag(payload));
     room.onMessage(MSG_TEAM_NEWS, (payload: unknown) => this.receiveTeamNews(payload));
+    room.onMessage(MSG_BOMB, (payload: unknown) => this.receiveBomb(payload));
+    room.onMessage(MSG_BLAST, (payload: unknown) => this.receiveBlast(payload));
+    room.onMessage(MSG_CRATE, (payload: unknown) => this.receiveCrate(payload));
     // The pause menu's match buttons.
     world.setMatchActions({
       switchTarget: () => switchTarget(room.state, room.sessionId),
@@ -609,9 +632,12 @@ class NetSession {
     this.world.setMatchActions(null);
     // Back to the usual colors and look behind the start screen.
     if (setTeamPalette(0)) this.world.applyTeamColors();
-    this.world.setTheme('yard');
+    this.world.loadMap(ARENA, DRIP_YARD_KEY, 'yard');
     this.world.scene.remove(this.arrow.root);
     this.arrow.dispose();
+    this.world.scene.remove(this.crateView.root);
+    this.crateView.dispose();
+    this.bombs.length = 0;
     this.scoreboard.dispose();
     this.announcer.dispose();
     this.minimap.dispose();
@@ -728,7 +754,10 @@ class NetSession {
         (hit) => world.splash(hit, this.feet),
         (shot, from, direction, distance) => this.shotHitsTarget(shot, from, direction, distance),
       );
+      // Bombs fly here for show; the blast (and its paint) comes from the server.
+      stepBombs(world.physics, this.bombs, this.shotLoop.stepSeconds, () => undefined);
     }
+    this.crateView.update(this.room.state.crates, timeMs);
     this.updateObjective(dt, phase);
     this.updateMinimap(dt, timeMs, phase);
     this.statsOverlay.setEnabled(phase === 'countdown' || phase === 'playing');
@@ -736,7 +765,7 @@ class NetSession {
     if (phase === 'ended') this.maybeShowResults();
     this.updateSpectate(dt, phase);
     const s = me?.state ?? WAITING_STATE;
-    world.drawFrame(dt, this.cameraFeet, s, this.shots, this.shotLoop.alpha);
+    world.drawFrame(dt, this.cameraFeet, s, this.shots, this.shotLoop.alpha, this.bombs);
     this.updateStatus(dt);
   }
 
@@ -885,6 +914,48 @@ class NetSession {
     const color = TEAM_COLORS[team] ?? TEAM_COLORS[0];
     this.world.particles.burst({ x: at.x, y: at.y + 0.6, z: at.z }, UP, color, 28, 6);
     this.world.sfx.splatBurst(this.world.loudnessAt(at, this.feet));
+  }
+
+  /** Someone else threw a bomb: fly it here too. */
+  private receiveBomb(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const t = payload as Partial<BombThrow>;
+    const numbers = [t.number, t.x, t.y, t.z, t.vx, t.vy, t.vz, t.team];
+    if (typeof t.owner !== 'string' || !numbers.every((n) => typeof n === 'number')) return;
+    const b = payload as BombThrow;
+    this.bombs.push({
+      ...b,
+      px: b.x,
+      py: b.y,
+      pz: b.z,
+      fuse: CONFIG.bomb.fuseSeconds,
+      resting: false,
+    });
+    const at = { x: b.x, y: b.y, z: b.z };
+    this.world.sfx.bombThrow(this.world.loudnessAt(at, this.feet) * REMOTE_SHOT_VOLUME);
+  }
+
+  /** A bomb went off (where the server says): the boom, and its bomb leaves the screen. */
+  private receiveBlast(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const b = payload as Partial<BombBlast>;
+    const { owner, number, x, y, z, team } = b;
+    if (typeof owner !== 'string' || typeof number !== 'number') return;
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') return;
+    const index = this.bombs.findIndex((bomb) => bomb.owner === owner && bomb.number === number);
+    if (index >= 0) this.bombs.splice(index, 1);
+    this.world.bombBlast({ x, y, z }, typeof team === 'number' ? team : 0, this.feet);
+  }
+
+  /** Someone took a bomb crate: a sparkle there, and "Bombs refilled" if it was us. */
+  private receiveCrate(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const { by, x, y, z } = payload as Partial<CrateTaken>;
+    if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') return;
+    this.world.particles.burst({ x, y: y + 0.8, z }, UP, OBJECTIVE_YELLOW, 16, 4);
+    if (by !== this.room.sessionId) return;
+    this.world.sfx.pickup();
+    this.announcer.show('+💣 Bombs refilled', cssColor(OBJECTIVE_YELLOW));
   }
 
   /** Asks the server for another role (it checks the choice and refills the tank). */
@@ -1295,6 +1366,7 @@ class NetSession {
     input: PlayerInput,
     dt: number,
     newShots: NewShotFilter,
+    newBombs: NewShotFilter,
   ): void {
     const world = this.world;
     // The body is remade whenever the arena changes, so always use the current one.
@@ -1302,6 +1374,12 @@ class NetSession {
     if (!body) return;
     const command = parsePhase(this.room.state.phase) === 'playing' ? input : frozenInput(input);
     stepPlayer(world.physics, body, state, command, dt, world.paint);
+    // Our own throws show at once; the server's bomb (and its blast) is the real one.
+    this.thrown.length = 0;
+    const thrown = stepBombThrow(state, command, dt, this.room.sessionId, this.thrown);
+    const freshBombs = newBombs.take(state.bombsThrown, thrown);
+    for (let i = thrown - freshBombs; i < thrown; i++) this.bombs.push(this.thrown[i]);
+    if (freshBombs > 0) world.sfx.bombThrow();
     this.fired.length = 0;
     const fired = stepWeapon(state, command, dt, this.seed, this.fired);
     const fresh = newShots.take(state.shotCount, fired);
@@ -1327,16 +1405,14 @@ class NetSession {
    */
   private ensureMap(): void {
     const { mapSeed, arenaSize } = this.room.state;
-    const key = `${mapSeed}:${arenaSize}`;
-    // The host's map theme can change on its own (in the lobby): just the looks then.
+    // The theme brings its own objects, so a new theme (even in the lobby) is a new arena.
     const theme = parseMapTheme(this.room.state.mapTheme);
-    if (key === this.world.mapKey) {
-      this.world.setTheme(theme);
-      return;
-    }
+    const key = `${mapSeed}:${arenaSize}:${theme}`;
+    if (key === this.world.mapKey) return;
     const world = this.world;
-    world.loadMap(arenaFor(mapSeed, arenaSize), key, theme);
+    world.loadMap(arenaFor(mapSeed, arenaSize, theme), key, theme);
     this.shots.length = 0;
+    this.bombs.length = 0;
     if (this.body && this.me) this.body = world.physics.createCharacter(this.me.state);
     this.minimap.setMap(world.map, world.surfaces, world.paint);
   }
@@ -1382,6 +1458,7 @@ class NetSession {
     data.jump = sample.jump;
     data.reload = sample.reload;
     data.aim = sample.aim;
+    data.slot = sample.slot;
     this.netInput.send();
     this.firing = sample.fire;
   }
@@ -1427,9 +1504,11 @@ class NetSession {
     world.view.yaw = player.yaw;
     this.feet.set(player.x, player.y, player.z);
     const newShots = new NewShotFilter(player.shotCount);
+    // Bombs are numbered like shots, so a replayed throw isn't shown twice.
+    const newBombs = new NewShotFilter(player.bombsThrown);
     this.wasReloading = player.reloadTimer > 0;
     this.me = createReconciler(this.predict, player, this.netInput, (state, command, dt) =>
-      this.predictTick(state, command, dt, newShots),
+      this.predictTick(state, command, dt, newShots, newBombs),
     );
   }
 
@@ -1440,13 +1519,27 @@ class NetSession {
     this.remotes.delete(sessionId);
   }
 
-  /** Where to draw another player: smoothed values from about 100 ms in the past. */
+  /**
+   * Where to draw another player: smoothed values from about 100 ms in the past. A jump the
+   * smoothing can't follow (the match starting, a respawn, a new round) shows the server's
+   * position right away, so nobody is left drawn on their old spot (in the lobby everyone
+   * waits on the first team's pad).
+   */
   private remotePose(player: NetPlayer): CharacterPose {
     const p = this.predict;
+    let x = p.value(player, 'x');
+    let y = p.value(player, 'y');
+    let z = p.value(player, 'z');
+    const off = Math.hypot(x - player.x, y - player.y, z - player.z);
+    if (!Number.isFinite(off) || off > TELEPORT_DISTANCE) {
+      x = player.x;
+      y = player.y;
+      z = player.z;
+    }
     return {
-      x: p.value(player, 'x'),
-      y: p.value(player, 'y'),
-      z: p.value(player, 'z'),
+      x,
+      y,
+      z,
       yaw: p.value(player, 'yaw'),
       vx: p.value(player, 'vx'),
       vy: p.value(player, 'vy'),

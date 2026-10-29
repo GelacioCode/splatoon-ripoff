@@ -116,7 +116,7 @@ export function spawnPadFront(scale: number): number {
 }
 
 /** The original "Drip Yard" cover for team 0's half, used for the first round. */
-const CLASSIC_COVER: BlockDef[] = [
+export const CLASSIC_COVER: readonly BlockDef[] = [
   // Low cover in front of the base.
   box('block', [-6, 0.6, -21], [2.4, 1.2, 1]),
   box('block', [6, 0.6, -21], [2.4, 1.2, 1]),

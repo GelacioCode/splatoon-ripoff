@@ -1,7 +1,7 @@
 import type { Look } from './lobby/look';
 
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 export const DEFAULT_SERVER_PORT = 2567;
 
@@ -56,6 +56,45 @@ export interface SplatEvent {
   team: number;
   /** The attacker's multi-kill streak with this splat (1 alone, 2 a double … see multiKillName). */
   streak: number;
+}
+
+/** Server → everyone but the thrower: a bomb was thrown. Payload: a BombThrow. */
+export const MSG_BOMB = 'bomb';
+
+/** Server → everyone: a bomb went off (its paint comes as usual in MSG_PAINT). */
+export const MSG_BLAST = 'blast';
+
+/** Server → everyone: someone took a bomb crate. Payload: a CrateTaken. */
+export const MSG_CRATE = 'crate';
+
+export interface BombThrow {
+  /** The thrower's session id and throw number (see Bomb). */
+  owner: string;
+  number: number;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  team: number;
+}
+
+export interface BombBlast {
+  owner: string;
+  number: number;
+  x: number;
+  y: number;
+  z: number;
+  team: number;
+}
+
+export interface CrateTaken {
+  /** Who took it (session id), and where it was. */
+  by: string;
+  x: number;
+  y: number;
+  z: number;
 }
 
 /** Client → server: switch to another role. Payload: the role's index in WEAPON_KINDS. */

@@ -27,6 +27,10 @@ export class TouchControls {
   private reloadPressed = false;
   private aimOn = false;
   private aimButton: HTMLElement | null = null;
+  private slotToggled = false;
+  private bombButton: HTMLElement | null = null;
+  private bombCount: HTMLElement | null = null;
+  private bombShown = '';
 
   constructor(onPause: () => void) {
     this.root = document.createElement('div');
@@ -41,6 +45,7 @@ export class TouchControls {
       <button class="touch-button touch-swim" type="button">SWIM</button>
       <button class="touch-button touch-reload" type="button">R</button>
       <button class="touch-button touch-aim" type="button">AIM</button>
+      <button class="touch-button touch-bomb" type="button" aria-label="Bomb">💣<span class="touch-bomb-count">2</span></button>
       <button class="touch-pause" type="button" aria-label="Pause">II</button>`;
     document.body.appendChild(this.root);
     this.stick = this.part('.touch-stick');
@@ -96,6 +101,13 @@ export class TouchControls {
     this.hold(this.part('.touch-reload'), (down) => {
       if (down) this.reloadPressed = true;
     });
+    // 💣 switches between the weapon and a bomb; SHOOT then throws it.
+    this.bombButton = this.part('.touch-bomb');
+    this.bombCount = this.part('.touch-bomb-count');
+    this.bombButton.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      this.slotToggled = true;
+    });
     this.part('.touch-pause').addEventListener('click', onPause);
   }
 
@@ -132,6 +144,23 @@ export class TouchControls {
   /** Switches the AIM toggle off (out of shots, or splatted). */
   releaseAim(): void {
     this.setAim(false);
+  }
+
+  /** True once per tap of 💣 (switch between the weapon and a bomb). */
+  consumeSlotToggle(): boolean {
+    const toggled = this.slotToggled;
+    this.slotToggled = false;
+    return toggled;
+  }
+
+  /** The 💣 button: lit while a bomb is in hand, with the bombs left (greyed out at none). */
+  showBombs(inHand: boolean, bombs: number): void {
+    const key = `${inHand}|${bombs}`;
+    if (key === this.bombShown) return;
+    this.bombShown = key;
+    this.bombButton?.classList.toggle('pressed', inHand);
+    this.bombButton?.classList.toggle('empty', bombs <= 0);
+    if (this.bombCount) this.bombCount.textContent = String(bombs);
   }
 
   private setAim(on: boolean): void {

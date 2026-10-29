@@ -9,6 +9,7 @@ import {
   keepClear,
   newLayoutSeed,
   randomCover,
+  themeProps,
 } from './generate';
 import type { BlockDef } from './types';
 
@@ -95,6 +96,57 @@ describe('random layouts', () => {
     expect(arenaFor(0, 2)).not.toBe(ARENA);
     const random = createRng(9);
     for (let i = 0; i < 100; i++) expect(newLayoutSeed(random)).toBeGreaterThan(0);
+  });
+});
+
+describe('map objects (themes)', () => {
+  const THEMES = ['forest', 'desert', 'office'] as const;
+
+  it('stand in every themed arena, mirrored for both teams, the same on every screen', () => {
+    for (const theme of THEMES) {
+      for (const size of SIZES) {
+        for (const seed of [0, ...SEEDS]) {
+          const map = arenaFor(seed, size, theme);
+          const props = map.blocks.filter((b) => b.prop);
+          expect(props.length).toBeGreaterThan(0);
+          for (const block of props) {
+            expect(block.paintable).toBe(false);
+            expect(map.blocks.some((other) => other.prop && isHalfTurnOf(block, other))).toBe(true);
+          }
+          expect(arenaFor(seed, size, theme)).toEqual(map);
+        }
+      }
+    }
+  });
+
+  it('keep clear of the layout, the spawn, base and center, and of each other', () => {
+    for (const theme of THEMES) {
+      for (const size of SIZES) {
+        const scale = arenaScale(size);
+        for (const seed of SEEDS) {
+          const cover = randomCover(seed, scale);
+          const props = themeProps(theme, cover, seed, scale);
+          const others = [...cover.map(footprint), ...keepClear(scale)];
+          props.forEach((prop, i) => {
+            const a = footprint(prop);
+            expect(a.maxZ).toBeLessThan(0);
+            for (const b of [...others, ...props.slice(i + 1).map(footprint)]) {
+              const touching =
+                a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
+              expect(touching).toBe(false);
+            }
+          });
+        }
+      }
+    }
+  });
+
+  it("don't change the layout itself, and Drip Yard (the original look) has none", () => {
+    const plain = arenaFor(5, 0).blocks;
+    const forest = arenaFor(5, 0, 'forest').blocks.filter((b) => !b.prop);
+    expect(forest).toEqual(plain);
+    expect(arenaFor(5, 0, 'yard').blocks.some((b) => b.prop)).toBe(false);
+    expect(arenaFor(0, 0, 'yard')).toBe(ARENA);
   });
 });
 

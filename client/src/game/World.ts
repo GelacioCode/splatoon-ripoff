@@ -38,10 +38,13 @@ import {
 } from '@paint-rush/shared';
 import {
   aimDirection,
+  BOMB_SLOT,
   isRecovering,
   muzzlePosition,
   PhysicsWorld,
+  PRIMARY_SLOT,
   reloadProgress,
+  type Bomb,
   type PlayerState,
   type Projectile,
   type ProjectileHit,
@@ -53,6 +56,7 @@ import { ThirdPersonCamera } from '../camera/ThirdPersonCamera';
 import { chooseTouchControls } from '../input/controlsMode';
 import { InputManager } from '../input/InputManager';
 import { BlobCharacter } from '../render/BlobCharacter';
+import { BombView } from '../render/BombView';
 import { DynamicResolution } from '../render/DynamicResolution';
 import { createMapMesh } from '../render/mapMesh';
 import { packAtlas } from '../render/paint/atlasPacker';
@@ -61,6 +65,7 @@ import { SUN_DIRECTION, TEAM_COLORS } from '../render/palette';
 import { Particles } from '../render/Particles';
 import { ProjectileView } from '../render/ProjectileView';
 import { QUALITY_PRESETS, resolveQuality, type QualityLevel } from '../render/quality';
+import { createArenaProps } from '../render/arenaProps';
 import { createScenery, disposeScenery } from '../render/scenery';
 import { THEME_LOOKS } from '../render/themes';
 import { createToonRamp } from '../render/toon';
@@ -82,6 +87,9 @@ const AIM_DISTANCE = 80;
 const LANDING_PUFF_SPEED = 5;
 const UP = new Vector3(0, 1, 0);
 const DOWN: Vec3 = { x: 0, y: -1, z: 0 };
+
+/** The map key (see World.mapKey) of the original Drip Yard, which a World starts with. */
+export const DRIP_YARD_KEY = '0:0:yard';
 
 /** What the effects need to compare between two moments of the local player. */
 export interface PlayerSnapshot {
@@ -123,8 +131,8 @@ export class World {
    * after every capture (see `loadMap`), so don't keep references to them across frames.
    */
   map: MapDef = ARENA;
-  /** What `map` was built from, as "seed:size" (see arenaFor); Drip Yard is "0:0". */
-  mapKey = '0:0';
+  /** What `map` was built from, as "seed:size:theme" (see arenaFor); see DRIP_YARD_KEY. */
+  mapKey = DRIP_YARD_KEY;
   /** How the arena looks (colors, sky, scenery); see setTheme. */
   theme: MapTheme = 'yard';
   physics = new PhysicsWorld(ARENA.blocks);
@@ -145,6 +153,9 @@ export class World {
   readonly input: InputManager;
   readonly particles: Particles;
   readonly projectileView = new ProjectileView(TEAM_COLORS);
+  /** Bombs in flight (ours and everyone's), and when the nearest one ticks next (s). */
+  private readonly bombView: BombView;
+  private bombTickTimer = 0;
   readonly sfx = new Sfx();
   /** Generated background music (menu or match), through the same audio output. */
   readonly music = new Music(() => this.sfx.audio());
@@ -215,7 +226,8 @@ export class World {
     this.addMapObjects();
 
     this.particles = new Particles(preset.particles, this.toonRamp);
-    this.scene.add(this.particles.mesh, this.projectileView.mesh);
+    this.bombView = new BombView(this.toonRamp);
+    this.scene.add(this.particles.mesh, this.projectileView.mesh, this.bombView.root);
 
     const shadowGeometry = new CircleGeometry(0.42, 24);
     shadowGeometry.rotateX(-Math.PI / 2);
@@ -367,8 +379,10 @@ export class World {
     const density = this.quality === 'low' ? 0.55 : 1;
     const seed = seedFromString(`${this.mapKey}:${this.theme}`);
     const scenery = createScenery(this.theme, this.map, this.toonRamp, seed, density);
-    this.scene.add(scenery);
-    this.mapObjects.push(scenery);
+    // The theme's objects inside the arena (real cover, drawn as themselves).
+    const props = createArenaProps(this.map, this.toonRamp);
+    this.scene.add(scenery, props);
+    this.mapObjects.push(scenery, props);
   }
 
   private removeMapObjects(): void {
@@ -543,6 +557,30 @@ export class World {
     this.sfx.splat(this.loudnessAt(hit.point, listener));
   }
 
+  /** A bomb going off: a big burst of the thrower's paint droplets and a boom. */
+  bombBlast(at: Vec3, team: number, listener: Vec3): void {
+    const color = TEAM_COLORS[team] ?? TEAM_COLORS[0];
+    this.particles.burst({ x: at.x, y: at.y + 0.3, z: at.z }, UP, color, 48, 9);
+    this.sfx.boom(this.loudnessAt(at, listener));
+  }
+
+  /** The fuse of the nearest bomb ticking, faster as it runs out (silent past 14 m). */
+  private bombTicks(bombs: readonly Bomb[], listener: Vec3, dt: number): void {
+    let nearest: Bomb | null = null;
+    let nearestDistance = 14;
+    for (const b of bombs) {
+      const distance = Math.hypot(b.x - listener.x, b.y - listener.y, b.z - listener.z);
+      if (distance < nearestDistance) {
+        nearest = b;
+        nearestDistance = distance;
+      }
+    }
+    this.bombTickTimer -= dt;
+    if (!nearest || this.bombTickTimer > 0) return;
+    this.bombTickTimer = lerp(0.1, 0.5, clamp(nearest.fuse / CONFIG.bomb.fuseSeconds, 0, 1));
+    this.sfx.bombTick(this.loudnessAt(nearest, listener));
+  }
+
   /** 1 close by, fading to 0.1 at 30 m. */
   loudnessAt(point: Vec3, listener: Vec3): number {
     const distance = Math.hypot(point.x - listener.x, point.y - listener.y, point.z - listener.z);
@@ -595,9 +633,16 @@ export class World {
 
   /**
    * Finishes a frame: effects, HUD and camera for the local player (`feet` is where to draw
-   * them), then renders. `alpha` blends shots between their last two positions.
+   * them), then renders. `alpha` blends shots and bombs between their last two positions.
    */
-  drawFrame(dt: number, feet: Vector3, s: PlayerState, projectiles: Projectile[], alpha: number) {
+  drawFrame(
+    dt: number,
+    feet: Vector3,
+    s: PlayerState,
+    projectiles: Projectile[],
+    alpha: number,
+    bombs: readonly Bomb[] = [],
+  ) {
     // A bad number here would send the camera into nowhere (an empty sky) for good.
     if (!Number.isFinite(feet.x + feet.y + feet.z)) {
       this.warnOnce('camera target is not a number', { feet: feet.toArray(), state: s });
@@ -610,6 +655,8 @@ export class World {
     }
     this.updateShadow(feet, s.swimBlend);
     this.projectileView.update(projectiles, alpha);
+    this.bombView.update(bombs, alpha, performance.now());
+    this.bombTicks(bombs, feet, dt);
     this.particles.update(dt);
     this.atlas.flush();
 
@@ -624,7 +671,13 @@ export class World {
       recovering: isRecovering(s),
       color: cssColor(TEAM_COLORS[s.team]),
       role: weaponName(s.weapon),
+      bombs: s.bombs,
+      maxBombs: CONFIG.bomb.max,
+      bombInHand: s.slot === BOMB_SLOT,
     });
+    // Out of bombs: the weapon is back in hand, so a refill doesn't take a bomb out by itself.
+    if (s.bombs <= 0 && this.input.slot === BOMB_SLOT) this.input.slot = PRIMARY_SLOT;
+    this.input.touch?.showBombs(s.slot === BOMB_SLOT, s.bombs);
     this.hud.updateHealth(s.hp / CONFIG.player.maxHp, cssColor(TEAM_COLORS[1 - s.team]));
     this.hud.setAiming(s.aiming);
     this.hud.setSights(role.scope ? this.aimBlend : 0, role.optic ? this.aimBlend : 0);

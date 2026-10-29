@@ -130,6 +130,41 @@ export class Sfx {
     return { context: ctx, output: this.output };
   }
 
+  /** Throwing a bomb: a quick whoosh. */
+  bombThrow(volume = 1): void {
+    const ctx = this.ready();
+    if (!ctx || volume <= 0.02) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(ctx, t, 0.18, 'bandpass', 600, 2600, 0.3 * volume);
+  }
+
+  /** A bomb's fuse ticking (faster as it runs out). */
+  bombTick(volume: number): void {
+    const ctx = this.ready();
+    if (!ctx || volume <= 0.02) return;
+    this.tone(ctx, ctx.currentTime, 'square', 2100, 1900, 0.03, 0.05 * volume);
+  }
+
+  /** A bomb going off: a deep wet boom. `volume` 0–1 (quieter far away). */
+  boom(volume: number): void {
+    const ctx = this.ready();
+    if (!ctx || volume <= 0.02) return;
+    const t = ctx.currentTime;
+    this.noiseBurst(ctx, t, 0.55, 'lowpass', 1800, 90, 0.9 * volume);
+    this.tone(ctx, t, 'sine', 140, 38, 0.5, 0.6 * volume);
+    this.tone(ctx, t + 0.02, 'triangle', 420, 90, 0.25, 0.2 * volume);
+  }
+
+  /** Taking a bomb crate: a bright little pickup arpeggio. */
+  pickup(): void {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    [660, 880, 1320].forEach((hz, i) => {
+      this.tone(ctx, t + i * 0.05, 'triangle', hz, hz * 1.02, 0.1, 0.16);
+    });
+  }
+
   /** Rising two-note chime when a reload finishes. */
   reloaded(): void {
     const ctx = this.ready();

@@ -10,6 +10,7 @@
 import { Client, type InputHandle } from '@colyseus/sdk';
 import {
   arenaFor,
+  parseMapTheme,
   CONFIG,
   createRng,
   DEFAULT_SERVER_PORT,
@@ -114,9 +115,10 @@ class Bot {
   /** The arena the server is on (a new layout every round). */
   private currentMap(): MapDef {
     const { mapSeed, arenaSize } = this.room.state;
-    const key = `${mapSeed}:${arenaSize}`;
+    const theme = parseMapTheme(this.room.state.mapTheme);
+    const key = `${mapSeed}:${arenaSize}:${theme}`;
     if (!this.map || key !== this.mapKey) {
-      this.map = arenaFor(mapSeed, arenaSize);
+      this.map = arenaFor(mapSeed, arenaSize, theme);
       this.mapKey = key;
     }
     return this.map;

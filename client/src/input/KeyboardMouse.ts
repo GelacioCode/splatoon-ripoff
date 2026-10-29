@@ -24,6 +24,8 @@ export class KeyboardMouse {
   private firePressed = false;
   private reloadPressed = false;
   private aimDown = false;
+  /** 1 or 2 was pressed: hold the weapon (0) or a bomb (1); null when neither. */
+  private slotPressed: number | null = null;
 
   constructor(canvas: HTMLCanvasElement, onLockChange: (locked: boolean) => void) {
     this.canvas = canvas;
@@ -85,6 +87,13 @@ export class KeyboardMouse {
     return pressed;
   }
 
+  /** What to hold, once per press of 1 (the weapon: 0) or 2 (a bomb: 1); else null. */
+  consumeSlotPress(): number | null {
+    const pressed = this.slotPressed;
+    this.slotPressed = null;
+    return pressed;
+  }
+
   /** True once per Space press, even if it was released before the next tick. */
   consumeJumpPress(): boolean {
     const pressed = this.jumpPressed;
@@ -119,6 +128,8 @@ export class KeyboardMouse {
       if (!event.repeat) this.jumpPressed = true;
     }
     if (event.code === 'KeyR' && !event.repeat) this.reloadPressed = true;
+    if (event.code === 'Digit1' || event.code === 'Numpad1') this.slotPressed = 0;
+    if (event.code === 'Digit2' || event.code === 'Numpad2') this.slotPressed = 1;
     this.keys.add(event.code);
   };
 

@@ -4,7 +4,7 @@ import { createRng } from '../rng';
 import { weaponStats } from '../weapons';
 import { isRecovering } from './health';
 import type { PlayerInput } from './input';
-import type { PlayerState } from './playerState';
+import { PRIMARY_SLOT, type PlayerState } from './playerState';
 import { createProjectile, type Projectile } from './projectiles';
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -48,8 +48,9 @@ export function stepWeapon(
     const speed = isRecovering(s) ? CONFIG.health.recoveryReloadSpeed : 1;
     s.reloadTimer = Math.max(0, s.reloadTimer - dt * speed);
     if (s.reloadTimer === 0) s.ink = role.magazine;
-  } else if (input.fire && s.swimBlend === 0) {
-    // Only while fully standing: no shooting as a puddle or mid-transform.
+  } else if (input.fire && s.swimBlend === 0 && s.slot === PRIMARY_SLOT && !s.fireLatch) {
+    // Only while fully standing, with the weapon in hand (not a bomb): no shooting as a
+    // puddle or mid-transform, nor right after a throw until the trigger is let go.
     while (s.fireCooldown <= 0 && s.ink >= w.inkPerShot) {
       // A fresh generator per shot, seeded by player and shot number.
       const random = createRng((seed ^ Math.imul(s.shotCount + 1, 0x9e3779b1)) >>> 0);

@@ -568,6 +568,52 @@ body.spectating .touch-controls {
 }
 
 /* Phones: smaller, between the joystick and the buttons. */
+/* Bombs next to the ammo: one icon per bomb, faded when used, lit while one is in hand. */
+.hud-bombs {
+  display: grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 10px 6px;
+  border: var(--outline);
+  border-radius: 14px;
+  background: var(--ink-glass);
+  box-shadow: var(--drop-small);
+  color: #fff;
+  font-size: 22px;
+  rotate: 2deg;
+  transition:
+    background 120ms,
+    translate 160ms var(--pop);
+}
+
+.hud-bombs.in-hand {
+  background: var(--brand);
+  translate: 0 -6px;
+}
+
+.hud-bomb.used {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.hud-bomb-key {
+  margin-left: 6px;
+  font: 700 11px var(--font-body);
+  opacity: 0.8;
+}
+
+/* A bomb in hand: a bigger, round "lob" crosshair. */
+.hud.bomb-in-hand .crosshair {
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  background: transparent;
+  box-shadow:
+    0 0 0 3px #fff,
+    0 0 0 5px var(--ink);
+}
+
 .hud-bar.touch {
   gap: 10px;
   bottom: max(8px, env(safe-area-inset-bottom));
@@ -2947,6 +2993,32 @@ body.banner-up .menu-card.pause-card {
   width: 56px;
   height: 56px;
   font-size: 12px;
+}
+
+/* 💣: switch to a bomb (SHOOT throws it), with the bombs left in a badge. */
+.touch-bomb {
+  right: calc(196px + env(safe-area-inset-right));
+  bottom: calc(150px + env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  font-size: 22px;
+}
+
+.touch-bomb.empty {
+  opacity: 0.4;
+}
+
+.touch-bomb-count {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 20px;
+  padding: 1px 4px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--ink);
+  font: 700 12px var(--font-body);
 }
 
 .touch-pause {

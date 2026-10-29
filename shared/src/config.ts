@@ -104,6 +104,43 @@ export const CONFIG = {
     /** Players count as in the hill this far above or below its floor (m). */
     hillHeight: 2.5,
   },
+  /**
+   * Throwable paint bombs (user decisions): 1 equips your role's weapon, 2 the bomb, and left
+   * click throws it. Everyone carries 2, refilled on every respawn, every round, and at bomb
+   * crates. A bomb goes off 3 s after the throw with a wide splat.
+   */
+  bomb: {
+    max: 2,
+    fuseSeconds: 3,
+    /** Throw speed (m/s), and the extra upward angle on top of the aim, for an arc (radians). */
+    throwSpeed: 16,
+    throwLift: 0.3,
+    gravity: 22,
+    /** How bouncy (0 dead, 1 perfect) and how much sideways speed a bounce keeps. */
+    bounce: 0.45,
+    friction: 0.65,
+    /** The bomb's size, for bouncing off things (m). */
+    radius: 0.25,
+    /** Seconds between two throws. */
+    cooldownSeconds: 0.8,
+    /** The splat of paint it leaves (m; wide, user decision) and how far its blast hurts (m). */
+    paintRadius: 3.6,
+    blastRadius: 4,
+    /** Damage right at the blast, falling to `minDamage` at the edge. Walls block it. */
+    maxDamage: 100,
+    minDamage: 30,
+  },
+  /** Bomb crates: they appear at random spots, and touching one refills your bombs. */
+  crates: {
+    /** At most this many at once in a normal-size arena (more in bigger ones, by area). */
+    maxOnMap: 3,
+    /** A new one appears this often while there's room (s), the first this soon after GO. */
+    spawnEverySeconds: 10,
+    firstAfterSeconds: 6,
+    /** Touching range (m), and the least distance between two crates (m). */
+    pickupRadius: 1.3,
+    spacing: 8,
+  },
   paint: {
     /** Size of one paint-grid cell on floors and walls (m). */
     cellSize: 0.5,

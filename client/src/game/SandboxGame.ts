@@ -1,12 +1,15 @@
 import { Vector3 } from 'three';
-import { ARENA, CONFIG, parseMapTheme, weaponStats, type Vec3 } from '@paint-rush/shared';
+import { ARENA, arenaFor, CONFIG, parseMapTheme, weaponStats, type Vec3 } from '@paint-rush/shared';
 import {
   createPlayerState,
   initPhysics,
   setWeapon,
+  stepBombs,
+  stepBombThrow,
   stepPlayer,
   stepProjectiles,
   stepWeapon,
+  type Bomb,
   type Collider,
   type PlayerState,
   type Projectile,
@@ -48,6 +51,7 @@ class SandboxGame {
   private readonly body: Collider;
   private readonly character: BlobCharacter;
   private readonly projectiles: Projectile[] = [];
+  private readonly bombs: Bomb[] = [];
   /** Feet position before and after the latest tick, for drawing in between. */
   private readonly previousFeet = new Vector3();
   private readonly currentFeet = new Vector3();
@@ -70,6 +74,7 @@ class SandboxGame {
         refillInk: () => {
           this.player.ink = weaponStats(this.player.weapon).magazine;
           this.player.reloadTimer = 0;
+          this.player.bombs = CONFIG.bomb.max;
         },
       },
       (weapon) => {
@@ -77,8 +82,9 @@ class SandboxGame {
         this.character.setWeapon(weapon);
       },
     );
-    // `?offline&map=forest` (or desert, office) tries a map theme.
-    this.world.setTheme(parseMapTheme(new URLSearchParams(window.location.search).get('map')));
+    // `?offline&map=forest` (or desert, office) tries a map theme, with its objects.
+    const theme = parseMapTheme(new URLSearchParams(window.location.search).get('map'));
+    this.world.loadMap(arenaFor(0, 0, theme), `0:0:${theme}`, theme);
     const weapon = this.world.settings.weapon;
     this.character = this.world.createCharacter(START_TEAM, weapon, this.world.settings.look);
     this.player = createPlayerState(this.spawnPoint(), SPAWN_YAW, START_TEAM, weapon);
@@ -120,7 +126,7 @@ class SandboxGame {
     });
     // Looking through the scope puts the camera inside the blob.
     this.character.root.visible = !world.scoped;
-    world.drawFrame(dt, this.renderFeet, s, this.projectiles, alpha);
+    world.drawFrame(dt, this.renderFeet, s, this.projectiles, alpha, this.bombs);
   };
 
   private tick(): void {
@@ -133,11 +139,25 @@ class SandboxGame {
     stepPlayer(world.physics, this.body, s, input, dt, world.paint);
     world.playerEffects(before, s, dt);
 
+    // Key 2 and a click: a bomb (2 of them; respawn or the tuning panel's refill gives more).
+    if (stepBombThrow(s, input, dt, 'me', this.bombs) > 0) world.sfx.bombThrow();
     const wasReloading = s.reloadTimer > 0;
     const fired = stepWeapon(s, input, dt, PLAYER_SEED, this.projectiles);
     if (fired > 0) world.sfx.shoot();
     world.weaponSounds(wasReloading, s, input.fire, dt);
     stepProjectiles(world.physics, this.projectiles, dt, (hit) => world.applyPaint(hit, s));
+    stepBombs(world.physics, this.bombs, dt, (bomb) => {
+      const at = { x: bomb.x, y: bomb.y, z: bomb.z };
+      world.paintAt({
+        point: at,
+        radius: CONFIG.bomb.paintRadius,
+        team: bomb.team,
+        drip: false,
+        direction: { x: 0, y: -1, z: 0 },
+        trail: 0,
+      });
+      world.bombBlast(at, bomb.team, s);
+    });
 
     world.physics.step();
     if (s.y < RESPAWN_BELOW_Y) this.respawn();

@@ -1,4 +1,5 @@
 import type { Vec3 } from '../math3d';
+import type { PropInfo } from './props';
 
 export type BlockKind = 'floor' | 'block' | 'wall' | 'ramp' | 'boundary';
 
@@ -13,6 +14,8 @@ export interface BlockDef {
   rotation: Vec3;
   /** Whether paint sticks to it. Boundary walls stay clean so nobody can climb out. */
   paintable: boolean;
+  /** A theme's object (a stump, a desk…): drawn as that object instead of a plain box. */
+  prop?: PropInfo;
 }
 
 /** A box-shaped area, such as a team's base. */
