@@ -22,8 +22,10 @@ import {
   CONFIG,
   damp,
   DEFAULT_LOOK,
+  DEFAULT_WEAPON,
   lerp,
   PaintGrid,
+  weaponName,
   weaponStats,
   type Look,
   type MapDef,
@@ -32,6 +34,7 @@ import {
 } from '@paint-rush/shared';
 import {
   aimDirection,
+  isRecovering,
   muzzlePosition,
   PhysicsWorld,
   reloadProgress,
@@ -39,7 +42,9 @@ import {
   type Projectile,
   type ProjectileHit,
 } from '@paint-rush/shared/sim';
+import { Music } from '../audio/Music';
 import { Sfx } from '../audio/Sfx';
+import { CuteVoice } from '../audio/voice';
 import { ThirdPersonCamera } from '../camera/ThirdPersonCamera';
 import { chooseTouchControls } from '../input/controlsMode';
 import { InputManager } from '../input/InputManager';
@@ -54,10 +59,12 @@ import { ProjectileView } from '../render/ProjectileView';
 import { QUALITY_PRESETS, resolveQuality, type QualityLevel } from '../render/quality';
 import { createToonRamp } from '../render/toon';
 import { loadSettings, saveSettings, type Settings } from '../settings';
-import type { DevOverlay } from '../ui/devOverlay';
+import { showStatsPanel, type DevOverlay } from '../ui/devOverlay';
 import { createHud } from '../ui/hud';
 import { KillFeed } from '../ui/killFeed';
-import { createPauseMenu } from '../ui/pauseMenu';
+import { MultiKillBanner } from '../ui/multiKillBanner';
+import { createPauseMenu, type MatchMenuActions } from '../ui/pauseMenu';
+import { createSettingsPanel } from '../ui/settingsPanel';
 import { preventBrowserZoom } from '../ui/preventBrowserZoom';
 import { toggleTuningPanel, type TuningActions } from '../ui/tuningPanel';
 
@@ -129,12 +136,16 @@ export class World {
   readonly particles: Particles;
   readonly projectileView = new ProjectileView(TEAM_COLORS);
   readonly sfx = new Sfx();
+  /** Generated background music (menu or match), through the same audio output. */
+  readonly music = new Music(() => this.sfx.audio());
+  private readonly voice = new CuteVoice();
+  private readonly multiKillBanner = new MultiKillBanner();
   readonly killFeed = new KillFeed();
   readonly overlay: DevOverlay;
   private readonly roleChanged: (weapon: number) => void;
   /** The cel-shading ramp every toon material shares. */
   readonly toonRamp = createToonRamp();
-  private readonly hud = createHud();
+  private readonly hud = createHud(this.touchDevice);
   private readonly menu: ReturnType<typeof createPauseMenu>;
   /** False while lobby screens are up: the menu then never appears (e.g. on Esc). */
   private menuEnabled: boolean;
@@ -143,6 +154,8 @@ export class World {
   private readonly shadowNormal = new Vector3();
   private pixelRatio = 1;
   private aimBlend = 0;
+  /** The role the local player had last frame (how far aiming zooms, and if it's a scope). */
+  private aimWeapon = DEFAULT_WEAPON;
   private swimTrailTimer = 0;
   private emptyClickCooldown = 0;
   private lastFrameMs = 0;
@@ -174,7 +187,8 @@ export class World {
     this.applyPixelRatio(1);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     container.appendChild(this.renderer.domElement);
-    this.sfx.setVolume(this.settings.volume);
+    this.sfx.setVolume(this.settings.volume, this.settings.effectsVolume);
+    this.music.setVolume(this.settings.musicVolume);
 
     this.scene.background = new Color(SKY_COLOR);
     this.scene.add(new HemisphereLight(0xffffff, HEMISPHERE_GROUND_COLOR, 1.4));
@@ -206,10 +220,13 @@ export class World {
       play: () => this.play(),
       settingsChanged: (settings, changed) => this.settingsChanged(settings, changed),
       enableGyro: () => this.input.gyro.enable(),
+      testVoice: () => this.testVoice(),
       openTuning: () => toggleTuningPanel(tuning),
     });
     this.menuEnabled = menuAtStart;
     this.menu.setVisible(menuAtStart);
+    // The match HUD only shows with the match (not behind the lobby screens).
+    this.hud.setVisible(menuAtStart);
     this.input = new InputManager(
       this.renderer.domElement,
       this.touchDevice,
@@ -263,6 +280,7 @@ export class World {
    */
   setMenuVisible(visible: boolean): void {
     this.menuEnabled = visible;
+    this.hud.setVisible(visible);
     if (visible) {
       this.pause();
       return;
@@ -366,6 +384,17 @@ export class World {
     for (const zone of this.baseZones) zone.visible = visible;
   }
 
+  /**
+   * You got a multi-kill: the big callout, a jingle, and the cute announcer voice saying it
+   * ("Triple kill!") at the announcer volume.
+   */
+  announceMultiKill(name: string, streak: number, color: string): void {
+    this.multiKillBanner.show(name, streak, color);
+    this.sfx.streak(streak);
+    const spoken = `${name.charAt(0)}${name.slice(1).toLowerCase()}!`;
+    this.voice.say(spoken, this.settings.volume * this.settings.announcerVolume);
+  }
+
   /** Your shot hit an enemy: hit marker and tick. */
   showHit(splat: boolean): void {
     this.hud.showHit(splat);
@@ -410,9 +439,16 @@ export class World {
 
     const look = this.input.consumeLook(this.settings);
     this.aimBlend = damp(this.aimBlend, aiming ? 1 : 0, 14, dt);
-    const lookScale = lerp(1, CONFIG.camera.aimSensitivity, this.aimBlend);
+    // Finer turning the more it zooms (the 4× scope turns slowest).
+    const zoom = weaponStats(this.aimWeapon).zoom;
+    const lookScale = lerp(1, CONFIG.camera.aimSensitivity / Math.max(1, zoom), this.aimBlend);
     this.view.look(look.x * lookScale, look.y * lookScale, 1);
     return dt;
+  }
+
+  /** Looking through the sniper's scope (your own blob is hidden then: the camera is in it). */
+  get scoped(): boolean {
+    return weaponStats(this.aimWeapon).scope && this.aimBlend > 0.5;
   }
 
   /**
@@ -528,14 +564,25 @@ export class World {
     this.particles.update(dt);
     this.atlas.flush();
 
-    const ink = s.ink / weaponStats(s.weapon).magazine;
-    this.hud.update(ink, reloadProgress(s), cssColor(TEAM_COLORS[s.team]), ink < 0.2);
+    const role = weaponStats(s.weapon);
+    this.aimWeapon = s.weapon;
+    this.hud.update({
+      ammo: s.ink / CONFIG.weapon.inkPerShot,
+      magazine: Math.round(role.magazine / CONFIG.weapon.inkPerShot),
+      reload: reloadProgress(s),
+      hp: s.hp,
+      maxHp: CONFIG.player.maxHp,
+      recovering: isRecovering(s),
+      color: cssColor(TEAM_COLORS[s.team]),
+      role: weaponName(s.weapon),
+    });
     this.hud.updateHealth(s.hp / CONFIG.player.maxHp, cssColor(TEAM_COLORS[1 - s.team]));
     this.hud.setAiming(s.aiming);
+    this.hud.setScope(role.scope ? this.aimBlend : 0);
     // Widen the view while swimming fast, for a sense of speed.
     const swimSpeedRatio = clamp(Math.hypot(s.vx, s.vz) / CONFIG.swim.swimSpeed, 0, 1);
     const fovBoost = s.submerged ? CONFIG.camera.swimFovBoost * swimSpeedRatio : 0;
-    this.view.update(feet, dt, this.raycastDistance, s.swimBlend, fovBoost, this.aimBlend);
+    this.view.update(feet, dt, this.raycastDistance, s.swimBlend, fovBoost, this.aimBlend, role);
     this.renderer.render(this.scene, this.view.camera);
     this.updateStats(dt);
   }
@@ -570,9 +617,33 @@ export class World {
     this.menu.setVisible(true);
   }
 
+  /** The settings tabs (Graphics / Audio / Controls), for the start screen. */
+  createSettingsPanel(): HTMLElement {
+    return createSettingsPanel(this.settings, this.touchDevice, {
+      changed: (changed) => this.settingsChanged(this.settings, changed),
+      enableGyro: () => this.input.gyro.enable(),
+      testVoice: () => this.testVoice(),
+    });
+  }
+
+  /** Online match buttons in the pause menu (switch team, leave), or null in the sandbox. */
+  setMatchActions(actions: MatchMenuActions | null): void {
+    this.menu.setMatchActions(actions);
+  }
+
+  /** Lets you hear the announcer at the chosen volume. */
+  private testVoice(): void {
+    this.sfx.streak(2);
+    this.voice.say('Double kill!', this.settings.volume * this.settings.announcerVolume);
+  }
+
   private settingsChanged(settings: Settings, changed: keyof Settings): void {
     saveSettings(settings);
-    if (changed === 'volume') this.sfx.setVolume(settings.volume);
+    if (changed === 'volume' || changed === 'effectsVolume' || changed === 'musicVolume') {
+      this.sfx.setVolume(settings.volume, settings.effectsVolume);
+      this.music.setVolume(settings.musicVolume);
+    }
+    if (changed === 'showStats') showStatsPanel(settings.showStats);
     if (changed === 'weapon') this.roleChanged(settings.weapon);
     if (changed === 'gyro' && !settings.gyro) this.input.gyro.disable();
     // Paint texture size and anti-aliasing are fixed when the renderer starts, and the

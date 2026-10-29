@@ -2,6 +2,7 @@ import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
 import { createRng } from '../rng';
 import { weaponStats } from '../weapons';
+import { isRecovering } from './health';
 import type { PlayerInput } from './input';
 import type { PlayerState } from './playerState';
 import { createProjectile, type Projectile } from './projectiles';
@@ -43,7 +44,9 @@ export function stepWeapon(
   let fired = 0;
 
   if (s.reloadTimer > 0) {
-    s.reloadTimer = Math.max(0, s.reloadTimer - dt);
+    // Faster while recovering (calm for a while, or swimming in your own paint).
+    const speed = isRecovering(s) ? CONFIG.health.recoveryReloadSpeed : 1;
+    s.reloadTimer = Math.max(0, s.reloadTimer - dt * speed);
     if (s.reloadTimer === 0) s.ink = role.magazine;
   } else if (input.fire && s.swimBlend === 0) {
     // Only while fully standing: no shooting as a puddle or mid-transform.

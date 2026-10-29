@@ -7,6 +7,17 @@ export type WeaponStats = (typeof CONFIG.weapons)[WeaponKind];
 
 export const DEFAULT_WEAPON = 0;
 
+/** How each role is called on screen. */
+export const WEAPON_NAMES: Record<WeaponKind, string> = {
+  assault: 'Assault',
+  sniper: 'Sniper',
+  machineGun: 'Machine gun',
+};
+
+export function weaponName(index: number): string {
+  return WEAPON_NAMES[weaponKind(index)];
+}
+
 export function weaponKind(index: number): WeaponKind {
   return WEAPON_KINDS[index] ?? WEAPON_KINDS[DEFAULT_WEAPON];
 }

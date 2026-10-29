@@ -22,8 +22,10 @@ import {
   HILL_FREE,
   inputsToRun,
   isCaptureGoal,
+  canSwitchTeam,
   isGameMode,
   isTeamPalette,
+  isTeamPick,
   isMatchLength,
   matchResult,
   MatchState,
@@ -38,6 +40,7 @@ import {
   MSG_MATCH_LENGTH,
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
+  MSG_PICK_TEAM,
   MSG_PING,
   MSG_PLAY_AGAIN,
   MSG_PONG,
@@ -48,7 +51,10 @@ import {
   MSG_SHOTS,
   MSG_SPLAT,
   MSG_START,
+  MSG_SWITCH_TEAM,
   MSG_TEAM_COLORS,
+  MSG_TEAM_NEWS,
+  MultiKillTracker,
   NetInput,
   NetPlayer,
   nextPhase,
@@ -68,6 +74,7 @@ import {
   smallerTeam,
   stepFlag,
   stepHill,
+  teamsWithPicks,
   WEAPON_KINDS,
   type Flag,
   type FlagEvent,
@@ -76,6 +83,7 @@ import {
   type HillEvent,
   type HillPlayer,
   type StageMode,
+  type TeamNews,
   newLayoutSeed,
   type MapDef,
   type MatchJoinOptions,
@@ -171,6 +179,11 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
   private readonly landedBy: string[] = [];
   /** Recent hits, for assists. */
   private readonly damageLog = new DamageLog();
+  /** Splats in quick succession, for the multi-kill callouts. */
+  private readonly multiKills = new MultiKillTracker();
+  /** When each player last changed their lobby team pick (a counter), oldest first at Start. */
+  private readonly pickedAt = new Map<string, number>();
+  private pickCount = 0;
   /** Seconds since the room started (timestamps for the damage log). */
   private elapsed = 0;
   /**
@@ -266,6 +279,15 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
         this.state.matchMinutes = payload;
       }
     },
+    // Team wishes in the lobby (Start keeps them as far as the teams stay even).
+    [MSG_PICK_TEAM]: (client: Client, payload: unknown) => {
+      const player = this.state.players.get(client.sessionId);
+      if (!player || this.phase !== 'lobby' || !isTeamPick(payload)) return;
+      if (player.teamPick === payload) return;
+      player.teamPick = payload;
+      this.pickedAt.set(client.sessionId, ++this.pickCount);
+    },
+    [MSG_SWITCH_TEAM]: (client: Client) => this.switchTeam(client.sessionId),
     [MSG_TEAM_COLORS]: (client: Client, payload: unknown) => {
       if (this.isHost(client) && this.phase === 'lobby' && isTeamPalette(payload)) {
         this.state.teamColors = payload;
@@ -342,6 +364,33 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.bodies.delete(id);
     this.state.players.delete(id);
     this.damageLog.forget(id);
+    this.multiKills.end(id);
+    this.pickedAt.delete(id);
+  }
+
+  /**
+   * Mid-match: a player changes sides, unless the other team is already bigger (see
+   * canSwitchTeam). A carried flag drops where they are; they're out for a moment, then
+   * appear on their new team's spawn.
+   */
+  private switchTeam(id: string): void {
+    const player = this.state.players.get(id);
+    if (!player || !this.bodies.has(id) || this.phase === 'lobby' || this.phase === 'ended') return;
+    if (!canSwitchTeam(player.team, this.teamsInArena())) return;
+    if (this.flag.state === 'carried' && this.flag.carrier === id) {
+      this.flag.state = 'dropped';
+      this.flag.carrier = '';
+      this.flag.timer = CONFIG.match.flagReturnSeconds;
+      this.onFlagEvent({ kind: 'dropped', by: id, team: player.team });
+      this.syncFlag();
+    }
+    player.team = player.team === 0 ? 1 : 0;
+    this.placeOnSpawn(player);
+    player.respawnTimer = CONFIG.lobby.switchTeamSeconds;
+    this.multiKills.end(id);
+    const news: TeamNews = { kind: 'switched', by: id, team: player.team };
+    this.broadcast(MSG_TEAM_NEWS, news);
+    console.log(`[match] ${this.roomId}: ${player.name} switched to team ${player.team}`);
   }
 
   /** People in the room (everyone who isn't a bot). */
@@ -407,7 +456,15 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     // The arena's size fits the head count now (and stays for the whole match); the first
     // round is Drip Yard at normal size.
     this.loadMap(0, this.forcedArenaSize ?? arenaSizeFor(this.state.players.size));
-    const teams = this.balanceTeams([...this.state.players.keys()], Math.random);
+    // Lobby picks are kept as far as the sides stay even; whoever picked last gives way.
+    const choices = [...this.state.players].map(([id, p]) => ({ id, pick: p.teamPick }));
+    const pickedAt = (id: string) => this.pickedAt.get(id) ?? Infinity;
+    choices.sort((a, b) => pickedAt(a.id) - pickedAt(b.id));
+    const { teams, moved } = teamsWithPicks(choices, Math.random, this.balanceTeams);
+    for (const id of moved) {
+      const news: TeamNews = { kind: 'moved', by: id, team: teams.get(id) ?? 0 };
+      this.clients.getById(id)?.send(MSG_TEAM_NEWS, news);
+    }
     for (const [id, player] of this.state.players) {
       player.team = teams.get(id) ?? 0;
       this.placeOnSpawn(player);
@@ -426,6 +483,7 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     this.state.winReason = '';
     this.teamPaint = [0, 0];
     this.damageLog.clear();
+    this.multiKills.clear();
     this.setupStage();
     // The match clock runs for the whole match (it pauses between rounds).
     this.matchTimer = this.state.matchMinutes * 60;
@@ -787,11 +845,14 @@ export class MatchRoom extends Room<{ state: MatchState; input: NetInput }> {
     victim.deaths++;
     const attacker = this.state.players.get(byId);
     if (attacker) attacker.kills++;
+    // Splats in quick succession make a multi-kill; being splatted ends your own streak.
+    this.multiKills.end(victimId);
+    const streak = attacker ? this.multiKills.splat(byId, this.elapsed) : 1;
     for (const helper of this.damageLog.takeAssists(victimId, byId, this.elapsed)) {
       const player = this.state.players.get(helper);
       if (player && player.team !== victim.team) player.assists++;
     }
-    const event: SplatEvent = { victim: victimId, by: byId, team };
+    const event: SplatEvent = { victim: victimId, by: byId, team, streak };
     this.broadcast(MSG_SPLAT, event);
     const by = this.state.players.get(byId)?.name ?? 'someone';
     console.log(`[match] ${this.roomId}: ${by} splatted ${victim.name}`);

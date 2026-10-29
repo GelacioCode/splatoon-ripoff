@@ -5,6 +5,7 @@ import { buildSurfaces } from '../maps/surfaces';
 import type { BlockDef } from '../maps/types';
 import type { Vec3 } from '../math3d';
 import { PaintGrid } from '../paint/paintGrid';
+import { weaponStats } from '../weapons';
 import { initPhysics } from './index';
 import { createInput, type PlayerInput } from './input';
 import { PhysicsWorld } from './physicsWorld';
@@ -183,7 +184,9 @@ describe('stepPlayer with paint', () => {
     for (let i = 0; i < 3; i++) step(player);
     for (let i = 0; i < 15; i++) step(player, { aim: true, moveY: 1 });
     expect(player.state.aiming).toBe(true);
-    const aimedSpeed = CONFIG.movement.walkSpeed * CONFIG.movement.aimSpeedMultiplier;
+    const role = weaponStats(player.state.weapon);
+    const aimedSpeed =
+      CONFIG.movement.walkSpeed * role.aimSpeedMultiplier * role.moveSpeedMultiplier;
     expect(speed(player)).toBeCloseTo(aimedSpeed, 6);
     step(player, { aim: true, swim: true });
     expect(player.state.aiming).toBe(false);
@@ -208,13 +211,34 @@ describe('stepPlayer with paint', () => {
     expect(speed(player)).toBeLessThanOrEqual(slowed + 1e-6);
   });
 
-  it('regenerates health after a pause', () => {
+  it('only regenerates health once calm for a while (no damage, no shooting)', () => {
     const paint = paintedGrid();
     const player = spawn(-12, 0.05, 4);
     player.state.hp = 50;
-    for (let i = 0; i < Math.floor((h.regenDelay - 0.2) / DT); i++) step(player, {}, paint);
+    // Not shooting (stepWeapon counts this; nothing shoots here).
+    player.state.sinceShot = 99;
+    for (let i = 0; i < Math.floor((h.calmSeconds - 0.2) / DT); i++) step(player, {}, paint);
     expect(player.state.hp).toBe(50);
     for (let i = 0; i < Math.round(1.2 / DT); i++) step(player, {}, paint);
+    expect(player.state.hp).toBeGreaterThan(50 + h.regenPerSecond * 0.8);
+  });
+
+  it('does not regenerate while shooting, even long after the last damage', () => {
+    const player = spawn(-12, 0.05, 4);
+    player.state.hp = 50;
+    player.state.sinceShot = 0;
+    for (let i = 0; i < Math.round((h.calmSeconds + 2) / DT); i++) step(player, {}, paintedGrid());
+    expect(player.state.hp).toBe(50);
+  });
+
+  it('regenerates right away while swimming in its own paint', () => {
+    const paint = paintedGrid([{ x: -10, y: 0, z: 14 }, 6, 0]);
+    const player = spawn(-10, 0.05, 14);
+    player.state.hp = 50;
+    player.state.sinceShot = 0;
+    for (let i = 0; i < 6; i++) step(player, { swim: true }, paint);
+    expect(player.state.submerged).toBe(true);
+    for (let i = 0; i < Math.round(1 / DT); i++) step(player, { swim: true }, paint);
     expect(player.state.hp).toBeGreaterThan(50 + h.regenPerSecond * 0.8);
   });
 

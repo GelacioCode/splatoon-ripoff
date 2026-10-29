@@ -30,6 +30,8 @@ export const CONFIG = {
     minPlayersToStart: 2,
     /** "Play with bots" opens a new lobby with this many bots (the host can change it there). */
     defaultBots: 7,
+    /** Switching team mid-match: you're out this long, then appear on the new side (s). */
+    switchTeamSeconds: 2,
     /** Match lengths the host can pick (minutes). */
     matchMinuteOptions: [3, 5, 7],
     /** Captures to win that the host can pick (the default is CONFIG.match.capturesToWin). */
@@ -67,6 +69,11 @@ export const CONFIG = {
     puddleHitRadius: 0.6,
     /** A splatted player bursts into a splat of the attacker's paint this big (m). */
     splatPaintRadius: 2.2,
+    /**
+     * Splats this close together (s) make a multi-kill streak: double, triple, quadra, penta.
+     * Being splatted ends your streak.
+     */
+    multiKillWindowSeconds: 6,
   },
   match: {
     durationSeconds: 5 * 60,
@@ -138,8 +145,6 @@ export const CONFIG = {
     jumpBuffer: 0.12,
     /** Fastest possible fall (m/s). */
     maxFallSpeed: 30,
-    /** Walking speed multiplier while aiming. */
-    aimSpeedMultiplier: 0.65,
   },
   camera: {
     /** Vertical field of view (degrees). */
@@ -161,12 +166,19 @@ export const CONFIG = {
     collisionPadding: 0.25,
     /** Extra field of view while swimming fast, for a sense of speed (degrees). */
     swimFovBoost: 8,
-    /** Aim mode: zoomed field of view (degrees), closer camera and wider shoulder offset (m). */
-    aimFov: 48,
+    /**
+     * Aim mode (aim-down-sights): a closer camera and a wider shoulder offset (m). How far it
+     * zooms depends on the role (`zoom` in CONFIG.weapons); the sniper's scope goes to the eye.
+     */
     aimDistance: 2.6,
     aimShoulderOffset: 0.85,
-    /** Look sensitivity multiplier while aiming, for fine adjustments. */
-    aimSensitivity: 0.55,
+    /**
+     * Look sensitivity while aiming, relative to the zoom: turning is divided by the zoom and
+     * multiplied by this (2× zoom → 0.55, the 4× scope → 0.28).
+     */
+    aimSensitivity: 1.1,
+    /** The scope's eye: this high above the feet (m), at the blaster's side. */
+    scopeEyeHeight: 1.05,
   },
   swim: {
     /** Time to melt into a puddle or pop back out (s). */
@@ -195,10 +207,15 @@ export const CONFIG = {
     enemyPaintDamagePerSecond: 18,
     /** Enemy paint alone can't take you below this HP. */
     enemyPaintMinHp: 40,
-    /** Health starts coming back this long after the last damage (s). */
-    regenDelay: 1.5,
-    /** Health regained per second. */
+    /**
+     * Calm (user decision): this long with no damage taken and no shooting (s). Health only
+     * comes back while calm, or while swimming in your own paint, and reloading is faster then.
+     */
+    calmSeconds: 5,
+    /** Health regained per second while recovering (calm or swimming in own paint). */
     regenPerSecond: 30,
+    /** Reloading goes this many times as fast while recovering (1.5 = 50 % faster). */
+    recoveryReloadSpeed: 1.5,
   },
   /** Settings shared by every role's weapon. Each role's own numbers are in `weapons`. */
   weapon: {
@@ -236,6 +253,8 @@ export const CONFIG = {
    *   swimmable line gets gaps.
    * - moveSpeedMultiplier: walking and swimming speed (heavier guns are slower)
    * - damage: HP taken from an enemy per hit (players have CONFIG.player.maxHp)
+   * - zoom: how much aiming magnifies (2 = 2×); scope: aim through a scope from the eye
+   *   (first person) instead of over the shoulder; aimSpeedMultiplier: walking speed while aiming
    */
   weapons: {
     /** Balanced all-rounder. */
@@ -254,6 +273,10 @@ export const CONFIG = {
       moveSpeedMultiplier: 1,
       // 3 hits (user decision): same as the machine gun; they differ in range.
       damage: 34,
+      // 2× aim-down-sights (user decision).
+      zoom: 2,
+      scope: false,
+      aimSpeedMultiplier: 0.65,
     },
     /** Few, slow, pinpoint long-range shots with a long paint trail. Fastest on foot. */
     sniper: {
@@ -271,6 +294,10 @@ export const CONFIG = {
       moveSpeedMultiplier: 1.1,
       // 2 hits (user decision).
       damage: 50,
+      // A real scope (user decision): 4×, seen from the eye.
+      zoom: 4,
+      scope: true,
+      aimSpeedMultiplier: 0.5,
     },
     /** A short-range spray of small splats. Heaviest, so the slowest on foot. */
     machineGun: {
@@ -288,6 +315,10 @@ export const CONFIG = {
       moveSpeedMultiplier: 0.8,
       // 3 hits (user decision), but only up close: short range is its trade-off.
       damage: 34,
+      // A light aim-down-sights (user decision).
+      zoom: 1.25,
+      scope: false,
+      aimSpeedMultiplier: 0.75,
     },
   },
 };

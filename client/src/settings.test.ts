@@ -31,6 +31,15 @@ describe('parseSettings', () => {
     expect(parseSettings(JSON.stringify({ controls: 'joystick' })).controls).toBe('auto');
   });
 
+  it('keeps an older save’s volume as the master, with the new volumes at their defaults', () => {
+    const settings = parseSettings(JSON.stringify({ volume: 0.4 }));
+    expect(settings.volume).toBe(0.4);
+    expect(settings.musicVolume).toBe(DEFAULT_SETTINGS.musicVolume);
+    expect(settings.effectsVolume).toBe(DEFAULT_SETTINGS.effectsVolume);
+    expect(settings.announcerVolume).toBe(DEFAULT_SETTINGS.announcerVolume);
+    expect(parseSettings(JSON.stringify({ musicVolume: 3 })).musicVolume).toBe(1);
+  });
+
   it('remembers the chosen role, falling back to assault for an unknown one', () => {
     expect(parseSettings(JSON.stringify({ weapon: 2 })).weapon).toBe(2);
     expect(parseSettings(JSON.stringify({ weapon: 9 })).weapon).toBe(DEFAULT_SETTINGS.weapon);

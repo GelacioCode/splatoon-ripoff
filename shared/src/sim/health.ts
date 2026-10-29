@@ -46,6 +46,23 @@ export function segmentHitsSphere(
   return dx * dx + dy * dy + dz * dz <= radius * radius;
 }
 
+/**
+ * Calm: no damage taken and no shooting for CONFIG.health.calmSeconds (enemy paint counts as
+ * damage, and holding the trigger counts as shooting).
+ */
+export function isCalm(s: PlayerState): boolean {
+  const calm = CONFIG.health.calmSeconds;
+  return s.sinceDamage >= calm && s.sinceShot >= calm;
+}
+
+/**
+ * Recovering: calm, or hidden in your own paint. Health comes back and reloads go faster only
+ * then (user decision).
+ */
+export function isRecovering(s: PlayerState): boolean {
+  return s.respawnTimer <= 0 && (s.submerged || isCalm(s));
+}
+
 /** Whether this player can be hurt right now: alive and past spawn protection. */
 export function isVulnerable(s: PlayerState): boolean {
   return s.respawnTimer <= 0 && s.protectTimer <= 0;

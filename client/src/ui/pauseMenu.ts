@@ -1,6 +1,8 @@
-import type { ControlsSetting } from '../input/controlsMode';
-import type { Quality, Settings } from '../settings';
+import type { Settings } from '../settings';
+import { createHowToPlay } from './howToPlay';
 import { createRoleCards } from './roleCards';
+import { createSettingsPanel } from './settingsPanel';
+import { createTabs } from './tabs';
 
 export interface PauseMenuActions {
   play: () => void;
@@ -8,17 +10,25 @@ export interface PauseMenuActions {
   settingsChanged: (settings: Settings, changed: keyof Settings) => void;
   /** Gyro was switched on; resolves to whether it actually works here. */
   enableGyro: () => Promise<boolean>;
+  testVoice: () => void;
   openTuning: () => void;
 }
 
-const DESKTOP_KEYS =
-  'WASD move · Mouse look · Click shoot · Right-click aim · R reload · Shift swim · Space jump · Esc pause · ` tuning';
-const TOUCH_KEYS =
-  'Left thumb: move · Right thumb: drag to aim · SHOOT (drag it to aim too) · AIM (zoom) · SWIM · JUMP · R reload';
+/** What the pause menu can do in an online match (nothing of this in the offline sandbox). */
+export interface MatchMenuActions {
+  /** The other team's name, if switching to it is allowed right now (else null). */
+  switchTarget: () => string | null;
+  switchTeam: () => void;
+  leave: () => void;
+}
+
+/** How often the "Switch team" button rechecks whether it's allowed (ms). */
+const REFRESH_MS = 500;
 
 /**
- * The start/pause screen: a big Play button plus the settings, which save automatically.
- * Shown at launch and whenever the game is paused (Esc on desktop, the II button on touch).
+ * The pause menu, in three tabs: Play (resume, your role, switch team, leave), Settings and
+ * How to play. Shown before playing and whenever the game is paused (Esc on desktop, the II
+ * button on touch).
  */
 export function createPauseMenu(
   settings: Settings,
@@ -27,135 +37,95 @@ export function createPauseMenu(
 ) {
   const menu = document.createElement('div');
   menu.className = 'pause-menu';
-  menu.innerHTML = `
-    <div class="menu-card">
-      <h1>Paint Rush</h1>
-      <p class="menu-heading">Choose your role</p>
-      <div class="menu-roles-slot"></div>
-      <button class="menu-play" type="button">${touchDevice ? 'Tap to play' : 'Click to play'}</button>
-      <p class="menu-keys">${touchDevice ? TOUCH_KEYS : DESKTOP_KEYS}</p>
-      <div class="menu-settings">
-        <label>${touchDevice ? 'Touch' : 'Mouse'} sensitivity
-          <input name="sensitivity" type="range" min="0.2" max="3" step="0.05" />
-        </label>
-        <label class="menu-check"><input name="invertY" type="checkbox" /> Invert up/down</label>
-        <label>Volume <input name="volume" type="range" min="0" max="1" step="0.05" /></label>
-        <label>Graphics quality (reloads the page)
-          <select name="quality">
-            <option value="auto">Auto</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </label>
-        <label>Controls (reloads the page)
-          <select name="controls">
-            <option value="auto">Auto</option>
-            <option value="touch">Touch</option>
-            <option value="mouse">Mouse &amp; keyboard</option>
-          </select>
-        </label>
-        <label class="menu-check menu-gyro"><input name="gyro" type="checkbox" /> Gyro aim (turn the phone)</label>
-        <label class="menu-gyro">Gyro sensitivity
-          <input name="gyroSensitivity" type="range" min="0.2" max="3" step="0.05" />
-        </label>
-        <p class="menu-note" hidden></p>
-      </div>
-      <button class="menu-tuning" type="button">Tuning panel (dev)</button>
-    </div>`;
-  document.body.appendChild(menu);
+  const card = document.createElement('div');
+  card.className = 'menu-card pause-card';
+  const title = document.createElement('h1');
+  title.textContent = 'Paint Rush';
 
-  const field = <T extends HTMLElement>(name: string) => {
-    const element = menu.querySelector<T>(`[name="${name}"]`);
-    if (!element) throw new Error(`Pause menu: missing ${name}`);
-    return element;
-  };
-  const sensitivity = field<HTMLInputElement>('sensitivity');
-  const invertY = field<HTMLInputElement>('invertY');
-  const volume = field<HTMLInputElement>('volume');
-  const quality = field<HTMLSelectElement>('quality');
-  const controls = field<HTMLSelectElement>('controls');
-  const gyro = field<HTMLInputElement>('gyro');
-  const gyroSensitivity = field<HTMLInputElement>('gyroSensitivity');
-  const note = menu.querySelector<HTMLParagraphElement>('.menu-note');
-
-  const sensitivityKey = touchDevice ? 'touchSensitivity' : 'mouseSensitivity';
-  sensitivity.value = String(settings[sensitivityKey]);
-  invertY.checked = settings.invertY;
-  volume.value = String(settings.volume);
-  quality.value = settings.quality;
-  controls.value = settings.controls;
-  gyro.checked = settings.gyro;
-  gyroSensitivity.value = String(settings.gyroSensitivity);
-  for (const element of menu.querySelectorAll<HTMLElement>('.menu-gyro')) {
-    element.hidden = !touchDevice;
-  }
-
+  // --- Play tab
+  const playPage = document.createElement('div');
+  playPage.className = 'pause-play';
+  const play = document.createElement('button');
+  play.type = 'button';
+  play.className = 'menu-play';
+  play.textContent = touchDevice ? '▶ Tap to play' : '▶ Click to play';
+  play.addEventListener('click', actions.play);
+  const roleHeading = document.createElement('p');
+  roleHeading.className = 'menu-heading';
+  roleHeading.textContent = 'Your role';
   const roles = createRoleCards(settings.weapon, (weapon) => {
     settings.weapon = weapon;
     actions.settingsChanged(settings, 'weapon');
   });
-  menu.querySelector('.menu-roles-slot')?.replaceWith(roles.element);
+  const matchRow = document.createElement('div');
+  matchRow.className = 'pause-match';
+  const switchTeam = document.createElement('button');
+  switchTeam.type = 'button';
+  switchTeam.className = 'screen-button';
+  const leave = document.createElement('button');
+  leave.type = 'button';
+  leave.className = 'screen-button screen-button-quiet';
+  leave.textContent = '🚪 Leave match';
+  matchRow.append(switchTeam, leave);
+  matchRow.hidden = true;
+  const tuning = document.createElement('button');
+  tuning.type = 'button';
+  tuning.className = 'menu-tuning';
+  tuning.textContent = 'Tuning panel (dev)';
+  tuning.hidden = !import.meta.env.DEV;
+  tuning.addEventListener('click', actions.openTuning);
+  playPage.append(play, roleHeading, roles.element, matchRow, tuning);
 
-  const showNote = (text: string) => {
-    if (!note) return;
-    note.textContent = text;
-    note.hidden = text === '';
+  const settingsPage = createSettingsPanel(settings, touchDevice, {
+    changed: (changed) => actions.settingsChanged(settings, changed),
+    enableGyro: actions.enableGyro,
+    testVoice: actions.testVoice,
+  });
+  const tabs = createTabs(
+    [
+      { id: 'play', label: '▶ Play', content: playPage },
+      { id: 'settings', label: '⚙ Settings', content: settingsPage },
+      { id: 'how', label: '❓ How to play', content: createHowToPlay(touchDevice) },
+    ],
+    'pause-tabs',
+  );
+  card.append(title, tabs.element);
+  menu.append(card);
+  document.body.appendChild(menu);
+
+  let match: MatchMenuActions | null = null;
+  let refresh: ReturnType<typeof setInterval> | undefined;
+  const updateMatch = () => {
+    matchRow.hidden = match === null;
+    if (!match) return;
+    const target = match.switchTarget();
+    switchTeam.disabled = target === null;
+    switchTeam.textContent = target
+      ? `🔁 Switch to ${target}`
+      : '🔁 Switch team (their team is bigger)';
   };
-
-  sensitivity.addEventListener('input', () => {
-    settings[sensitivityKey] = Number(sensitivity.value);
-    actions.settingsChanged(settings, sensitivityKey);
+  switchTeam.addEventListener('click', () => {
+    if (!match?.switchTarget()) return;
+    match.switchTeam();
+    actions.play();
   });
-  invertY.addEventListener('change', () => {
-    settings.invertY = invertY.checked;
-    actions.settingsChanged(settings, 'invertY');
-  });
-  volume.addEventListener('input', () => {
-    settings.volume = Number(volume.value);
-    actions.settingsChanged(settings, 'volume');
-  });
-  quality.addEventListener('change', () => {
-    settings.quality = quality.value as Quality;
-    actions.settingsChanged(settings, 'quality');
-  });
-  controls.addEventListener('change', () => {
-    settings.controls = controls.value as ControlsSetting;
-    actions.settingsChanged(settings, 'controls');
-  });
-  gyroSensitivity.addEventListener('input', () => {
-    settings.gyroSensitivity = Number(gyroSensitivity.value);
-    actions.settingsChanged(settings, 'gyroSensitivity');
-  });
-  gyro.addEventListener('change', () => {
-    if (!gyro.checked) {
-      settings.gyro = false;
-      showNote('');
-      actions.settingsChanged(settings, 'gyro');
-      return;
-    }
-    actions
-      .enableGyro()
-      .then((works) => {
-        settings.gyro = works;
-        gyro.checked = works;
-        showNote(works ? '' : 'Gyro needs an https:// page and motion permission on this device.');
-        actions.settingsChanged(settings, 'gyro');
-      })
-      .catch(() => {
-        gyro.checked = false;
-        showNote('Gyro is not available here.');
-      });
-  });
-
-  menu.querySelector('.menu-play')?.addEventListener('click', actions.play);
-  menu.querySelector('.menu-tuning')?.addEventListener('click', actions.openTuning);
+  leave.addEventListener('click', () => match?.leave());
 
   return {
     setVisible(visible: boolean): void {
       menu.hidden = !visible;
-      // The role may have been picked on the join screen meanwhile.
-      if (visible) roles.select(settings.weapon);
+      clearInterval(refresh);
+      if (!visible) return;
+      // The role may have been picked on another screen meanwhile.
+      roles.select(settings.weapon);
+      tabs.select('play');
+      updateMatch();
+      refresh = setInterval(updateMatch, REFRESH_MS);
+    },
+    /** Online match buttons (switch team, leave), or null to remove them. */
+    setMatchActions(actions: MatchMenuActions | null): void {
+      match = actions;
+      updateMatch();
     },
   };
 }

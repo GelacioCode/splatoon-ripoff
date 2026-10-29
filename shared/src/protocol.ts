@@ -1,7 +1,7 @@
 import type { Look } from './lobby/look';
 
 /** Bump whenever client/server messages change in an incompatible way. */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 export const DEFAULT_SERVER_PORT = 2567;
 
@@ -54,6 +54,8 @@ export interface SplatEvent {
   by: string;
   /** The attacker's team (its color for the burst and the kill feed). */
   team: number;
+  /** The attacker's multi-kill streak with this splat (1 alone, 2 a double … see multiKillName). */
+  streak: number;
 }
 
 /** Client → server: switch to another role. Payload: the role's index in WEAPON_KINDS. */
@@ -82,6 +84,29 @@ export const MSG_GAME_MODE = 'gameMode';
 
 /** Host → server, in the lobby only: the team color pair. Payload: an index in TEAM_PALETTES. */
 export const MSG_TEAM_COLORS = 'teamColors';
+
+/** Client → server, in the lobby only: my team wish. Payload: 0, 1 or −1 (AUTO_TEAM). */
+export const MSG_PICK_TEAM = 'pickTeam';
+
+/**
+ * Client → server, during a match: switch me to the other team (allowed unless it's the
+ * bigger team; see canSwitchTeam). No payload.
+ */
+export const MSG_SWITCH_TEAM = 'switchTeam';
+
+/**
+ * Server → clients: team news. Payload: a TeamNews. 'switched' goes to everyone (someone
+ * changed sides mid-match); 'moved' only to a player whose lobby pick couldn't be kept.
+ */
+export const MSG_TEAM_NEWS = 'teamNews';
+
+export interface TeamNews {
+  kind: 'switched' | 'moved';
+  /** Who it's about (session id). */
+  by: string;
+  /** The team they're on now. */
+  team: number;
+}
 
 /** Host → server: match length. Payload: minutes, one of CONFIG.lobby.matchMinuteOptions. */
 export const MSG_MATCH_LENGTH = 'matchLength';

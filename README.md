@@ -130,11 +130,23 @@ The host picks one in the lobby:
 - A small marker on the crosshair (red for a splat) and a tick sound tell you your shot hit. A red flash means you got hit.
 - The kill feed at top right shows who splatted whom.
 - Hits are checked against where the shooter saw the target, so what you hit on your screen counts even with some lag.
-- Health still regenerates after a few seconds out of combat, as long as you're not standing in enemy paint.
+- **Recovery:** health only comes back after **5 s calm** (no damage taken and no shooting), or right away while **swimming in your own paint**. While recovering, reloads are **50 % faster** too. Enemy paint stops it.
+- **HUD:** health (left) and ammo (right) sit at the bottom of the screen, with a reload bar and a green glow while you heal.
+- **Multi-kills:** splats within 6 s of each other build a streak: **DOUBLE, TRIPLE, QUADRA, PENTA KILL**. You get a big bouncy callout, a jingle and a squeaky announcer voice (your device's own speech voice, pitched up); everyone sees the tag in the kill feed. Being splatted ends your streak.
 
 ## Roles
 
-Pick a role on the start screen. Your pick is remembered on this device, and you can switch any time from the pause menu (switching refills your tank).
+Pick a role on the start screen's **Customize** tab. Your pick is remembered on this device, and you can switch any time from the pause menu (switching refills your tank).
+
+Aiming (right mouse, or the AIM button) works differently per role:
+
+| Role | Aim |
+| --- | --- |
+| Sniper | A real **4× scope**: the view goes to your blob's eye, with a round scope and reticle |
+| Assault | **2×** aim-down-sights over the shoulder |
+| Machine gun | A light **1.25×** aim-down-sights |
+
+Turning slows down with the zoom, and you walk slower while aiming.
 
 | Role | Shots per reload | Damage per hit | Range | Walking speed |
 | --- | --- | --- | --- | --- |
@@ -156,7 +168,7 @@ Each role has its own blaster shape. All role values live in `CONFIG.weapons` in
 | Jump | Space |
 | Shoot paint (hold to keep firing) | Left mouse button |
 | Reload (2.5–3 s depending on role, no shooting meanwhile) | R |
-| Aim: zoom in for precise long shots, walk slower (hold) | Right mouse button |
+| Aim: zoom (sniper: scope) for precise long shots, walk slower (hold) | Right mouse button |
 | Swim: melt into a puddle (fast and hidden in your own paint, climbs painted walls, refills ink) | Shift (hold) |
 | Pause (frees the mouse) | Esc |
 | Live tuning panel (for development) | `` ` `` (backtick, left of 1) |
@@ -171,7 +183,16 @@ Each role has its own blaster shape. All role values live in `CONFIG.weapons` in
   - You can also choose in the pause menu (**Controls: Auto / Touch / Mouse & keyboard**), or add `?touch` / `?desktop` to the link.
 - **Optional gyro aim:** turn it on in the pause menu. It needs an `https://` page (see the Cloudflare tunnel tip below), and iPhones ask for permission.
 
-The pause menu (Esc on desktop, II on touch) has the role picker, sensitivity, invert up/down, volume, gyro and **graphics quality** (Auto / Low / Medium / High). Changing quality reloads the page. Resolution also drops automatically when the frame rate does, shown as `res …%` in the dev overlay.
+## Menus, settings and music
+
+- **Start screen:** tabs along the bottom: **▶ Play** (your name, Create lobby, 🤖 Play with bots, join by code, practice offline) · **🎨 Customize** (your blob with a 3D preview, and your role) · **❓ How to play** (short swipeable cards) · **⚙ Settings**.
+- **Settings** (on the start screen and in the pause menu), in three tabs:
+  - **Graphics:** quality (Auto / Low / Medium / High; reloads the page), and *Show FPS & ping*. Resolution also drops by itself when the frame rate does.
+  - **Audio:** master, music, sound effects and announcer volume, plus a button to hear the announcer.
+  - **Controls:** sensitivity, invert up/down, controls mode (reloads), gyro on phones.
+- **Pause menu** (Esc, or II on touch): ▶ Play (resume, your role, 🔁 Switch team, 🚪 Leave match) · ⚙ Settings · ❓ How to play.
+- **Teams:** in the lobby, pick **Team A / Auto / Team B**. At Start the picks are kept as long as the teams stay even (within one player); if too many pick one side, the latest pickers are moved and told. During a match, **Switch team** in the pause menu works any time, except onto a team that already has more players: you sit out 2 s, then appear on the new side (a carried flag drops).
+- **Music:** original loops generated in the browser (no files): a calm one for menus and the lobby, a bouncy one in matches that speeds up in the last 30 seconds.
 
 To test gyro over https on your phone, run a temporary tunnel to the dev server: `cloudflared tunnel --url http://localhost:5173`. Install it once with `winget install --id Cloudflare.cloudflared`.
 

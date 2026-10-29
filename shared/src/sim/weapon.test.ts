@@ -64,6 +64,22 @@ describe('stepWeapon', () => {
     expect(run(state, 1, { fire: true })).toHaveLength(0);
   });
 
+  it('reloads 50 % faster while calm (no damage, no shooting for a while)', () => {
+    const fast = assault.reloadSeconds / CONFIG.health.recoveryReloadSpeed;
+    const calm = newPlayer(assault.magazine / 2);
+    calm.sinceDamage = 99;
+    calm.sinceShot = 99;
+    run(calm, DT, { reload: true });
+    run(calm, fast + 0.1);
+    expect(calm.ink).toBe(assault.magazine);
+
+    // Just hit: the normal reload time.
+    const busy = newPlayer(assault.magazine / 2);
+    run(busy, DT, { reload: true });
+    run(busy, fast + 0.1);
+    expect(busy.reloadTimer).toBeGreaterThan(0);
+  });
+
   it('refills quickly while hidden in own paint, which also ends a reload', () => {
     const state = newPlayer(0);
     state.submerged = true;

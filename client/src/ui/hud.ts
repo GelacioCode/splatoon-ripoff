@@ -1,42 +1,85 @@
-const RING_RADIUS = 26;
-const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+/** What the bottom bar shows each frame. */
+export interface HudStatus {
+  /** Shots left, and a full tank. */
+  ammo: number;
+  magazine: number;
+  /** Reload progress (0–1), or null when not reloading. */
+  reload: number | null;
+  hp: number;
+  maxHp: number;
+  /** Health is coming back (calm, or swimming in own paint). */
+  recovering: boolean;
+  /** Your team's color (CSS). */
+  color: string;
+  /** "Assault", "Sniper", "Machine gun". */
+  role: string;
+}
+
+/** Below this share of health the number turns red and pulses. */
+const LOW_HP = 0.35;
+/** Below this share of the tank the ammo turns red. */
+const LOW_AMMO = 0.2;
 
 /**
- * Crosshair with an ink gauge ring around it. The ring empties as you shoot; while
- * reloading it fills back up and a "RELOADING" label appears.
+ * The in-match HUD: the crosshair and hit marker in the middle, the sniper's scope, and a
+ * bottom bar with health on the left and ammo on the right (like a tactical shooter, in the
+ * game's own cartoon style). Shown only while a match is on screen.
  */
-export function createHud() {
+export function createHud(touch: boolean) {
   const hud = document.createElement('div');
   hud.className = 'hud';
   hud.innerHTML = `
-    <svg class="ink-ring" viewBox="0 0 64 64" aria-hidden="true">
-      <circle class="ink-track" cx="32" cy="32" r="${RING_RADIUS}" />
-      <circle class="ink-fill" cx="32" cy="32" r="${RING_RADIUS}"
-        stroke-dasharray="${RING_LENGTH}" stroke-dashoffset="0" />
-    </svg>
     <div class="crosshair"></div>
     <div class="hit-marker"></div>
     <div class="reload-label">RELOADING</div>`;
-  document.body.appendChild(hud);
-  const fill = hud.querySelector<SVGCircleElement>('.ink-fill');
   const hitMarker = hud.querySelector<HTMLDivElement>('.hit-marker');
+
+  // The sniper's scope: a dark ring with a fine reticle, faded in while scoped.
+  const scope = document.createElement('div');
+  scope.className = 'scope';
+  scope.innerHTML = `<div class="scope-reticle"></div>`;
+
+  // Bottom bar: health (left) and ammo (right).
+  const bar = document.createElement('div');
+  bar.className = `hud-bar${touch ? ' touch' : ''}`;
+  bar.innerHTML = `
+    <div class="hud-health">
+      <span class="hud-health-icon" aria-hidden="true">✚</span>
+      <span class="hud-health-value">100</span>
+      <div class="hud-meter"><div class="hud-meter-fill"></div></div>
+    </div>
+    <div class="hud-ammo">
+      <div class="hud-ammo-numbers">
+        <span class="hud-ammo-value">20</span><span class="hud-ammo-max">/ 20</span>
+      </div>
+      <div class="hud-ammo-role"></div>
+      <div class="hud-meter"><div class="hud-meter-fill"></div></div>
+    </div>`;
+  const healthValue = bar.querySelector<HTMLSpanElement>('.hud-health-value');
+  const healthBox = bar.querySelector<HTMLDivElement>('.hud-health');
+  const healthFill = bar.querySelector<HTMLDivElement>('.hud-health .hud-meter-fill');
+  const ammoBox = bar.querySelector<HTMLDivElement>('.hud-ammo');
+  const ammoValue = bar.querySelector<HTMLSpanElement>('.hud-ammo-value');
+  const ammoMax = bar.querySelector<HTMLSpanElement>('.hud-ammo-max');
+  const ammoRole = bar.querySelector<HTMLDivElement>('.hud-ammo-role');
+  const ammoFill = bar.querySelector<HTMLDivElement>('.hud-ammo .hud-meter-fill');
 
   // Screen edges tint toward the enemy's color as health drops.
   const vignette = document.createElement('div');
   vignette.className = 'damage-vignette';
-  document.body.appendChild(vignette);
 
   // A quick red flash when a shot hits you.
   const flash = document.createElement('div');
   flash.className = 'hurt-flash';
-  document.body.appendChild(flash);
 
   // "Splatted by …" while waiting to respawn.
   const splatted = document.createElement('div');
   splatted.className = 'splatted';
   splatted.hidden = true;
-  document.body.appendChild(splatted);
   let splattedText = '';
+
+  document.body.append(scope, vignette, flash, hud, bar, splatted);
+  let shown = '';
 
   /** Restarts a CSS animation by toggling its class. */
   const replay = (element: HTMLElement | null, className: string) => {
@@ -47,6 +90,12 @@ export function createHud() {
   };
 
   return {
+    /** Only while a match (or the sandbox) is being played. */
+    setVisible(visible: boolean): void {
+      hud.hidden = !visible;
+      bar.hidden = !visible;
+      if (!visible) scope.style.opacity = '0';
+    },
     /** Your shot hit someone (bigger and red when it splatted them). */
     showHit(splat: boolean): void {
       hitMarker?.classList.toggle('splat', splat);
@@ -55,6 +104,7 @@ export function createHud() {
     /** You were hit by a shot. */
     flashHurt(): void {
       replay(flash, 'show');
+      replay(healthBox, 'hit');
     },
     /** Shows "Splatted by NAME · back in N" (or hides it with null). */
     setSplatted(text: string | null): void {
@@ -67,23 +117,41 @@ export function createHud() {
     setAiming(aiming: boolean): void {
       hud.classList.toggle('aiming', aiming);
     },
+    /** How far into the sniper's scope view we are (0 none … 1 fully scoped). */
+    setScope(blend: number): void {
+      const opacity = blend < 0.5 ? 0 : Math.min(1, (blend - 0.5) * 2.5);
+      scope.style.opacity = String(opacity);
+      hud.classList.toggle('scoped', opacity > 0.5);
+    },
     /** `health` from 0 to 1; `enemyColor` tints the edges while hurt. */
     updateHealth(health: number, enemyColor: string): void {
       vignette.style.opacity = String(Math.min(1, (1 - health) * 1.6));
       vignette.style.setProperty('--damage-color', enemyColor);
     },
+    /** The bottom bar's health and ammo, and the reload label. */
+    update(s: HudStatus): void {
+      const hp = Math.ceil(Math.max(0, s.hp));
+      const ammo = Math.floor(Math.max(0, s.ammo));
+      const key = `${hp}|${s.maxHp}|${s.recovering}|${ammo}|${s.magazine}|${s.reload?.toFixed(2)}|${s.color}|${s.role}`;
+      if (key === shown) return;
+      shown = key;
+      const hpShare = s.maxHp > 0 ? hp / s.maxHp : 0;
+      if (healthValue) healthValue.textContent = String(hp);
+      if (healthFill) healthFill.style.width = `${hpShare * 100}%`;
+      healthBox?.classList.toggle('low', hpShare < LOW_HP);
+      healthBox?.classList.toggle('recovering', s.recovering && hp < s.maxHp);
 
-    /**
-     * `ink` from 0 (empty) to 1 (full). `reload` is the reload progress (0–1), or null when
-     * not reloading. `low` makes the ring flash.
-     */
-    update(ink: number, reload: number | null, color: string, low: boolean): void {
-      if (!fill) return;
-      const amount = reload ?? ink;
-      fill.style.strokeDashoffset = String(RING_LENGTH * (1 - Math.max(0, Math.min(1, amount))));
-      fill.style.stroke = color;
-      hud.classList.toggle('reloading', reload !== null);
-      hud.classList.toggle('ink-low', reload === null && low);
+      const reloading = s.reload !== null;
+      if (ammoValue) ammoValue.textContent = reloading ? '—' : String(ammo);
+      if (ammoMax) ammoMax.textContent = `/ ${s.magazine}`;
+      if (ammoRole) ammoRole.textContent = reloading ? 'RELOADING' : s.role;
+      if (ammoFill) {
+        ammoFill.style.width = `${(reloading ? (s.reload ?? 0) : ammo / s.magazine) * 100}%`;
+        ammoFill.style.background = s.color;
+      }
+      ammoBox?.classList.toggle('reloading', reloading);
+      ammoBox?.classList.toggle('low', !reloading && ammo / s.magazine < LOW_AMMO);
+      hud.classList.toggle('reloading', reloading);
     },
   };
 }

@@ -88,6 +88,7 @@ class SandboxGame {
 
   start(): void {
     this.world.start(this.frame);
+    this.world.music.play('match');
   }
 
   private readonly frame = (timeMs: number): void => {
@@ -115,6 +116,8 @@ class SandboxGame {
       submerged: s.submerged,
       climbing: s.climbing,
     });
+    // Looking through the scope puts the camera inside the blob.
+    this.character.root.visible = !world.scoped;
     world.drawFrame(dt, this.renderFeet, s, this.projectiles, alpha);
   };
 

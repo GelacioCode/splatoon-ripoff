@@ -17,6 +17,17 @@ export interface DevOverlayState {
   resolution?: number;
 }
 
+/**
+ * Shows or hides the status panel: always in development and with `?debug` in the link,
+ * otherwise when the player turned on "Show FPS & ping".
+ */
+export function showStatsPanel(show: boolean): void {
+  const element = document.getElementById('dev-overlay');
+  if (!element) return;
+  const debug = new URLSearchParams(window.location.search).has('debug');
+  element.hidden = !(show || import.meta.env.DEV || debug);
+}
+
 /** Small always-on-top status panel for development. */
 export function createDevOverlay(element: HTMLElement) {
   const state: DevOverlayState = {

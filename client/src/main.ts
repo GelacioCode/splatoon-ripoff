@@ -6,13 +6,13 @@ import './style.css';
 import { DEFAULT_SERVER_PORT } from '@paint-rush/shared';
 import { parseRoute } from './net/route';
 import { resolveServerUrl } from './net/serverUrl';
-import { createDevOverlay } from './ui/devOverlay';
+import { loadSettings } from './settings';
+import { createDevOverlay, showStatsPanel } from './ui/devOverlay';
 
 const overlayElement = requireElement('dev-overlay');
 const overlay = createDevOverlay(overlayElement);
-// The status panel is for development: on the real site it only shows with `?debug`.
-overlayElement.hidden =
-  !import.meta.env.DEV && !new URLSearchParams(window.location.search).has('debug');
+// The status panel: in development, with `?debug`, or when "Show FPS & ping" is on.
+showStatsPanel(loadSettings().showStats);
 const container = requireElement('app');
 
 // The game (and Rapier, ~2 MB) loads as a separate chunk, so the page shows up right away.

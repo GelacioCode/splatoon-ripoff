@@ -3,6 +3,7 @@ import { CONFIG } from '../config';
 import type { Vec3 } from '../math3d';
 import { NO_TEAM, type PaintGrid } from '../paint/paintGrid';
 import { weaponStats } from '../weapons';
+import { isRecovering } from './health';
 import type { PlayerInput } from './input';
 import { characterCenterOffset, type PhysicsWorld, type RayHit } from './physicsWorld';
 import type { PlayerState } from './playerState';
@@ -72,7 +73,7 @@ export function stepPlayer(
   // Horizontal: speed up toward the requested velocity.
   let maxSpeed = swimming ? (s.submerged ? sw.swimSpeed : sw.puddleSpeed) : m.walkSpeed;
   if (onEnemyPaint) maxSpeed *= h.enemyPaintSpeedMultiplier;
-  if (s.aiming) maxSpeed *= m.aimSpeedMultiplier;
+  if (s.aiming) maxSpeed *= weaponStats(s.weapon).aimSpeedMultiplier;
   // Heavier weapons slow you down (sniper fastest, machine gun slowest).
   maxSpeed *= weaponStats(s.weapon).moveSpeedMultiplier;
   // Carrying the flag slows you, so teammates have to escort you and paint a path.
@@ -137,7 +138,8 @@ export function stepPlayer(
     }
   }
 
-  // Health: enemy paint hurts (but can't finish you off); otherwise regenerate after a pause.
+  // Health: enemy paint hurts (but can't finish you off); otherwise it comes back while
+  // recovering (calm for a while, or swimming in your own paint).
   if (onEnemyPaint && s.grounded) {
     if (s.hp > h.enemyPaintMinHp) {
       s.hp = Math.max(h.enemyPaintMinHp, s.hp - h.enemyPaintDamagePerSecond * dt);
@@ -145,9 +147,7 @@ export function stepPlayer(
     s.sinceDamage = 0;
   } else {
     s.sinceDamage += dt;
-    if (s.sinceDamage >= h.regenDelay) {
-      s.hp = Math.min(CONFIG.player.maxHp, s.hp + h.regenPerSecond * dt);
-    }
+    if (isRecovering(s)) s.hp = Math.min(CONFIG.player.maxHp, s.hp + h.regenPerSecond * dt);
   }
 }
 

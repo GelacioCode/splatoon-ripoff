@@ -25,13 +25,26 @@ export class KillFeed {
     document.body.append(this.root);
   }
 
-  add(attacker: string, attackerTeam: number, victim: string, victimTeam: number): void {
+  /** `tag` is a multi-kill callout for the attacker ("TRIPLE KILL"), if any. */
+  add(
+    attacker: string,
+    attackerTeam: number,
+    victim: string,
+    victimTeam: number,
+    tag: string | null = null,
+  ): void {
     const entry = document.createElement('div');
     entry.className = 'feed-entry';
     const mark = document.createElement('span');
     mark.className = 'feed-mark';
     mark.textContent = '💥';
     entry.append(name(attacker, attackerTeam), mark, name(victim, victimTeam));
+    if (tag) {
+      const badge = document.createElement('span');
+      badge.className = 'feed-streak';
+      badge.textContent = tag;
+      entry.append(badge);
+    }
     this.root.prepend(entry);
     while (this.root.children.length > MAX_ENTRIES) this.root.lastElementChild?.remove();
     setTimeout(() => entry.remove(), ENTRY_MS);

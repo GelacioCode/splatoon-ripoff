@@ -1,4 +1,5 @@
 import {
+  AUTO_TEAM,
   CONFIG,
   GAME_MODE_NAMES,
   GAME_MODES,
@@ -10,10 +11,12 @@ import {
   type Look,
   type StageMode,
 } from '@paint-rush/shared';
-import { TEAM_COLORS, teamName, teamTextColor } from '../render/palette';
+import { TEAM_COLORS, teamName, teamTextColor, textOnTeam } from '../render/palette';
+import { createHowToPlay } from './howToPlay';
 import { createLookPicker } from './lookPicker';
 import { createRoleCards } from './roleCards';
 import { createStatsTable, type StatsRow } from './statsTable';
+import { createTabs } from './tabs';
 
 /** One row of the lobby's player list. */
 export interface LobbyPlayer {
@@ -23,6 +26,8 @@ export interface LobbyPlayer {
   me: boolean;
   /** Played by the server ("Play with bots"). */
   bot: boolean;
+  /** Team wish: 0, 1 or AUTO_TEAM. */
+  pick: number;
 }
 
 /** Everything the lobby screen shows; re-rendered whenever it changes. */
@@ -47,6 +52,7 @@ export interface LobbyView {
 export interface LobbyActions {
   start: () => void;
   kick: (id: string) => void;
+  pickTeam: (pick: number) => void;
   setMinutes: (minutes: number) => void;
   setCaptureGoal: (captures: number) => void;
   setGameMode: (mode: GameMode) => void;
@@ -54,6 +60,30 @@ export interface LobbyActions {
   setBots: (count: number) => void;
   editLook: () => void;
   leave: () => void;
+}
+
+/** What the start screen starts with. */
+export interface HomeView {
+  name: string;
+  /** Invited to this lobby (a /join/CODE link), or null. */
+  code: string | null;
+  look: Look;
+  weapon: number;
+  /** A message to show first, e.g. a bad lobby code. */
+  note: string;
+  /** The settings tabs (made by the game, which applies the changes). */
+  settings: HTMLElement;
+  touchDevice: boolean;
+}
+
+export interface HomeActions {
+  create: (name: string) => void;
+  playWithBots: (name: string) => void;
+  join: (code: string, name: string) => void;
+  pickWeapon: (weapon: number) => void;
+  changeLook: (look: Look) => void;
+  /** The Customize tab opened: show the 3D preview in `box`; returns how to remove it. */
+  showPreview: (box: HTMLElement) => () => void;
 }
 
 /** The look editor: a box for the 3D preview next to the part pickers. */
@@ -86,9 +116,34 @@ function button(label: string, className: string, onClick: () => void): HTMLButt
   return el;
 }
 
+/** A labelled select with the given options. */
+function select<T extends string | number>(
+  label: string,
+  value: T,
+  options: [T, string][],
+  change: (value: T) => void,
+): HTMLLabelElement {
+  const wrap = element('label', 'screen-label');
+  const el = element('select', 'screen-select');
+  for (const [option, text] of options) {
+    const o = element('option', undefined, text);
+    o.value = String(option);
+    o.selected = option === value;
+    el.append(o);
+  }
+  el.addEventListener('change', () => {
+    const picked = options.find(([option]) => String(option) === el.value);
+    if (picked) change(picked[0]);
+  });
+  wrap.append(el);
+  wrap.prepend(element('span', 'screen-label-text', label));
+  return wrap;
+}
+
 /**
- * The full-screen menus before and around a match: home, join, lobby and messages. One shows
- * at a time, over the 3D arena. Names always go in as text (never HTML), since players type them.
+ * The full-screen menus before and around a match: the start hub, the lobby, results and
+ * messages. One shows at a time, over the 3D arena. Names always go in as text (never HTML),
+ * since players type them.
  */
 export class Screens {
   private readonly root = element('div', 'screen');
@@ -97,9 +152,15 @@ export class Screens {
   private cleanup: (() => void) | null = null;
   /** Which screen is showing ('home', 'lobby', …), so updates don't replay the entrance. */
   private shownKind = '';
+  /** The lobby's open tab on phones, kept while the lobby updates. */
+  private lobbyTab = 'teams';
 
   constructor() {
-    this.root.append(this.card);
+    // Decorative paint splats behind the cards.
+    const splats = element('div', 'screen-splats');
+    splats.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 6; i++) splats.append(element('span', `splat splat-${i}`));
+    this.root.append(splats, this.card);
     this.root.hidden = true;
     document.body.append(this.root);
   }
@@ -115,25 +176,39 @@ export class Screens {
     this.cleanup = cleanup;
   }
 
-  /** Start screen: create a lobby (with or without bots), or type a code to join one. */
-  showHome(
-    actions: { create: () => void; playWithBots: () => void; joinCode: (code: string) => void },
-    note = '',
-  ): void {
+  /**
+   * The start hub: Play (your name, Create lobby, Play with bots, join by code, practice
+   * offline), Customize (look and role, with a 3D preview), How to play and Settings, as tabs
+   * along the bottom. Returns a way to show progress and errors while connecting.
+   */
+  showHome(view: HomeView, actions: HomeActions) {
+    // --- Play
+    const play = element('div', 'home-play');
+    const nameInput = element('input', 'screen-name-input');
+    nameInput.placeholder = 'Your name';
+    nameInput.value = view.name;
+    nameInput.maxLength = CONFIG.lobby.maxNameLength;
+    // A valid HTML autofill hint, but missing from TypeScript's AutoFill type.
+    nameInput.setAttribute('autocomplete', 'nickname');
+    const nameLabel = element('label', 'screen-label');
+    nameLabel.append(element('span', 'screen-label-text', 'Your name'), nameInput);
+    const status = element('p', 'menu-note', view.note);
+    status.hidden = view.note === '';
+    const name = () => nameInput.value;
+
     const codeInput = element('input', 'screen-code-input');
     codeInput.placeholder = 'CODE';
     codeInput.maxLength = LOBBY_CODE_LENGTH + 1;
     codeInput.autocapitalize = 'characters';
     codeInput.autocomplete = 'off';
     codeInput.spellcheck = false;
-    const error = element('p', 'menu-note', note);
-    error.hidden = note === '';
+    if (view.code) codeInput.value = view.code;
     const join = () => {
       const code = parseLobbyCode(codeInput.value);
-      if (code) actions.joinCode(code);
+      if (code) actions.join(code, name());
       else {
-        error.textContent = `Lobby codes are ${LOBBY_CODE_LENGTH} letters/numbers, like K7QX.`;
-        error.hidden = false;
+        status.textContent = `Lobby codes are ${LOBBY_CODE_LENGTH} letters/numbers, like K7QX.`;
+        status.hidden = false;
       }
     };
     codeInput.addEventListener('keydown', (event) => {
@@ -141,186 +216,248 @@ export class Screens {
     });
     const joinRow = element('div', 'screen-row');
     joinRow.append(codeInput, button('Join', 'screen-button', join));
-    const offline = element('a', 'screen-link', 'Practice alone (offline sandbox)');
-    offline.href = '/?offline';
 
-    this.show(
-      'home',
-      element('h1', 'logo', 'Paint Rush'),
-      button('Create Lobby', 'menu-play', actions.create),
-      button('🤖 Play with bots', 'screen-button', actions.playWithBots),
-      element('p', 'menu-heading', 'or join with a code'),
+    const buttons: HTMLButtonElement[] = [];
+    const main = view.code
+      ? button(`Join lobby ${view.code}`, 'menu-play', join)
+      : button('Create lobby', 'menu-play', () => actions.create(name()));
+    const bots = button('🤖 Play with bots', 'screen-button home-bots', () =>
+      actions.playWithBots(name()),
+    );
+    buttons.push(main, bots);
+    nameInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !main.disabled) main.click();
+    });
+    const offline = element('a', 'screen-link', '🎯 Practice alone (offline)');
+    offline.href = '/?offline';
+    if (view.code) {
+      play.append(element('p', 'home-invite', `You're invited to lobby ${view.code}!`));
+    }
+    play.append(
+      nameLabel,
+      main,
+      bots,
+      element('p', 'menu-heading home-or', view.code ? 'or another code' : 'or join with a code'),
       joinRow,
-      error,
+      status,
       offline,
     );
-  }
 
-  /**
-   * Name, look and role, then Join (or Create, when `code` is null). Returns the box for the
-   * 3D preview, and a way to show progress and errors while connecting.
-   */
-  showJoin(options: {
-    code: string | null;
-    /** A new lobby that starts with bots ("Play with bots"). */
-    withBots?: boolean;
-    name: string;
-    weapon: number;
-    look: Look;
-    submit: (name: string) => void;
-    pickWeapon: (weapon: number) => void;
-    changeLook: (look: Look) => void;
-    back: () => void;
-  }) {
-    const nameInput = element('input', 'screen-name-input');
-    nameInput.placeholder = 'Your name';
-    nameInput.value = options.name;
-    nameInput.maxLength = CONFIG.lobby.maxNameLength;
-    // A valid HTML autofill hint, but missing from TypeScript's AutoFill type.
-    nameInput.setAttribute('autocomplete', 'nickname');
-    const label = element('label', 'screen-label', 'Name');
-    label.append(nameInput);
-    const roles = createRoleCards(options.weapon, options.pickWeapon);
-    const status = element('p', 'menu-note');
-    status.hidden = true;
-    const go = button(options.code ? 'Join' : 'Create lobby', 'menu-play', () =>
-      options.submit(nameInput.value),
-    );
-    nameInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !go.disabled) go.click();
-    });
-
-    const customize = customizeSection(options.look, options.changeLook);
-
-    const title = options.code
-      ? `Join lobby ${options.code}`
-      : options.withBots
-        ? 'Play with bots'
-        : 'New lobby';
-    this.show(
-      'join',
-      element('h1', undefined, title),
-      label,
-      element('p', 'menu-heading', 'Customize'),
+    // --- Customize
+    const customizePage = element('div', 'home-customize');
+    const customize = customizeSection(view.look, actions.changeLook);
+    const roles = createRoleCards(view.weapon, actions.pickWeapon);
+    customizePage.append(
+      element('p', 'menu-heading', 'Your blob'),
       customize.section,
-      element('p', 'menu-heading', 'Choose your role'),
+      element('p', 'menu-heading', 'Your role'),
       roles.element,
-      go,
-      status,
-      button('Back', 'screen-link-button', options.back),
     );
+
+    let removePreview: (() => void) | null = null;
+    const tabs = createTabs(
+      [
+        { id: 'play', label: '▶ Play', content: play },
+        { id: 'customize', label: '🎨 Customize', content: customizePage },
+        { id: 'how', label: '❓ How to play', content: createHowToPlay(view.touchDevice) },
+        { id: 'settings', label: '⚙ Settings', content: view.settings },
+      ],
+      'home-tabs',
+      (id) => {
+        removePreview?.();
+        removePreview = id === 'customize' ? actions.showPreview(customize.preview) : null;
+      },
+    );
+
+    const logo = element('h1', 'logo', 'Paint Rush');
+    const tagline = element('p', 'home-tagline', 'Splat · Swim · Score');
+    this.show('home', logo, tagline, tabs.element);
+    this.card.classList.add('home-card');
+    this.onClose(() => removePreview?.());
     // On phones, popping up the keyboard straight away would hide the screen.
-    if (!window.matchMedia('(pointer: coarse)').matches) nameInput.focus();
+    if (!view.touchDevice && view.name === '') nameInput.focus();
+
     return {
-      preview: customize.preview,
       busy(text: string): void {
-        go.disabled = true;
+        for (const b of buttons) b.disabled = true;
         status.textContent = text;
         status.hidden = false;
       },
       failed(text: string): void {
-        go.disabled = false;
+        for (const b of buttons) b.disabled = false;
         status.textContent = text;
         status.hidden = false;
+        tabs.select('play');
       },
     };
   }
 
-  /** The lobby: QR code and code for the host, the player list, and the host's controls. */
+  /**
+   * The lobby: the teams (pick yours: team A, auto or team B), the match settings (the
+   * host's controls), and the invite (QR code and code). Side by side on wide screens, as
+   * tabs on phones.
+   */
   showLobby(view: LobbyView, actions: LobbyActions): void {
-    const parts: HTMLElement[] = [element('h1', undefined, 'Lobby')];
-    const code = element('p', 'screen-code', view.code);
-    if (view.isHost) {
-      const qr = element('div', 'screen-qr');
-      if (view.qrSvg) qr.innerHTML = view.qrSvg;
-      const link = element('p', 'screen-join-link', view.joinLink);
-      parts.push(qr, element('p', 'menu-heading', 'Scan to join, or enter the code:'), code, link);
-    } else {
-      parts.push(element('p', 'menu-heading', 'Lobby code'), code);
-    }
-
-    const list = element('ul', 'screen-players');
-    for (const player of view.players) {
-      const row = element('li', player.me ? 'me' : undefined);
-      row.append(element('span', 'screen-player-name', player.name));
-      if (player.bot) row.append(element('span', 'screen-tag screen-tag-bot', '🤖 bot'));
-      if (player.host) row.append(element('span', 'screen-tag', 'host'));
-      if (player.me) row.append(element('span', 'screen-tag', 'you'));
-      if (view.isHost && !player.me) {
-        const kick = button('✕', 'screen-kick', () => actions.kick(player.id));
-        kick.title = `Remove ${player.name}`;
-        kick.setAttribute('aria-label', `Remove ${player.name}`);
-        row.append(kick);
-      }
-      list.append(row);
-    }
-    parts.push(
-      element('p', 'menu-heading', `Players (${view.players.length}/${CONFIG.lobby.maxPlayers})`),
-      list,
+    const teamsPage = this.lobbyTeams(view, actions);
+    const matchPage = this.lobbyMatch(view, actions);
+    const invitePage = this.lobbyInvite(view);
+    const tabs = createTabs(
+      [
+        { id: 'teams', label: `👥 Teams (${view.players.length})`, content: teamsPage },
+        { id: 'match', label: '⚙ Match', content: matchPage },
+        { id: 'invite', label: '📱 Invite', content: invitePage },
+      ],
+      'lobby-tabs',
+      (id) => {
+        this.lobbyTab = id;
+      },
+      this.lobbyTab,
     );
 
+    const footer = element('div', 'lobby-footer');
     if (view.isHost) {
-      const minutes = element('select', 'screen-select');
-      for (const option of CONFIG.lobby.matchMinuteOptions) {
-        const el = element('option', undefined, `${option} minutes`);
-        el.value = String(option);
-        el.selected = option === view.matchMinutes;
-        minutes.append(el);
-      }
-      minutes.addEventListener('change', () => actions.setMinutes(Number(minutes.value)));
-      const length = element('label', 'screen-label', 'Match length');
-      length.append(minutes);
-      const mode = element('select', 'screen-select');
-      for (const option of GAME_MODES) {
-        const el = element('option', undefined, GAME_MODE_NAMES[option]);
-        el.value = option;
-        el.selected = option === view.gameMode;
-        mode.append(el);
-      }
-      mode.addEventListener('change', () => actions.setGameMode(mode.value as GameMode));
-      const modeLabel = element('label', 'screen-label', 'Game mode');
-      modeLabel.append(mode);
-      const goal = element('select', 'screen-select');
-      for (const option of CONFIG.lobby.captureGoalOptions) {
-        const el = element('option', undefined, `First to ${option} rounds`);
-        el.value = String(option);
-        el.selected = option === view.capturesToWin;
-        goal.append(el);
-      }
-      goal.addEventListener('change', () => actions.setCaptureGoal(Number(goal.value)));
-      const goalLabel = element('label', 'screen-label', 'Rounds to win');
-      goalLabel.append(goal);
       const enough = view.players.length >= CONFIG.lobby.minPlayersToStart;
       const start = button(
-        enough ? 'Start' : `Start (needs ${CONFIG.lobby.minPlayersToStart} players, or add a bot)`,
+        enough
+          ? '▶ Start'
+          : `Start (needs ${CONFIG.lobby.minPlayersToStart} players, or add a bot)`,
         'menu-play',
         actions.start,
       );
       start.disabled = !enough;
-      parts.push(
-        modeLabel,
-        this.colorPicker(view, actions),
-        length,
-        goalLabel,
-        this.botStepper(view, actions),
-        start,
-      );
+      footer.append(start);
     } else {
-      parts.push(
+      footer.append(element('p', 'screen-waiting', 'Waiting for the host to start…'));
+    }
+    const small = element('div', 'lobby-footer-row');
+    small.append(
+      button('🎨 Customize', 'screen-button', actions.editLook),
+      button('Leave', 'screen-link-button', actions.leave),
+    );
+    footer.append(small);
+
+    const header = element('div', 'lobby-header');
+    header.append(element('h1', undefined, 'Lobby'), element('span', 'lobby-code-chip', view.code));
+    this.show('lobby', header, tabs.element, footer);
+    this.card.classList.add('lobby-card');
+  }
+
+  /** Three columns (team A · auto · team B) of players, and your own pick buttons. */
+  private lobbyTeams(view: LobbyView, actions: LobbyActions): HTMLElement {
+    const page = element('div', 'lobby-teams');
+    const me = view.players.find((p) => p.me);
+    const picker = element('div', 'team-picker');
+    const sides: [number, string][] = [
+      [0, teamName(0)],
+      [AUTO_TEAM, 'Auto'],
+      [1, teamName(1)],
+    ];
+    for (const [pick, label] of sides) {
+      const chosen = me?.pick === pick;
+      const b = button(label, `team-pick${chosen ? ' chosen' : ''}`, () => actions.pickTeam(pick));
+      b.setAttribute('aria-pressed', String(chosen));
+      if (pick === 0 || pick === 1) {
+        b.style.background = cssColor(TEAM_COLORS[pick]);
+        b.style.color = textOnTeam(pick);
+      }
+      picker.append(b);
+    }
+    const columns = element('div', 'team-columns');
+    for (const [pick, label] of sides) {
+      const column = element('div', `team-column${pick === AUTO_TEAM ? ' auto' : ''}`);
+      if (pick === 0 || pick === 1) column.style.setProperty('--team', cssColor(TEAM_COLORS[pick]));
+      const members = view.players.filter((p) => p.pick === pick);
+      column.append(element('h3', undefined, `${label} · ${members.length}`));
+      const list = element('ul', 'screen-players');
+      for (const player of members) list.append(this.playerRow(player, view, actions));
+      column.append(list);
+      columns.append(column);
+    }
+    page.append(
+      element('p', 'menu-heading', 'Pick your team'),
+      picker,
+      columns,
+      element(
+        'p',
+        'lobby-hint',
+        'Teams stay even: Auto players (and bots) fill the gaps at Start.',
+      ),
+    );
+    return page;
+  }
+
+  private playerRow(player: LobbyPlayer, view: LobbyView, actions: LobbyActions): HTMLLIElement {
+    const row = element('li', player.me ? 'me' : undefined);
+    row.append(element('span', 'screen-player-name', player.name));
+    if (player.bot) row.append(element('span', 'screen-tag screen-tag-bot', '🤖'));
+    if (player.host) row.append(element('span', 'screen-tag', '👑'));
+    if (player.me) row.append(element('span', 'screen-tag', 'you'));
+    if (view.isHost && !player.me) {
+      const kick = button('✕', 'screen-kick', () => actions.kick(player.id));
+      kick.title = `Remove ${player.name}`;
+      kick.setAttribute('aria-label', `Remove ${player.name}`);
+      row.append(kick);
+    }
+    return row;
+  }
+
+  /** The host's match settings, or a summary of them for everyone else. */
+  private lobbyMatch(view: LobbyView, actions: LobbyActions): HTMLElement {
+    const page = element('div', 'lobby-match');
+    if (!view.isHost) {
+      page.append(
         this.colorPicker(view, null),
         element(
           'p',
-          'screen-waiting',
-          `Waiting for the host… (${GAME_MODE_NAMES[view.gameMode]}, ${view.matchMinutes} min, ` +
-            `first to ${view.capturesToWin} rounds)`,
+          'lobby-summary',
+          `${GAME_MODE_NAMES[view.gameMode]} · ${view.matchMinutes} min · ` +
+            `first to ${view.capturesToWin} rounds`,
         ),
       );
+      return page;
     }
-    parts.push(
-      button('Edit look', 'screen-button', actions.editLook),
-      button('Leave lobby', 'screen-link-button', actions.leave),
+    page.append(
+      select<GameMode>(
+        'Game mode',
+        view.gameMode,
+        GAME_MODES.map((mode): [GameMode, string] => [mode, GAME_MODE_NAMES[mode]]),
+        actions.setGameMode,
+      ),
+      this.colorPicker(view, actions),
+      select<number>(
+        'Match length',
+        view.matchMinutes,
+        CONFIG.lobby.matchMinuteOptions.map((m): [number, string] => [m, `${m} minutes`]),
+        actions.setMinutes,
+      ),
+      select<number>(
+        'Rounds to win',
+        view.capturesToWin,
+        CONFIG.lobby.captureGoalOptions.map((n): [number, string] => [n, `First to ${n} rounds`]),
+        actions.setCaptureGoal,
+      ),
+      this.botStepper(view, actions),
     );
-    this.show('lobby', ...parts);
+    return page;
+  }
+
+  /** The QR code and the code (the host), or just the code (everyone else). */
+  private lobbyInvite(view: LobbyView): HTMLElement {
+    const page = element('div', 'lobby-invite');
+    const code = element('p', 'screen-code', view.code);
+    if (view.isHost) {
+      const qr = element('div', 'screen-qr');
+      if (view.qrSvg) qr.innerHTML = view.qrSvg;
+      page.append(
+        qr,
+        element('p', 'menu-heading', 'Scan to join, or enter the code'),
+        code,
+        element('p', 'screen-join-link', view.joinLink),
+      );
+    } else {
+      page.append(element('p', 'menu-heading', 'Lobby code'), code);
+    }
+    return page;
   }
 
   /**
@@ -345,8 +482,8 @@ export class Screens {
       pick.append(element('span', 'screen-color-name', palette.name));
       row.append(pick);
     });
-    const label = element('div', 'screen-label', 'Team colors');
-    label.append(row);
+    const label = element('div', 'screen-label');
+    label.append(element('span', 'screen-label-text', 'Team colors'), row);
     return label;
   }
 
@@ -360,8 +497,8 @@ export class Screens {
     more.disabled = view.bots >= view.maxBots;
     more.setAttribute('aria-label', 'One more bot');
     row.append(less, element('span', 'screen-step-value', String(view.bots)), more);
-    const label = element('div', 'screen-label', 'Bots');
-    label.append(row);
+    const label = element('div', 'screen-label');
+    label.append(element('span', 'screen-label-text', '🤖 Bots'), row);
     return label;
   }
 
@@ -431,7 +568,7 @@ export class Screens {
    */
   private show(kind: string, ...children: HTMLElement[]): void {
     this.runCleanup();
-    this.card.classList.remove('results-card');
+    this.card.classList.remove('results-card', 'home-card', 'lobby-card');
     this.card.replaceChildren(...children);
     const fresh = kind !== this.shownKind || this.root.hidden;
     this.shownKind = kind;
@@ -540,6 +677,7 @@ export class MatchBanner {
   hide(): void {
     this.shown = '';
     this.root.hidden = true;
+    document.body.classList.remove('banner-up');
   }
 
   /** Only rebuild when the content actually changes (this is called every frame). */
@@ -548,6 +686,8 @@ export class MatchBanner {
     clearTimeout(this.hideTimer);
     this.shown = key;
     this.root.hidden = false;
+    // Lets the pause menu make room for the banner (see body.banner-up in the CSS).
+    document.body.classList.add('banner-up');
     return true;
   }
 }

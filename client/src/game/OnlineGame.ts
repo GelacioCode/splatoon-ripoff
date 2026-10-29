@@ -3,6 +3,7 @@ import { Client, Predict, type InputHandle } from '@colyseus/sdk';
 import {
   ARENA,
   arenaFor,
+  canSwitchTeam,
   CONFIG,
   decodePaintEvents,
   decodePaintSnapshot,
@@ -20,6 +21,7 @@ import {
   MSG_MATCH_LENGTH,
   MSG_PAINT,
   MSG_PAINT_SNAPSHOT,
+  MSG_PICK_TEAM,
   MSG_PING,
   MSG_PLAY_AGAIN,
   MSG_PONG,
@@ -30,7 +32,10 @@ import {
   MSG_SHOTS,
   MSG_SPLAT,
   MSG_START,
+  MSG_SWITCH_TEAM,
   MSG_TEAM_COLORS,
+  MSG_TEAM_NEWS,
+  multiKillName,
   NetInput,
   parseFlagState,
   parseGameMode,
@@ -44,6 +49,7 @@ import {
   type MatchPhase,
   type NetPlayer,
   type SplatEvent,
+  type TeamNews,
   type Vec3,
 } from '@paint-rush/shared';
 import {
@@ -239,74 +245,88 @@ class OnlineGame {
   }
 
   private openRoute(route: Route): void {
-    if (route.kind === 'join') this.showJoin(route.code);
+    if (route.kind === 'join') this.showHome('', route.code);
     else if (route.kind === 'quick') this.quickStart();
     else this.showHome(route.badCode ? `"${route.badCode}" isn't a lobby code.` : '');
   }
 
-  private showHome(note = ''): void {
-    window.history.replaceState(null, '', `/${searchWithoutQuick()}`);
-    this.screens.showHome(
+  /**
+   * The start hub (Play · Customize · How to play · Settings). `code` is a lobby this link
+   * invites us to.
+   */
+  private showHome(note = '', code: string | null = null): void {
+    window.history.replaceState(null, '', `${code ? joinPath(code) : '/'}${searchWithoutQuick()}`);
+    this.world.music.play('menu');
+    const settings = this.world.settings;
+    let preview: LookPreview | null = null;
+    const home = this.screens.showHome(
       {
-        create: () => this.showJoin(null),
-        playWithBots: () => this.showJoin(null, true),
-        joinCode: (code) => this.showJoin(code),
+        name: settings.name,
+        code,
+        look: settings.look,
+        weapon: settings.weapon,
+        note,
+        settings: this.world.createSettingsPanel(),
+        touchDevice: this.world.touchDevice,
       },
-      note,
+      {
+        create: (name) => this.connect(home, name, null, false),
+        playWithBots: (name) => this.connect(home, name, null, true),
+        join: (joinCode, name) => this.connect(home, name, joinCode, false),
+        pickWeapon: (weapon) => {
+          settings.weapon = weapon;
+          saveSettings(settings);
+          preview?.setWeapon(weapon);
+        },
+        changeLook: (look) => {
+          settings.look = look;
+          saveSettings(settings);
+          preview?.setLook(look);
+        },
+        showPreview: (box) => {
+          const shown = new LookPreview(box, settings.look, settings.weapon);
+          preview = shown;
+          return () => {
+            shown.dispose();
+            if (preview === shown) preview = null;
+          };
+        },
+      },
     );
   }
 
   /**
-   * Name and role, then join the lobby `code`, or create a new one when `code` is null (with
-   * the default number of bots in it, for "Play with bots").
+   * Joins the lobby `code`, or creates a new one when `code` is null (with the default
+   * number of bots in it, for "Play with bots"), with the saved look and role.
    */
-  private showJoin(code: string | null, withBots = false): void {
+  private connect(
+    home: { busy: (text: string) => void; failed: (text: string) => void },
+    name: string,
+    code: string | null,
+    withBots: boolean,
+  ): void {
     const settings = this.world.settings;
-    let preview: LookPreview | null = null;
-    const form = this.screens.showJoin({
-      code,
-      withBots,
-      name: settings.name,
-      weapon: settings.weapon,
-      look: settings.look,
-      pickWeapon: (weapon) => {
-        settings.weapon = weapon;
-        saveSettings(settings);
-        preview?.setWeapon(weapon);
-      },
-      changeLook: (look) => {
-        settings.look = look;
-        saveSettings(settings);
-        preview?.setLook(look);
-      },
-      back: () => this.showHome(),
-      submit: (name) => {
-        settings.name = name.trim();
-        saveSettings(settings);
-        form.busy(code ? 'Joining…' : 'Creating lobby…');
-        const options = { name: settings.name, weapon: settings.weapon, look: settings.look };
-        const joining = code
-          ? joinLobby(this.serverUrl, code, options)
-          : createLobby(this.serverUrl, {
-              ...options,
-              bots: withBots ? CONFIG.lobby.defaultBots : undefined,
-            });
-        joining.then(
-          (room) => this.enter(room),
-          (error: unknown) => {
-            console.warn('[net] could not join', error);
-            form.failed(
-              code
-                ? `Couldn't join ${code}. The lobby may have closed or be full.`
-                : "Couldn't reach the game server. Is it running?",
-            );
-          },
+    settings.name = name.trim();
+    saveSettings(settings);
+    home.busy(code ? 'Joining…' : 'Creating lobby…');
+    const options = { name: settings.name, weapon: settings.weapon, look: settings.look };
+    const joining = code
+      ? joinLobby(this.serverUrl, code, options)
+      : createLobby(this.serverUrl, {
+          ...options,
+          bots: withBots ? CONFIG.lobby.defaultBots : undefined,
+        });
+    joining.then(
+      (room) => this.enter(room),
+      (error: unknown) => {
+        console.warn('[net] could not join', error);
+        home.failed(
+          code
+            ? `Couldn't join ${code}. The lobby may have closed or be full.`
+            : "Couldn't reach the game server. Is it running?",
         );
       },
-    });
-    const shown = new LookPreview(form.preview, settings.look, settings.weapon);
-    preview = shown;
-    this.screens.onClose(() => shown.dispose());
+    );
   }
 
   /** Dev shortcut (`?quick`): make a lobby with the saved name and start it straight away. */
@@ -369,6 +389,16 @@ class OnlineGame {
     const dt = this.world.beginFrame(timeMs, false);
     this.world.drawFrame(dt, this.waitingFeet, WAITING_STATE, [], 0);
   };
+}
+
+/** The pause menu's "Switch to Cyan": allowed unless that team is bigger (null if not). */
+function switchTarget(state: MatchState, myId: string): string | null {
+  const me = state.players.get(myId);
+  if (!me) return null;
+  const phase = parsePhase(state.phase);
+  if (phase === 'lobby' || phase === 'ended') return null;
+  const teams = [...state.players.values()].map((p) => p.team);
+  return canSwitchTeam(me.team, teams) ? teamName(me.team === 0 ? 1 : 0) : null;
 }
 
 interface RemotePlayer {
@@ -445,6 +475,8 @@ class NetSession {
   private readonly targets: ShotTarget[] = [];
   private splattedBy = 'someone';
   private wasSplatted = false;
+  /** We asked to switch team: the wait shows "Switching to …" instead of "Splatted by …". */
+  private switching = false;
   private lastHp: number = CONFIG.player.maxHp;
   /** The team our own blob is drawn in. */
   private myTeam = -1;
@@ -503,6 +535,16 @@ class NetSession {
     room.onMessage(MSG_HIT, (splat: unknown) => this.world.showHit(splat === true));
     room.onMessage(MSG_SPLAT, (payload: unknown) => this.receiveSplat(payload));
     room.onMessage(MSG_FLAG, (payload: unknown) => this.receiveFlag(payload));
+    room.onMessage(MSG_TEAM_NEWS, (payload: unknown) => this.receiveTeamNews(payload));
+    // The pause menu's match buttons.
+    world.setMatchActions({
+      switchTarget: () => switchTarget(room.state, room.sessionId),
+      switchTeam: () => room.send(MSG_SWITCH_TEAM),
+      leave: () => {
+        this.leaving = true;
+        room.leave().catch((error: unknown) => console.warn(error));
+      },
+    });
     room.onMessage(MSG_KICKED, () => {
       this.kicked = true;
     });
@@ -549,6 +591,7 @@ class NetSession {
     this.world.scene.remove(this.hillView.root);
     this.hillView.dispose();
     this.world.setBasesVisible(true);
+    this.world.setMatchActions(null);
     // Back to the usual colors behind the start screen.
     if (setTeamPalette(0)) this.world.applyTeamColors();
     this.world.scene.remove(this.arrow.root);
@@ -566,6 +609,9 @@ class NetSession {
     if (setTeamPalette(this.room.state.teamColors)) this.applyTeamColors();
     const phase = parsePhase(this.room.state.phase);
     this.updateScreens(phase);
+    // Calm music in the lobby, the bouncy loop in the match (a bit faster near the end).
+    world.music.play(phase === 'lobby' || phase === 'ended' ? 'menu' : 'match');
+    world.music.setHurry(phase === 'playing' && this.room.state.timeLeft <= 30);
     const me = this.me;
     const dt = world.beginFrame(timeMs, me?.state.aiming ?? false);
     // Back in the lobby after a match, the arena stays empty until the next start.
@@ -613,7 +659,9 @@ class NetSession {
       }
       world.weaponSounds(this.wasReloading, s, this.firing, dt);
       this.wasReloading = s.reloadTimer > 0;
-      this.character.root.visible = s.respawnTimer <= 0 && !blinking(s.protectTimer, timeMs);
+      // Hidden while splatted, and while looking through the scope (the camera is inside it).
+      this.character.root.visible =
+        s.respawnTimer <= 0 && !blinking(s.protectTimer, timeMs) && !world.scoped;
       this.updateLife(s);
     } else {
       this.feet.set(WAITING_STATE.x, WAITING_STATE.y, WAITING_STATE.z);
@@ -700,26 +748,54 @@ class NetSession {
   /** Our own splat and respawn: the "Splatted by" message, the hurt flash, the camera. */
   private updateLife(s: PlayerState): void {
     const splatted = s.respawnTimer > 0;
+    const left = Math.ceil(s.respawnTimer);
     this.world.setSplatted(
-      splatted ? `Splatted by ${this.splattedBy} · back in ${Math.ceil(s.respawnTimer)}…` : null,
+      !splatted
+        ? null
+        : this.switching
+          ? `Switching to ${teamName(s.team)} · in ${left}…`
+          : `Splatted by ${this.splattedBy} · back in ${left}…`,
     );
     // Back on the spawn pad: look the way the spawn faces (toward the middle).
-    if (this.wasSplatted && !splatted) this.world.view.yaw = s.yaw;
+    if (this.wasSplatted && !splatted) {
+      this.world.view.yaw = s.yaw;
+      this.switching = false;
+    }
     this.wasSplatted = splatted;
     if (this.lastHp - s.hp >= HURT_FLASH_HP) this.world.flashHurt();
     this.lastHp = s.hp;
   }
 
+  /** Someone changed sides mid-match, or our lobby pick couldn't be kept at Start. */
+  private receiveTeamNews(payload: unknown): void {
+    if (!payload || typeof payload !== 'object') return;
+    const { kind, by, team } = payload as Partial<TeamNews>;
+    if (typeof team !== 'number' || typeof by !== 'string') return;
+    const color = cssColor(teamTextColor(team));
+    if (kind === 'moved') {
+      this.announcer.show(`Teams were full: you're on ${teamName(team)} to keep it fair`, color);
+    } else if (kind === 'switched') {
+      if (by === this.room.sessionId) this.switching = true;
+      const name = this.room.state.players.get(by)?.name ?? 'Someone';
+      this.announcer.show(`${name} switched to ${teamName(team)}`, color);
+    }
+  }
+
   /** Someone was splatted: the burst, the sound, and a line in the kill feed. */
   private receiveSplat(payload: unknown): void {
     if (!payload || typeof payload !== 'object') return;
-    const { victim, by, team } = payload as Partial<SplatEvent>;
+    const { victim, by, team, streak } = payload as Partial<SplatEvent>;
     if (typeof victim !== 'string' || typeof team !== 'number') return;
     const players = this.room.state.players;
     const victimPlayer = players.get(victim);
     const attacker = (typeof by === 'string' && players.get(by)?.name) || 'someone';
     const victimName = victimPlayer?.name ?? 'someone';
-    this.world.killFeed.add(attacker, team, victimName, victimPlayer?.team ?? 1 - team);
+    // Splats in quick succession: everyone sees it in the feed; the one who did it hears it.
+    const multiKill = typeof streak === 'number' ? multiKillName(streak) : null;
+    this.world.killFeed.add(attacker, team, victimName, victimPlayer?.team ?? 1 - team, multiKill);
+    if (multiKill && by === this.room.sessionId) {
+      this.world.announceMultiKill(multiKill, streak ?? 2, cssColor(TEAM_COLORS[team] ?? 0xffffff));
+    }
     if (victim === this.room.sessionId) this.splattedBy = attacker;
 
     const at =
@@ -1043,6 +1119,7 @@ class NetSession {
         host: id === state.hostId,
         me: id === this.room.sessionId,
         bot: player.bot,
+        pick: player.teamPick,
       });
     }
     const link = joinUrl(window.location, this.room.roomId, this.lanAddresses);
@@ -1078,6 +1155,7 @@ class NetSession {
       {
         start: () => this.room.send(MSG_START),
         kick: (id) => this.room.send(MSG_KICK, id),
+        pickTeam: (pick) => this.room.send(MSG_PICK_TEAM, pick),
         setMinutes: (minutes) => this.room.send(MSG_MATCH_LENGTH, minutes),
         setCaptureGoal: (captures) => this.room.send(MSG_CAPTURE_GOAL, captures),
         setGameMode: (mode) => this.room.send(MSG_GAME_MODE, mode),

@@ -67,6 +67,8 @@ export const NetPlayer = schema(
     name: t.string().default(''),
     /** A bot the server plays itself ("Play with bots"), not a person. */
     bot: t.boolean().default(false),
+    /** Team wish from the lobby: 0, 1, or −1 (AUTO_TEAM) to let Start decide. */
+    teamPick: t.int8().default(-1),
     // The look (see LOOK_OPTIONS): one small number per part, only resent when it changes.
     eyes: t.uint8().default(0),
     hat: t.uint8().default(0),

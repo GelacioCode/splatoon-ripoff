@@ -18,8 +18,12 @@ export interface Settings {
   touchSensitivity: number;
   invertY: boolean;
   quality: Quality;
-  /** Sound volume, 0–1. */
+  /** Master volume, 0–1 (everything below is a share of it). */
   volume: number;
+  /** Music, sound effects and the multi-kill announcer voice, each 0–1. */
+  musicVolume: number;
+  effectsVolume: number;
+  announcerVolume: number;
   /** Aim by turning the phone (needs https:// and, on iPhone, a permission tap). */
   gyro: boolean;
   gyroSensitivity: number;
@@ -31,6 +35,8 @@ export interface Settings {
   look: Look;
   /** Touch controls, mouse and keyboard, or let the device decide. */
   controls: ControlsSetting;
+  /** Show the FPS / ping panel (always on in development). */
+  showStats: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -39,12 +45,16 @@ export const DEFAULT_SETTINGS: Settings = {
   invertY: false,
   quality: 'auto',
   volume: 0.8,
+  musicVolume: 0.5,
+  effectsVolume: 1,
+  announcerVolume: 1,
   gyro: false,
   gyroSensitivity: 1,
   weapon: DEFAULT_WEAPON,
   name: '',
   look: { ...DEFAULT_LOOK },
   controls: 'auto',
+  showStats: false,
 };
 
 const STORAGE_KEY = 'paint-rush.settings';
@@ -72,6 +82,9 @@ export function parseSettings(raw: string | null): Settings {
     invertY: typeof saved.invertY === 'boolean' ? saved.invertY : d.invertY,
     quality: QUALITIES.includes(saved.quality as Quality) ? (saved.quality as Quality) : d.quality,
     volume: numberIn(saved.volume, 0, 1, d.volume),
+    musicVolume: numberIn(saved.musicVolume, 0, 1, d.musicVolume),
+    effectsVolume: numberIn(saved.effectsVolume, 0, 1, d.effectsVolume),
+    announcerVolume: numberIn(saved.announcerVolume, 0, 1, d.announcerVolume),
     gyro: typeof saved.gyro === 'boolean' ? saved.gyro : d.gyro,
     gyroSensitivity: numberIn(saved.gyroSensitivity, 0.1, 5, d.gyroSensitivity),
     weapon: parseWeaponChoice(saved.weapon) ?? d.weapon,
@@ -83,6 +96,7 @@ export function parseSettings(raw: string | null): Settings {
     controls: CONTROLS_SETTINGS.includes(saved.controls as ControlsSetting)
       ? (saved.controls as ControlsSetting)
       : d.controls,
+    showStats: typeof saved.showStats === 'boolean' ? saved.showStats : d.showStats,
   };
 }
 

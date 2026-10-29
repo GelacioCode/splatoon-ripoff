@@ -9,15 +9,21 @@ const MASTER_GAIN = 0.35;
  */
 export class Sfx {
   private context: AudioContext | null = null;
+  /** Everything (effects and music) goes through this: the master volume. */
+  private output: GainNode | null = null;
+  /** Sound effects only. */
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
   private lastSplat = 0;
   private volume = 1;
+  private effects = 1;
 
-  /** Overall loudness, 0–1. */
-  setVolume(volume: number): void {
+  /** Master loudness and the effects' share of it, each 0–1. */
+  setVolume(volume: number, effects = this.effects): void {
     this.volume = volume;
-    if (this.master) this.master.gain.value = MASTER_GAIN * volume;
+    this.effects = effects;
+    if (this.output) this.output.gain.value = volume;
+    if (this.master) this.master.gain.value = MASTER_GAIN * effects;
   }
 
   constructor() {
@@ -99,6 +105,31 @@ export class Sfx {
     this.noiseBurst(ctx, t, 0.08, 'bandpass', 900, 2400, 0.18);
   }
 
+  /**
+   * A sparkly rising jingle for a multi-kill: longer and higher for bigger streaks
+   * (2 = double … 5 = penta).
+   */
+  streak(level: number): void {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const notes = [523, 659, 784, 1047, 1319, 1568].slice(0, Math.min(6, level + 1));
+    notes.forEach((hz, i) => {
+      this.tone(ctx, t + i * 0.07, 'square', hz, hz * 1.02, 0.11, 0.09);
+      this.tone(ctx, t + i * 0.07, 'triangle', hz * 2, hz * 2.03, 0.14, 0.12);
+    });
+  }
+
+  /**
+   * The audio context and master output, once sound is allowed and running (shared with the
+   * music), or null. It never starts the audio itself: the first tap or key press does.
+   */
+  audio(): { context: AudioContext; output: AudioNode } | null {
+    const ctx = this.context;
+    if (!ctx || !this.output || ctx.state !== 'running') return null;
+    return { context: ctx, output: this.output };
+  }
+
   /** Rising two-note chime when a reload finishes. */
   reloaded(): void {
     const ctx = this.ready();
@@ -113,9 +144,12 @@ export class Sfx {
     if (!this.context) {
       if (typeof AudioContext === 'undefined') return null;
       const ctx = new AudioContext();
+      this.output = ctx.createGain();
+      this.output.gain.value = this.volume;
+      this.output.connect(ctx.destination);
       this.master = ctx.createGain();
-      this.master.gain.value = MASTER_GAIN * this.volume;
-      this.master.connect(ctx.destination);
+      this.master.gain.value = MASTER_GAIN * this.effects;
+      this.master.connect(this.output);
       this.noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const data = this.noise.getChannelData(0);
       for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;

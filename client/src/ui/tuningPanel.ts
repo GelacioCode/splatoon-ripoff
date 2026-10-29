@@ -54,6 +54,7 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   camera.add(c, 'pivotHeight', 0.5, 2.5, 0.05).name('pivot height');
   camera.add(c, 'mouseSensitivity', 0.0005, 0.006, 0.0001).name('mouse sensitivity');
   camera.add(c, 'followSharpness', 2, 40, 1).name('follow sharpness');
+  camera.add(c, 'aimSensitivity', 0.3, 2, 0.05).name('aim sensitivity (÷ zoom)');
 
   const w = CONFIG.weapon;
   const weapon = gui.addFolder('Weapons (all roles)');
@@ -81,8 +82,9 @@ function buildPanel(gui: GUI, actions: TuningActions): GUI {
   health.add(h, 'enemyPaintJumpMultiplier', 0.1, 1, 0.05).name('jump in enemy paint');
   health.add(h, 'enemyPaintDamagePerSecond', 0, 60, 1).name('damage / s');
   health.add(h, 'enemyPaintMinHp', 0, 100, 1).name('HP floor');
-  health.add(h, 'regenDelay', 0, 5, 0.1).name('regen delay (s)');
-  health.add(h, 'regenPerSecond', 0, 100, 1).name('regen / s');
+  health.add(h, 'calmSeconds', 0, 15, 0.5).name('calm after (s)');
+  health.add(h, 'regenPerSecond', 0, 100, 1).name('regen / s (calm or swimming)');
+  health.add(h, 'recoveryReloadSpeed', 1, 3, 0.05).name('reload speed × (calm or swimming)');
   swim.close();
   health.close();
 
@@ -120,6 +122,8 @@ function addRoleFolder(gui: GUI, kind: WeaponKind): void {
   role.add(r, 'straightTime', 0, 1.5, 0.01).name('straight flight (s)');
   role.add(r, 'aimStraightTime', 0, 2, 0.01).name('aimed straight flight (s)');
   role.add(r, 'splatRadius', 0.2, 3, 0.05).name('splat radius (m)');
+  role.add(r, 'zoom', 1, 8, 0.05).name('aim zoom ×');
+  role.add(r, 'aimSpeedMultiplier', 0.2, 1, 0.05).name('walk speed while aiming ×');
   role.add(r, 'dripEvery', 0.3, 6, 0.1).name('trail piece length (m)');
   role.add(r, 'dripRadius', 0, 1.5, 0.01).name('trail swim width (m, ≥ 0.36)');
   role.close();

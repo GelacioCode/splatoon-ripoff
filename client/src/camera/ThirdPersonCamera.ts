@@ -8,6 +8,18 @@ const PUDDLE_PIVOT_HEIGHT = 0.8;
 /** Casts a ray against the map and returns the hit distance, or null when nothing is hit. */
 export type RaycastDistance = (origin: Vec3, direction: Vec3, maxDistance: number) => number | null;
 
+/** How the current role aims: its zoom (2 = 2×), and whether it looks through a scope. */
+export interface AimStyle {
+  zoom: number;
+  scope: boolean;
+}
+
+/** The field of view that magnifies `fov` (degrees) `zoom` times. */
+export function zoomedFov(fov: number, zoom: number): number {
+  const half = (fov * DEG_TO_RAD) / 2;
+  return (2 * Math.atan(Math.tan(half) / Math.max(1, zoom))) / DEG_TO_RAD;
+}
+
 /**
  * Over-the-shoulder camera. Aim (yaw/pitch) changes instantly; the follow position is lightly
  * smoothed, and the camera pulls in when a wall gets between it and the player.
@@ -22,6 +34,7 @@ export class ThirdPersonCamera {
   private readonly right = new Vector3();
   private readonly desired = new Vector3();
   private readonly toCamera = new Vector3();
+  private readonly eye = new Vector3();
   private boom = CONFIG.camera.distance;
   private hasPivot = false;
 
@@ -49,6 +62,8 @@ export class ThirdPersonCamera {
   /**
    * Places the camera behind the player's (interpolated) feet position. `swimBlend` (0–1)
    * lowers the view for the puddle form; `fovBoost` widens the view (degrees), e.g. at speed.
+   * While aiming (`aimBlend` 0–1) it zooms by the role's `aim.zoom` and moves in over the
+   * shoulder, or, with a scope, all the way to the eye.
    */
   update(
     feet: Vector3,
@@ -57,12 +72,12 @@ export class ThirdPersonCamera {
     swimBlend = 0,
     fovBoost = 0,
     aimBlend = 0,
+    aim: AimStyle = { zoom: 2, scope: false },
   ): void {
     const c = CONFIG.camera;
-    // Aim mode (aimBlend 0–1): zoom in, move closer and further over the shoulder.
     const distance = lerp(c.distance, c.aimDistance, aimBlend);
     const shoulderOffset = lerp(c.shoulderOffset, c.aimShoulderOffset, aimBlend);
-    const baseFov = lerp(c.fov, c.aimFov, aimBlend);
+    const baseFov = lerp(c.fov, zoomedFov(c.fov, aim.zoom), aimBlend);
 
     // Orbit a point above the feet, smoothed a little so landings don't jolt the view.
     const pivotY = feet.y + lerp(c.pivotHeight, PUDDLE_PIVOT_HEIGHT, swimBlend);
@@ -105,6 +120,13 @@ export class ThirdPersonCamera {
     this.boom = allowed < this.boom ? allowed : damp(this.boom, allowed, 6, dt);
 
     this.camera.position.copy(this.pivot).addScaledVector(this.toCamera, this.boom);
+    if (aim.scope && aimBlend > 0) {
+      // The scope: slide to the eye, in line with the blaster (so shots go where it points).
+      this.eye
+        .set(feet.x, feet.y + c.scopeEyeHeight, feet.z)
+        .addScaledVector(this.right, CONFIG.weapon.muzzleRight);
+      this.camera.position.lerp(this.eye, aimBlend * aimBlend);
+    }
     this.camera.rotation.set(this.pitch, this.yaw, 0);
     const fov = damp(this.camera.fov, baseFov + fovBoost, 8, dt);
     if (Math.abs(fov - this.camera.fov) > 1e-3) {
